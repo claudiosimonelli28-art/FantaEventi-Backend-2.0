@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: fantaeventi-backend
+    env: docker
+    dockerfilePath: Dockerfile
+    context: .
+    plan: free
+    envVars:
+      - key: MONGODB_URI
+        value: mongodb+srv://Lorenzo:[REDACTED]@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0
