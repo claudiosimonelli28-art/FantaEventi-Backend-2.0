@@ -42,6 +42,7 @@ void main() async {
   // Rotte Utenti
   app.post('/api/login', utenteCtrl.login);
   app.post('/api/registrazione', utenteCtrl.creaUtente);
+  app.post('/api/utenti/avatar', utenteCtrl.aggiornaAvatar);
   app.get('/api/utenti', utenteCtrl.getUtenti);
 
   // Rotte Eventi
