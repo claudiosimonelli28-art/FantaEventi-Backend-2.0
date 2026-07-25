@@ -137,6 +137,37 @@ class UtenteController {
       );
     } catch (e) {
       print('❌ Errore creazione utente: $e');
+  // POST /api/utenti/avatar
+  Future<Response> aggiornaAvatar(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final utenteName = (data['utente'] ?? data['username'])?.toString().trim() ?? '';
+      final avatarUrl = data['avatarUrl']?.toString().trim() ?? '';
+
+      print('📥 [HTTP POST /api/utenti/avatar] Aggiornamento foto profilo per "$utenteName"');
+
+      if (utenteName.isEmpty || avatarUrl.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Utente ed avatarUrl sono obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      await DbService.instance.utentiCollection.update(
+        where.eq('username', utenteName)
+             .or(where.eq('nickname', utenteName))
+             .or(where.eq('nome', utenteName)),
+        modify.set('avatarUrl', avatarUrl).set('foto', avatarUrl),
+      );
+
+      print('📸 [MongoDB] Avatar salvato permanentemente in MongoDB Atlas per l\'utente "$utenteName"!');
+      return Response.ok(
+        jsonEncode({'message': 'Avatar salvato permanentemente in MongoDB Atlas!'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      print('❌ Errore salvataggio avatar: $e');
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},
