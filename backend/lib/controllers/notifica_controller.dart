@@ -10,9 +10,12 @@ class NotificaController {
       final dest = request.url.queryParameters['utente'] ?? '';
       print('📥 [HTTP GET /api/notifiche] Recupero notifiche per "$dest"...');
 
-      final docs = await DbService.instance.db.collection('Notifiche').find(
-        where.eq('destinatario', dest).or(where.eq('destinatario', dest.toLowerCase())),
-      ).toList();
+      final cleanDest = dest.trim().toLowerCase();
+      final allNotifiche = await DbService.instance.db.collection('Notifiche').find().toList();
+      final docs = allNotifiche.where((d) {
+        final dDest = (d['destinatario'] ?? '').toString().trim().toLowerCase();
+        return dDest == cleanDest || cleanDest.isEmpty;
+      }).toList();
 
       final list = docs.map((d) => {
         'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
@@ -45,7 +48,7 @@ class NotificaController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
       final notificaId = data['notificaId']?.toString() ?? '';
-      final azione = data['azione']?.toString() ?? ''; // 'accetta' o 'rifiuta'
+      final azione = (data['azione']?.toString() ?? '').toLowerCase(); // 'accetta', 'rifiuta', 'pro', 'contro'
       final utente = data['utente']?.toString() ?? '';
 
       print('📥 [HTTP POST /api/notifiche/rispondi] Notifica ID "$notificaId" -> Azione: $azione di $utente');
@@ -60,15 +63,16 @@ class NotificaController {
 
       if (doc != null) {
         final eventoId = doc['eventoId']?.toString() ?? '';
-        final nuovoStato = azione == 'accetta' ? 'accettato' : 'rifiutato';
+        final isPro = azione == 'accetta' || azione == 'pro' || azione == 'favorevole';
+        final nuovoStato = isPro ? 'accettato' : 'rifiutato';
 
         // Aggiorna la notifica su MongoDB
         await DbService.instance.db.collection('Notifiche').update(
           selector,
-          modify.set('stato', nuovoStato),
+          modify.set('stato', nuovoStato).set('votoEspresso', isPro ? 'pro' : 'contro'),
         );
 
-        // Se accetta, aggiungi l'utente ai partecipanti dell'evento!
+        // Se accetta l'invito all'evento, aggiungi l'utente ai partecipanti!
         if (azione == 'accetta' && eventoId.isNotEmpty) {
           ObjectId? evObjId;
           try {
@@ -80,14 +84,17 @@ class NotificaController {
 
           if (evDoc != null) {
             final List<dynamic> part = List.from(evDoc['partecipanti'] ?? []);
-            if (!part.contains(utente)) {
+            final List<dynamic> inv = List.from(evDoc['invitati'] ?? []);
+            inv.removeWhere((i) => i.toString().toLowerCase() == utente.toLowerCase());
+            
+            if (!part.any((p) => p.toString().toLowerCase() == utente.toLowerCase())) {
               part.add(utente);
-              await DbService.instance.eventiCollection.update(
-                evSelector,
-                modify.set('partecipanti', part),
-              );
-              print('✅ Utente "$utente" iscritto all\'evento su MongoDB a seguito dell\'accettazione!');
             }
+            await DbService.instance.eventiCollection.update(
+              evSelector,
+              modify.set('partecipanti', part).set('invitati', inv),
+            );
+            print('✅ Utente "$utente" iscritto all\'evento ed rimosso dagli inviti in sospeso!');
           }
         }
       }
