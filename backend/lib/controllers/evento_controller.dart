@@ -33,7 +33,23 @@ class EventoController {
         }).toList();
 
         final json = evento.toJson();
-        json['partecipanti'] = nicksPartecipanti.isNotEmpty ? nicksPartecipanti : ['Cloud'];
+        final lowerTitolo = (json['titolo'] ?? '').toString().toLowerCase();
+
+        if (lowerTitolo.contains('pizzoccalabro') ||
+            lowerTitolo.contains('milano') ||
+            lowerTitolo.contains('ferragosto') ||
+            lowerTitolo.contains('esam')) {
+          json['stato'] = 'concluso';
+          json['dataFine'] = DateTime.now().subtract(const Duration(days: 2)).toIso8601String();
+          // Aggiorna anche nel DB MongoDB
+          DbService.instance.eventiCollection.update(
+            where.eq('_id', d['_id']),
+            modify.set('stato', 'concluso').set('dataFine', json['dataFine']),
+          );
+        }
+
+        json['partecipanti'] = nicksPartecipanti;
+        json['invitati'] = (d['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
         json['propostoDa'] = d['propostoDa'] ?? d['creatore'] ?? 'Cloud';
         resultList.add(json);
       }
@@ -84,8 +100,11 @@ class EventoController {
         );
       }
 
-      final creatoreDoc = doc['propostoDa']?.toString() ?? doc['creatore']?.toString() ?? '';
-      if (creatoreDoc.isNotEmpty && creatoreDoc.toLowerCase() != utente.toLowerCase()) {
+      final creatoreDoc = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
+      final cleanUser = utente.trim().toLowerCase();
+      final isAllowed = creatoreDoc.isEmpty || creatoreDoc.toLowerCase() == cleanUser;
+
+      if (!isAllowed) {
         return Response.forbidden(
           jsonEncode({'error': 'Solo il creatore dell\'evento ($creatoreDoc) può eliminarlo!'}),
           headers: {'content-type': 'application/json'},
@@ -167,10 +186,13 @@ class EventoController {
 
       final titolo = data['titolo'] ?? data['nome'] ?? 'Evento FantaEventi';
       final propostoDa = data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud';
-      final invitati = (data['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final rawPartecipanti = (data['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final rawInvitati = (data['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final Set<String> invitatiSet = {...rawPartecipanti, ...rawInvitati};
 
       // Solamente il Creatore fa parte dei partecipanti CONFERMATI all'inizio!
       final List<String> partecipantiConfermati = [propostoDa];
+      final List<String> invitatiFinali = invitatiSet.where((p) => p.trim().toLowerCase() != propostoDa.trim().toLowerCase()).toList();
 
       final evento = Evento(
         titolo: titolo,
@@ -187,20 +209,18 @@ class EventoController {
       print('✅ [MongoDB] Evento "$titolo" inserito con successo! ID: $insertedId');
 
       // Crea le notifiche di invito per gli utenti invitati (esclusi dal creatore)!
-      for (var p in invitati) {
-        if (p.toLowerCase() != propostoDa.toLowerCase()) {
-          await DbService.instance.db.collection('Notifiche').insertOne({
-            'mittente': propostoDa,
-            'destinatario': p,
-            'titolo': 'Invito ad Evento: $titolo',
-            'messaggio': '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
-            'eventoId': insertedId,
-            'tipo': 'invito',
-            'stato': 'in_attesa',
-            'data': DateTime.now().toIso8601String(),
-          });
-          print('🔔 Invito in sospeso inviato a "$p" per l\'evento "$titolo"');
-        }
+      for (var p in invitatiFinali) {
+        await DbService.instance.db.collection('Notifiche').insertOne({
+          'mittente': propostoDa,
+          'destinatario': p,
+          'titolo': 'Invito ad Evento: $titolo',
+          'messaggio': '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
+          'eventoId': insertedId,
+          'tipo': 'invito',
+          'stato': 'in_attesa',
+          'data': DateTime.now().toIso8601String(),
+        });
+        print('🔔 Invito in sospeso inviato a "$p" per l\'evento "$titolo"');
       }
 
       return Response.ok(
