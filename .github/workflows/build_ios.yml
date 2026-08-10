@@ -7,6 +7,9 @@ on:
       - main
       - master
 
+permissions:
+  contents: write
+
 jobs:
   build-ios:
     runs-on: macos-14
@@ -47,3 +50,13 @@ jobs:
         with:
           name: FantaEventi-iOS-IPA
           path: mobile/build/ios/iphoneos/FantaEventi.ipa
+
+      - name: Publish Direct Download Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-ios
+          name: "FantaEventi iOS Release (v1.0.0)"
+          body: "File IPA per installazione diretta su iPhone tramite Sideloadly / AltStore."
+          files: mobile/build/ios/iphoneos/FantaEventi.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
