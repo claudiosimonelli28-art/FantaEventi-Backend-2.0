@@ -252,19 +252,29 @@ class ApiService {
         final docs = await db.collection('Utenti').find().toList();
         final List<Utente> list = [];
         for (var d in docs) {
-          final jsonMap = {
-            'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
-            'nome': d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente',
-            'email': d['email'] ?? '',
-            'avatarUrl': d['avatarUrl'] ?? '',
-            'livello': d['livello'] ?? 1,
-            'xp': d['xp'] ?? 100,
-            'xpProssimoLivello': d['xpProssimoLivello'] ?? 1000,
-            'puntiTotali': d['puntiTotali'] ?? 0,
-            'badgeList': d['badgeList'] ?? [],
-            'storicoVoti': d['storicoVoti'] ?? [],
-          };
-          list.add(Utente.fromJson(jsonMap));
+          final jsonMap = Map<String, dynamic>.from(d);
+          jsonMap['id'] = d['_id']?.toHexString() ?? d['_id']?.toString() ?? '';
+          jsonMap['nome'] = d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente';
+          jsonMap['email'] = d['email'] ?? '';
+          jsonMap['avatarUrl'] = d['avatarUrl'] ?? '';
+          jsonMap['livello'] = d['livello'] ?? 1;
+          jsonMap['xp'] = d['xp'] ?? 100;
+          jsonMap['xpProssimoLivello'] = d['xpProssimoLivello'] ?? 1000;
+          jsonMap['puntiTotali'] = d['puntiTotali'] ?? 0;
+          jsonMap['badgeList'] = d['badgeList'] ?? [];
+          jsonMap['storicoVoti'] = d['storicoVoti'] ?? [];
+          jsonMap['codiceAmico'] = d['codiceAmico'] ?? '';
+          jsonMap['amici'] = d['amici'] ?? [];
+          jsonMap['richiesteAmicizia'] = d['richiesteAmicizia'] ?? [];
+          jsonMap['badgeVincitore'] = d['badgeVincitore'] ?? [];
+
+          final uObj = Utente.fromJson(jsonMap);
+          list.add(uObj);
+
+          if (_currentUser != null && uObj.nome.trim().toLowerCase() == _currentUser!.nome.trim().toLowerCase()) {
+            _currentUser = uObj;
+            await _saveSession(_currentUser!);
+          }
         }
         if (list.isNotEmpty) {
           _utenti.clear();
@@ -1451,6 +1461,17 @@ class ApiService {
           _currentUser = _currentUser!.copyWith(amici: updatedAmici);
           await _saveSession(_currentUser!);
         }
+
+        await db.collection('Notifiche').insertOne({
+          'mittente': curUser.nickname,
+          'destinatario': mittente,
+          'titolo': '👥 Richiesta di Amicizia Accettata!',
+          'messaggio': '${curUser.nickname} ha accettato la tua richiesta di amicizia! Ora siete amici.',
+          'eventoId': '',
+          'tipo': 'info',
+          'stato': 'accettato',
+          'data': DateTime.now().toIso8601String(),
+        });
       }
     }
   }
