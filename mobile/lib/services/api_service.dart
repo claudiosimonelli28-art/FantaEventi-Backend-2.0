@@ -224,6 +224,48 @@ class ApiService {
     final curUser = _currentUser;
     if (curUser == null) return null;
     try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        // Self-healing automatico: Sincronizza ed allinea le amicizie da tutte le notifiche accettate
+        final cleanNick = curUser.nickname.trim().toLowerCase();
+        final nots = await db.collection('Notifiche').find(where.eq('tipo', 'richiesta_amicizia').eq('stato', 'accettato')).toList();
+        final Set<String> amiciDaNotifiche = {};
+        for (var n in nots) {
+          final m = (n['mittente'] ?? '').toString().trim();
+          final d = (n['destinatario'] ?? '').toString().trim();
+          if (m.toLowerCase() == cleanNick && d.isNotEmpty) {
+            amiciDaNotifiche.add(d);
+          } else if (d.toLowerCase() == cleanNick && m.isNotEmpty) {
+            amiciDaNotifiche.add(m);
+          }
+        }
+
+        if (amiciDaNotifiche.isNotEmpty) {
+          final uDocs = await db.collection('Utenti').find().toList();
+          for (var uDoc in uDocs) {
+            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
+            if (uName == cleanNick) {
+              final List<dynamic> currentAmici = List.from(uDoc['amici'] ?? []);
+              bool changed = false;
+              for (var a in amiciDaNotifiche) {
+                if (!currentAmici.any((existing) => existing.toString().trim().toLowerCase() == a.toLowerCase())) {
+                  currentAmici.add(a);
+                  changed = true;
+                }
+              }
+              if (changed) {
+                ObjectId? uObjId;
+                try {
+                  uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
+                } catch (_) {}
+                final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
+                await db.collection('Utenti').update(uSelector, modify.set('amici', currentAmici));
+              }
+            }
+          }
+        }
+      }
+
       final utenti = await getUtenti();
       final match = utenti.firstWhere(
         (u) => u.nome.trim().toLowerCase() == curUser.nome.trim().toLowerCase(),
