@@ -69,61 +69,10 @@ class _ProfileViewState extends State<ProfileView> {
 
   Future<void> _caricaProfiloAggiornato() async {
     try {
-      final utenti = await _apiService.getUtenti();
-      final cur = _apiService.currentUser ?? _utente;
-      final match = utenti.firstWhere(
-        (u) => u.nome.trim().toLowerCase() == cur.nome.trim().toLowerCase(),
-        orElse: () => cur,
-      );
-
-      final List<String> finalBadges = match.badgeList.length >= cur.badgeList.length
-          ? match.badgeList
-          : cur.badgeList;
-
-      final List<String> finalStorico = match.storicoVoti.length >= cur.storicoVoti.length
-          ? match.storicoVoti
-          : cur.storicoVoti;
-
-      final List<String> finalAmici = match.amici.length >= cur.amici.length
-          ? match.amici
-          : cur.amici;
-
-      final List<Map<String, dynamic>> finalBadgeVincitore = match.badgeVincitore.length >= cur.badgeVincitore.length
-          ? match.badgeVincitore
-          : cur.badgeVincitore;
-
-      final int highestXp = [
-        _utente.xp,
-        cur.xp,
-        match.xp,
-      ].reduce((a, b) => a > b ? a : b);
-
-      final String finalAvatar = _utente.avatarUrl.contains('data:image')
-          ? _utente.avatarUrl
-          : (match.avatarUrl.isNotEmpty
-              ? match.avatarUrl
-              : (cur.avatarUrl.isNotEmpty ? cur.avatarUrl : _utente.avatarUrl));
-
-      final merged = cur.copyWith(
-        avatarUrl: finalAvatar,
-        xp: highestXp,
-        badgeList: finalBadges,
-        storicoVoti: finalStorico,
-        amici: finalAmici,
-        badgeVincitore: finalBadgeVincitore,
-        codiceAmico: match.codiceAmico.isNotEmpty ? match.codiceAmico : cur.codiceAmico,
-      );
-
-      final hasChanged = _utente.xp != merged.xp ||
-          _utente.avatarUrl != merged.avatarUrl ||
-          _utente.badgeList.length != merged.badgeList.length ||
-          _utente.storicoVoti.length != merged.storicoVoti.length ||
-          _utente.amici.length != merged.amici.length ||
-          _utente.badgeVincitore.length != merged.badgeVincitore.length;
-
-      if (mounted && hasChanged) {
+      final updatedUser = await _apiService.syncCurrentUserFromDb();
+      if (updatedUser != null && mounted) {
         setState(() {
-          _utente = merged;
+          _utente = updatedUser;
         });
       }
     } catch (_) {}

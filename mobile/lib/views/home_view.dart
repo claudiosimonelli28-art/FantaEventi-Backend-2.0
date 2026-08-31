@@ -53,6 +53,8 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
       });
     }
 
+    await _apiService.syncCurrentUserFromDb();
+
     final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
     final meBonus = await _apiService.getBonusMalusList();
     final meVoti = await _apiService.getVotazioni();

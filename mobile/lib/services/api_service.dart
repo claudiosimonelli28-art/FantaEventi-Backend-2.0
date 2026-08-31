@@ -220,6 +220,23 @@ class ApiService {
     return _currentUser!;
   }
 
+  Future<Utente?> syncCurrentUserFromDb() async {
+    final curUser = _currentUser;
+    if (curUser == null) return null;
+    try {
+      final utenti = await getUtenti();
+      final match = utenti.firstWhere(
+        (u) => u.nome.trim().toLowerCase() == curUser.nome.trim().toLowerCase(),
+        orElse: () => curUser,
+      );
+      _currentUser = match;
+      await _saveSession(_currentUser!);
+      return _currentUser;
+    } catch (_) {
+      return _currentUser;
+    }
+  }
+
   // --- SALVATAGGIO FOTO PROFILO / AVATAR PERMANENTE SU MONGODB ATLAS ---
   Future<void> aggiornaAvatarUtente(String username, String newAvatarUrl) async {
     if (_currentUser != null) {
