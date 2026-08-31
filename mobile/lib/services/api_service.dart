@@ -1423,18 +1423,24 @@ class ApiService {
         final docs = await db.collection('Utenti').find().toList();
         for (var d in docs) {
           final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          ObjectId? uObjId;
+          try {
+            uObjId = d['_id'] is ObjectId ? d['_id'] as ObjectId : ObjectId.fromHexString(d['_id'].toString());
+          } catch (_) {}
+          final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', d['_id']);
+
           if (uName == curUser.nickname.toLowerCase()) {
             final List<dynamic> amici = List.from(d['amici'] ?? []);
             if (!amici.any((a) => a.toString().toLowerCase() == mittente.toLowerCase())) {
               amici.add(mittente);
-              await db.collection('Utenti').update(where.id(d['_id'] as ObjectId), modify.set('amici', amici));
+              await db.collection('Utenti').update(uSelector, modify.set('amici', amici));
             }
           }
           if (uName == mittente.toLowerCase()) {
             final List<dynamic> amici = List.from(d['amici'] ?? []);
             if (!amici.any((a) => a.toString().toLowerCase() == curUser.nickname.toLowerCase())) {
               amici.add(curUser.nickname);
-              await db.collection('Utenti').update(where.id(d['_id'] as ObjectId), modify.set('amici', amici));
+              await db.collection('Utenti').update(uSelector, modify.set('amici', amici));
             }
           }
         }

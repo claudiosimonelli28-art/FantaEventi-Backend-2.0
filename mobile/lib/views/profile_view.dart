@@ -84,6 +84,14 @@ class _ProfileViewState extends State<ProfileView> {
           ? match.storicoVoti
           : cur.storicoVoti;
 
+      final List<String> finalAmici = match.amici.length >= cur.amici.length
+          ? match.amici
+          : cur.amici;
+
+      final List<Map<String, dynamic>> finalBadgeVincitore = match.badgeVincitore.length >= cur.badgeVincitore.length
+          ? match.badgeVincitore
+          : cur.badgeVincitore;
+
       final int highestXp = [
         _utente.xp,
         cur.xp,
@@ -101,12 +109,17 @@ class _ProfileViewState extends State<ProfileView> {
         xp: highestXp,
         badgeList: finalBadges,
         storicoVoti: finalStorico,
+        amici: finalAmici,
+        badgeVincitore: finalBadgeVincitore,
+        codiceAmico: match.codiceAmico.isNotEmpty ? match.codiceAmico : cur.codiceAmico,
       );
 
       final hasChanged = _utente.xp != merged.xp ||
           _utente.avatarUrl != merged.avatarUrl ||
           _utente.badgeList.length != merged.badgeList.length ||
-          _utente.storicoVoti.length != merged.storicoVoti.length;
+          _utente.storicoVoti.length != merged.storicoVoti.length ||
+          _utente.amici.length != merged.amici.length ||
+          _utente.badgeVincitore.length != merged.badgeVincitore.length;
 
       if (mounted && hasChanged) {
         setState(() {
@@ -733,6 +746,62 @@ class _ProfileViewState extends State<ProfileView> {
                   ],
                 ),
               ),
+              // LISTA AMICI CONFERMATI
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'I Tuoi Amici (${_utente.amici.length}) 👥',
+                  style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (_utente.amici.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: Text(
+                    'Non hai ancora aggiunto nessun amico. Condividi il tuo Codice Amico!',
+                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: _utente.amici.map((amico) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.6)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor: const Color(0xFF10B981),
+                            child: Text(
+                              amico.isNotEmpty ? amico[0].toUpperCase() : 'A',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            amico,
+                            style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
               const SizedBox(height: 24),
 
               // BACHECA TROFEI VINCITORE
