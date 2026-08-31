@@ -39,8 +39,8 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadData();
-    _liveSyncTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      _loadData(silent: true, forceRefresh: true);
+    _liveSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _loadData(silent: true, forceRefresh: false);
     });
   }
 
@@ -51,9 +51,8 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
       setState(() {
         _isLoading = true;
       });
+      await _apiService.syncCurrentUserFromDb();
     }
-
-    await _apiService.syncCurrentUserFromDb();
 
     final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
     final meBonus = await _apiService.getBonusMalusList();
