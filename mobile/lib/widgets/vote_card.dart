@@ -114,7 +114,37 @@ class VoteCard extends StatelessWidget {
 
           const SizedBox(height: 14),
 
-          if (isProponente)
+          if (votazione.stato == 'approvato')
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF10B981), width: 1.5),
+              ),
+              child: Text(
+                '🟢 VOTAZIONE CONCLUSA: APPROVATA (${votazione.votiFavorevoli} PRO - ${votazione.votiContrari} CONTRO)',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
+              ),
+            )
+          else if (votazione.stato == 'respinto')
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFEF4444), width: 1.5),
+              ),
+              child: Text(
+                '🔴 VOTAZIONE CONCLUSA: RESPINTA (${votazione.votiFavorevoli} PRO - ${votazione.votiContrari} CONTRO)',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444)),
+              ),
+            )
+          else if (isProponente)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(10),

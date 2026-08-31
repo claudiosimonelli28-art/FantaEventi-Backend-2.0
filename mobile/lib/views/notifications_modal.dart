@@ -39,18 +39,24 @@ class _NotificationsModalState extends State<NotificationsModal> {
     }
   }
 
-  Future<void> _rispondi(String notificaId, String azione) async {
+  Future<void> _rispondi(String notificaId, String azione, {String? mittente, String? tipo}) async {
     final curUser = _apiService.currentUser;
     final nick = curUser?.nome ?? 'Cloud';
 
-    await _apiService.rispondiNotifica(notificaId, azione, nick);
+    if (tipo == 'richiesta_amicizia' && mittente != null) {
+      await _apiService.rispondiRichiestaAmicizia(notificaId, mittente, azione == 'accetta');
+    } else {
+      await _apiService.rispondiNotifica(notificaId, azione, nick);
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: azione == 'accetta' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
           content: Text(
-            azione == 'accetta' ? 'Invito accettato con successo! 🎉' : 'Invito rifiutato.',
+            tipo == 'richiesta_amicizia'
+                ? (azione == 'accetta' ? 'Richiesta di amicizia accettata! 👥' : 'Richiesta di amicizia rifiutata.')
+                : (azione == 'accetta' ? 'Invito accettato con successo! 🎉' : 'Invito rifiutato.'),
             style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
           ),
         ),
@@ -216,7 +222,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                       children: [
                                         Expanded(
                                           child: ElevatedButton.icon(
-                                            onPressed: () => _rispondi(not['id'], 'accetta'),
+                                            onPressed: () => _rispondi(not['id'], 'accetta', mittente: not['mittente'], tipo: not['tipo']),
                                             icon: const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
                                             label: const Text('ACCETTA'),
                                             style: ElevatedButton.styleFrom(
@@ -229,7 +235,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                         const SizedBox(width: 10),
                                         Expanded(
                                           child: ElevatedButton.icon(
-                                            onPressed: () => _rispondi(not['id'], 'rifiuta'),
+                                            onPressed: () => _rispondi(not['id'], 'rifiuta', mittente: not['mittente'], tipo: not['tipo']),
                                             icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.white),
                                             label: const Text('RIFIUTA'),
                                             style: ElevatedButton.styleFrom(

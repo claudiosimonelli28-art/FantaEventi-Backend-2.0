@@ -837,49 +837,238 @@ class _EventDetailViewState extends State<EventDetailView> {
                 rankColor = const Color(0xFFCD7F32);
               }
 
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: rank == 1
-                      ? const Color(0xFFFACC15).withValues(alpha: 0.1)
-                      : const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: rank == 1 ? const Color(0xFFFACC15).withValues(alpha: 0.5) : const Color(0xFF334155),
+              return InkWell(
+                onTap: () => _mostraDettaglioStoricoGiocatore(user),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: rank == 1
+                        ? const Color(0xFFFACC15).withValues(alpha: 0.1)
+                        : const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: rank == 1 ? const Color(0xFFFACC15).withValues(alpha: 0.5) : const Color(0xFF334155),
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      '$medalEmoji $rank°',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15, color: rankColor),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        user,
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                  child: Row(
+                    children: [
+                      Text(
+                        '$medalEmoji $rank°',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15, color: rankColor),
                       ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: points >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                        borderRadius: BorderRadius.circular(8),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user,
+                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                            ),
+                            Text(
+                              'Tocco per info & storico bonus 🔍',
+                              style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Text(
-                        '$ptStr PT',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: points >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '$ptStr PT',
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
           ),
         ],
       ),
+    );
+  }
+
+  void _mostraDettaglioStoricoGiocatore(String targetNick) {
+    final curUser = _apiService.currentUser?.nome ?? 'Cloud';
+    final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
+    final isOrganizzatore = creatore.trim().toLowerCase() == curUser.trim().toLowerCase();
+
+    final bonusRicevuti = _allBonusMalus.where((bm) {
+      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+      final isAssigned = bm.assegnatoA.any((u) => u.trim().toLowerCase() == targetNick.trim().toLowerCase());
+      return (isSameEv || _allBonusMalus.length == 1) && isAssigned;
+    }).toList();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: const Color(0xFF9333EA),
+                        child: Text(
+                          targetNick.isNotEmpty ? targetNick[0].toUpperCase() : 'U',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Storico Bonus: $targetNick',
+                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                            ),
+                            Text(
+                              'Bonus e Malus assegnati per "${_evento.titolo}"',
+                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  if (bonusRicevuti.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF334155)),
+                      ),
+                      child: Text(
+                        'Nessun bonus o malus assegnato a $targetNick in questo evento.',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: bonusRicevuti.length,
+                        itemBuilder: (context, idx) {
+                          final bm = bonusRicevuti[idx];
+                          final isBonus = bm.punti >= 0;
+                          final ptStr = isBonus ? '+${bm.punti}' : '${bm.punti}';
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isBonus ? Icons.add_circle : Icons.remove_circle,
+                                  color: isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        bm.titolo,
+                                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                      ),
+                                      if (bm.descrizione.isNotEmpty)
+                                        Text(
+                                          bm.descrizione,
+                                          style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '$ptStr PT',
+                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white),
+                                  ),
+                                ),
+                                if (isOrganizzatore) ...[
+                                  const SizedBox(width: 8),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),
+                                    tooltip: 'Annulla Assegnazione',
+                                    onPressed: () async {
+                                      final conf = await showDialog<bool>(
+                                        context: context,
+                                        builder: (dCtx) => AlertDialog(
+                                          backgroundColor: const Color(0xFF1E293B),
+                                          title: const Text('Annullare Assegnazione?', style: TextStyle(color: Colors.white)),
+                                          content: Text('Vuoi stornare "$bm.titolo" da $targetNick?', style: const TextStyle(color: Color(0xFF94A3B8))),
+                                          actions: [
+                                            TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('NO', style: TextStyle(color: Colors.white70))),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.pop(dCtx, true),
+                                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+                                              child: const Text('ANNULLA', style: TextStyle(color: Colors.white)),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+
+                                      if (conf == true) {
+                                        await _apiService.annullaAssegnazioneBonus(
+                                          eventoId: _evento.id,
+                                          bonusId: bm.id,
+                                          utenteDestinatario: targetNick,
+                                          punti: bm.punti,
+                                        );
+                                        Navigator.pop(ctx);
+                                        _calcolaCoerenzaInvitiEVotazioni();
+                                        widget.onRefresh();
+                                      }
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

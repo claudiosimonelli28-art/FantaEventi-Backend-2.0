@@ -17,6 +17,7 @@ class ProfileView extends StatefulWidget {
 class _ProfileViewState extends State<ProfileView> {
   final ApiService _apiService = ApiService();
   final ImagePicker _picker = ImagePicker();
+  final _codiceAmicoInputController = TextEditingController();
   late Utente _utente;
   File? _fotoLocaleFile;
 
@@ -33,6 +34,37 @@ class _ProfileViewState extends State<ProfileView> {
     super.initState();
     _utente = _apiService.currentUser ?? _apiService.getCurrentUser();
     _caricaProfiloAggiornato();
+  }
+
+  @override
+  void dispose() {
+    _codiceAmicoInputController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _inviaRichiestaAmicizia() async {
+    final code = _codiceAmicoInputController.text.trim();
+    if (code.isEmpty) return;
+
+    try {
+      await _apiService.inviaRichiestaAmicizia(code);
+      _codiceAmicoInputController.clear();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF10B981),
+          content: Text('Richiesta di amicizia inviata con successo! 👥', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFEF4444),
+          content: Text(e.toString().replaceAll('Exception: ', ''), style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      );
+    }
   }
 
   Future<void> _caricaProfiloAggiornato() async {
@@ -462,6 +494,59 @@ class _ProfileViewState extends State<ProfileView> {
                     ),
                     const SizedBox(height: 20),
 
+                    const SizedBox(height: 16),
+
+                    // Codice Amico & Condivisione
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.5)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Il tuo Codice Amico:',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                  ),
+                                  SelectableText(
+                                    _utente.codiceAmico,
+                                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                                  ),
+                                ],
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      backgroundColor: const Color(0xFF10B981),
+                                      content: Text('Codice Amico ${_utente.codiceAmico} copiato! Condividilo su WhatsApp! 📲', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.copy_rounded, size: 16, color: Color(0xFF0F172A)),
+                                label: const Text('COPIA'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFFACC15),
+                                  foregroundColor: const Color(0xFF0F172A),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     // Level XP Progress Card
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -547,7 +632,33 @@ class _ProfileViewState extends State<ProfileView> {
                             child: Column(
                               children: [
                                 Text(
-                                  '${_utente.badgeList.length}',
+                                  '${_utente.amici.length}',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFF10B981),
+                                  ),
+                                ),
+                                Text(
+                                  'Amici',
+                                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E293B),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  '${_utente.badgeVincitore.length}',
                                   style: GoogleFonts.poppins(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
@@ -555,7 +666,7 @@ class _ProfileViewState extends State<ProfileView> {
                                   ),
                                 ),
                                 Text(
-                                  'Badge Sbloccati',
+                                  'Vittorie 🏆',
                                   style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                                 ),
                               ],
@@ -568,6 +679,105 @@ class _ProfileViewState extends State<ProfileView> {
                 ),
               ),
               const SizedBox(height: 24),
+
+              // AGGIUNGI AMICO PER CODICE AMICO
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFFFACC15), size: 22),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Aggiungi Amico per Codice',
+                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _codiceAmicoInputController,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: 'Es. FE-7391...',
+                              hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                              filled: true,
+                              fillColor: const Color(0xFF0F172A),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          onPressed: _inviaRichiestaAmicizia,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF9333EA),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          ),
+                          child: Text('INVIA', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // BACHECA TROFEI VINCITORE
+              if (_utente.badgeVincitore.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Bacheca Vittorie 🏆',
+                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _utente.badgeVincitore.length,
+                  itemBuilder: (ctx, i) {
+                    final b = _utente.badgeVincitore[i];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [Color(0xFFFACC15), Color(0xFFB45309)]),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.emoji_events_rounded, color: Color(0xFF0F172A), size: 28),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('1° POSTO: ${b['evento'] ?? "Evento"}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: const Color(0xFF0F172A))),
+                                Text('Punti totalizzati: ${b['punti'] ?? 0} PT', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A))),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+              ],
 
               // Badge Section
               Align(

@@ -19,6 +19,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
   final _puntiController = TextEditingController(text: '10');
 
   bool _isBonus = true;
+  bool _riassegnabileMoltepliciVolte = false;
   String _categoriaSelezionata = 'Goliardia';
   Evento? _eventoSelezionato;
   bool _isLoading = false;
@@ -78,6 +79,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         categoria: _categoriaSelezionata,
         propostoDa: meUser.nome,
         approvato: false,
+        riassegnabileMoltepliciVolte: _riassegnabileMoltepliciVolte,
       );
 
       await _apiService.proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus);
@@ -387,6 +389,35 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 16),
+
+                // Checkbox Riassegnabile Molteplici Volte
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: CheckboxListTile(
+                    value: _riassegnabileMoltepliciVolte,
+                    onChanged: (val) {
+                      setState(() {
+                        _riassegnabileMoltepliciVolte = val ?? false;
+                      });
+                    },
+                    activeColor: const Color(0xFFFACC15),
+                    checkColor: const Color(0xFF0F172A),
+                    title: Text(
+                      'Riassegnabile più di una volta',
+                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      'Consente di riassegnare questo bonus/malus più volte alla stessa persona',
+                      style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 32),
 

@@ -9,6 +9,7 @@ class BonusMalus {
   final String stato;
   final String eventoId;
   final List<String> assegnatoA;
+  final bool riassegnabileMoltepliciVolte;
 
   BonusMalus({
     required this.id,
@@ -21,6 +22,7 @@ class BonusMalus {
     this.stato = 'in_votazione',
     this.eventoId = '',
     this.assegnatoA = const [],
+    this.riassegnabileMoltepliciVolte = false,
   });
 
   bool get isBonus => punti >= 0;
@@ -40,6 +42,7 @@ class BonusMalus {
               ?.map((e) => e.toString())
               .toList() ??
           const [],
+      riassegnabileMoltepliciVolte: json['riassegnabileMoltepliciVolte'] as bool? ?? false,
     );
   }
 
@@ -55,6 +58,7 @@ class BonusMalus {
       'stato': stato,
       'eventoId': eventoId,
       'assegnatoA': assegnatoA,
+      'riassegnabileMoltepliciVolte': riassegnabileMoltepliciVolte,
     };
   }
 
@@ -69,6 +73,7 @@ class BonusMalus {
     String? stato,
     String? eventoId,
     List<String>? assegnatoA,
+    bool? riassegnabileMoltepliciVolte,
   }) {
     return BonusMalus(
       id: id ?? this.id,
@@ -81,6 +86,7 @@ class BonusMalus {
       stato: stato ?? this.stato,
       eventoId: eventoId ?? this.eventoId,
       assegnatoA: assegnatoA ?? this.assegnatoA,
+      riassegnabileMoltepliciVolte: riassegnabileMoltepliciVolte ?? this.riassegnabileMoltepliciVolte,
     );
   }
 }

@@ -652,7 +652,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                               child: Text(part.substring(0, 1).toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                             ),
                             title: Text(part, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
-                            trailing: giaAssegnato
+                            trailing: (giaAssegnato && !bm.riassegnabileMoltepliciVolte)
                                 ? ElevatedButton.icon(
                                     onPressed: null,
                                     icon: const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF94A3B8)),

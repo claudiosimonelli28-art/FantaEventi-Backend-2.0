@@ -97,11 +97,11 @@ class _CreateEventViewState extends State<CreateEventView> {
 
   Future<void> _caricaUtentiMongoDB() async {
     try {
-      final utenti = await _apiService.getUtenti();
+      final amiciUtenti = await _apiService.getGiocatoriInvitabili();
       if (mounted) {
         setState(() {
-          _utentiMongoDB = utenti;
-          _utentiFiltrati = utenti;
+          _utentiMongoDB = amiciUtenti;
+          _utentiFiltrati = amiciUtenti;
           _isLoadingUtenti = false;
         });
       }

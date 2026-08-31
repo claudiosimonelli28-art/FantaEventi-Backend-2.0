@@ -277,7 +277,7 @@ class ApiService {
     return List.unmodifiable(_utenti);
   }
 
-  // --- REPERIMENTO EVENTI REALI DA MONGODB ATLAS (CON PULIZIA SCADENTI E BADGE STORICO) ---
+  // --- REPERIMENTO EVENTI REALI DA MONGODB ATLAS (CON MANTENIMENTO FINITI 7 GG E BADGE VINCITORE) ---
   Future<List<Evento>> getEventi({bool forceRefresh = false}) async {
     if (!forceRefresh && _lastFetchTime != null && DateTime.now().difference(_lastFetchTime!) < _cacheDuration && _eventi.isNotEmpty) {
       return List.unmodifiable(_eventi);
@@ -290,7 +290,7 @@ class ApiService {
 
         final now = DateTime.now();
         final List<Evento> list = [];
-        final List<ObjectId> expiredIds = [];
+        final List<ObjectId> oldExpiredIds = [];
 
         for (var d in docs) {
           final idStr = d['_id']?.toHexString() ?? d['_id']?.toString() ?? '';
@@ -301,43 +301,64 @@ class ApiService {
           DateTime dtEnd = DateTime.tryParse(dtEndStr) ?? dtStart.add(const Duration(hours: 24));
 
           final partecipanti = (d['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+          final bool isConcluso = now.isAfter(dtEnd);
+          final int giorniDaConclusione = isConcluso ? now.difference(dtEnd).inDays : 0;
 
-          // Se l'evento e' scaduto (l'ora attuale ha superato dataFine)
-          if (now.isAfter(dtEnd)) {
+          // Se l'evento e' finito da piu' di 7 giorni, archivialo dal DB
+          if (isConcluso && giorniDaConclusione > 7) {
             if (d['_id'] is ObjectId) {
-              expiredIds.add(d['_id'] as ObjectId);
+              oldExpiredIds.add(d['_id'] as ObjectId);
             }
+            continue;
+          }
 
-            final badgeStr = '🎉 Partecipato a "${d['titolo'] ?? d['nome'] ?? 'Evento'}" (${dtStart.day}/${dtStart.month} - ${dtEnd.day}/${dtEnd.month}/${dtEnd.year})';
+          // Se l'evento e' appena finito (negli ultimi 7 giorni), assegna il Badge Vincitore al 1° in classifica
+          if (isConcluso && d['badgeVincitoreAssegnato'] != true) {
+            try {
+              // Assegna badge al 1° in classifica
+              final bmList = await db.collection('BonusMalus').find(where.eq('eventoId', idStr)).toList();
+              final Map<String, int> punteggi = {for (var p in partecipanti) p: 0};
+              for (var bm in bmList) {
+                if (bm['approvato'] == true || bm['stato'] == 'approvato') {
+                  final pt = (bm['punti'] as num?)?.toInt() ?? 0;
+                  final ass = (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                  for (var u in ass) {
+                    punteggi[u] = (punteggi[u] ?? 0) + pt;
+                  }
+                }
+              }
 
-            for (var partUser in partecipanti) {
-              final cleanPart = partUser.trim().toLowerCase();
-              try {
+              if (punteggi.isNotEmpty) {
+                final sorted = punteggi.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+                final vincitoreNick = sorted.first.key;
+                final badgeMap = {
+                  'titolo': '🏆 Vincitore Evento',
+                  'evento': d['titolo'] ?? d['nome'] ?? 'Evento Fanta',
+                  'punti': sorted.first.value,
+                  'data': DateTime.now().toIso8601String(),
+                };
+
                 final uDocs = await db.collection('Utenti').find().toList();
                 for (var uDoc in uDocs) {
                   final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-                  if (uName == cleanPart && cleanPart.isNotEmpty) {
-                    final List<dynamic> currentBadges = List.from(uDoc['badgeList'] ?? []);
-                    if (!currentBadges.contains(badgeStr)) {
-                      currentBadges.add(badgeStr);
+                  if (uName == vincitoreNick.toLowerCase()) {
+                    final List<dynamic> currentBadgeVincitore = List.from(uDoc['badgeVincitore'] ?? []);
+                    if (!currentBadgeVincitore.any((b) => b['evento'] == badgeMap['evento'])) {
+                      currentBadgeVincitore.add(badgeMap);
                       await db.collection('Utenti').update(
                         where.id(uDoc['_id'] as ObjectId),
-                        modify.set('badgeList', currentBadges),
+                        modify.set('badgeVincitore', currentBadgeVincitore),
                       );
                     }
                   }
                 }
-              } catch (_) {}
-
-              if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanPart) {
-                final List<String> currentBadges = List.from(_currentUser!.badgeList);
-                if (!currentBadges.contains(badgeStr)) {
-                  currentBadges.add(badgeStr);
-                  _currentUser = _currentUser!.copyWith(badgeList: currentBadges);
-                }
               }
-            }
-            continue; // Non mostrare l'evento scaduto tra gli eventi attivi!
+
+              // Segna che il badge vincitore per questo evento e' stato assegnato
+              if (d['_id'] is ObjectId) {
+                await db.collection('Evento').update(where.id(d['_id'] as ObjectId), modify.set('badgeVincitoreAssegnato', true).set('stato', 'concluso'));
+              }
+            } catch (_) {}
           }
 
           final Map<String, dynamic> jsonMap = {
@@ -347,7 +368,7 @@ class ApiService {
             'data': dtStartStr,
             'dataFine': dtEndStr,
             'luogo': d['luogo'] ?? '',
-            'stato': d['stato'] ?? 'in_programma',
+            'stato': isConcluso ? 'concluso' : (d['stato'] ?? 'in_programma'),
             'propostoDa': d['propostoDa'] ?? d['creatore'] ?? 'Cloud',
             'partecipanti': partecipanti,
             'invitati': (d['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
@@ -357,12 +378,11 @@ class ApiService {
           list.add(Evento.fromJson(jsonMap));
         }
 
-        // Rimozione definitiva dal DB degli eventi scaduti E dei loro bonus/notifiche collegati
-        for (var expId in expiredIds) {
+        // Rimozione definitiva dal DB degli eventi scaduti da oltre 7 giorni
+        for (var expId in oldExpiredIds) {
           try {
             final expIdStr = expId.toHexString();
             await db.collection('Evento').remove(where.id(expId));
-
             final bmDocs = await db.collection('BonusMalus').find(where.eq('eventoId', expIdStr)).toList();
             for (var bm in bmDocs) {
               final bmId = bm['_id']?.toHexString() ?? bm['_id']?.toString() ?? '';
@@ -810,8 +830,7 @@ class ApiService {
       final ev = _eventi[index];
       final quorumCalcolato = 2;
       final curUserNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
-      final isAutoApprovato = false;
-      
+
       final meVotazione = Votazione(
         id: 'v_${DateTime.now().millisecondsSinceEpoch}',
         titolo: 'Votazione per "${ev.titolo}": ${nuovoBonus.titolo}',
@@ -1055,7 +1074,6 @@ class ApiService {
                   ?.map((e) => e.toString())
                   .toList() ??
               [];
-          final meStato = bm['stato']?.toString() ?? 'in_votazione';
 
           // Se l'evento associato e' stato eliminato o scaduto, pulisci il bonus orfano
           if (evId.isNotEmpty && _eventi.isNotEmpty && !_eventi.any((e) => e.id == evId)) {
@@ -1275,5 +1293,168 @@ class ApiService {
     }
 
     return votazioneAggiornata;
+  }
+
+  // --- ANNULLA ASSEGNAZIONE BONUS (ROLLBACK PER IL CREATORE DELL'EVENTO) ---
+  Future<void> annullaAssegnazioneBonus({
+    required String eventoId,
+    required String bonusId,
+    required String utenteDestinatario,
+    required int punti,
+  }) async {
+    invalidateCache();
+    final cleanDest = utenteDestinatario.trim().toLowerCase();
+
+    // 1. In-memory update
+    for (int i = 0; i < _bonusMalusList.length; i++) {
+      if (_bonusMalusList[i].id == bonusId) {
+        final List<String> list = List.from(_bonusMalusList[i].assegnatoA);
+        list.removeWhere((u) => u.trim().toLowerCase() == cleanDest);
+        _bonusMalusList[i] = _bonusMalusList[i].copyWith(assegnatoA: list);
+      }
+    }
+
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? bmObjId;
+        try { bmObjId = ObjectId.fromHexString(bonusId); } catch (_) {}
+        final bmSelector = bmObjId != null ? where.id(bmObjId) : where.eq('_id', bonusId);
+        var bmDoc = await db.collection('BonusMalus').findOne(bmSelector);
+        if (bmDoc != null) {
+          final List<dynamic> assList = List.from(bmDoc['assegnatoA'] ?? []);
+          assList.removeWhere((u) => u.toString().trim().toLowerCase() == cleanDest);
+          await db.collection('BonusMalus').update(
+            where.id(bmDoc['_id'] as ObjectId),
+            modify.set('assegnatoA', assList),
+          );
+        }
+
+        // Storna i punti dall'utente
+        final uDocs = await db.collection('Utenti').find().toList();
+        for (var uDoc in uDocs) {
+          final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
+          if (uName == cleanDest) {
+            final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
+            final oldXp = (uDoc['xp'] ?? 100) as int;
+            final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
+            oldStorico.insert(0, '⚠️ Annullata assegnazione bonus (-$punti PT)');
+
+            await db.collection('Utenti').update(
+              where.id(uDoc['_id'] as ObjectId),
+              modify
+                  .set('puntiTotali', oldPunti - punti)
+                  .set('xp', (oldXp - (punti > 0 ? punti * 10 : 0)).clamp(100, 999999))
+                  .set('storicoVoti', oldStorico),
+            );
+
+            if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanDest) {
+              _currentUser = _currentUser!.copyWith(
+                puntiTotali: oldPunti - punti,
+                xp: (oldXp - (punti > 0 ? punti * 10 : 0)).clamp(100, 999999),
+                storicoVoti: oldStorico.map((e) => e.toString()).toList(),
+              );
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // --- SISTEMA DI GESTIONE AMICIZIE ---
+
+  Future<void> inviaRichiestaAmicizia(String codiceAmico) async {
+    final cleanCode = codiceAmico.trim().toUpperCase();
+    final curUser = _currentUser;
+    if (curUser == null) throw Exception('Utente non autenticato');
+    if (cleanCode == curUser.codiceAmico.toUpperCase()) {
+      throw Exception('Non puoi inviare una richiesta di amicizia a te stesso!');
+    }
+
+    final db = await _getMongoDb();
+    if (db != null && db.isConnected) {
+      final docs = await db.collection('Utenti').find().toList();
+      Utente? targetUser;
+      for (var d in docs) {
+        final u = Utente.fromJson(d);
+        if (u.codiceAmico.toUpperCase() == cleanCode || u.nickname.toLowerCase() == cleanCode.toLowerCase()) {
+          targetUser = u;
+          break;
+        }
+      }
+
+      if (targetUser == null) {
+        throw Exception('Nessun utente trovato con il codice "$cleanCode"');
+      }
+
+      if (curUser.amici.any((a) => a.toLowerCase() == targetUser!.nickname.toLowerCase())) {
+        throw Exception('Siete già amici!');
+      }
+
+      await db.collection('Notifiche').insertOne({
+        'mittente': curUser.nickname,
+        'destinatario': targetUser.nickname,
+        'titolo': '👥 Nuova Richiesta di Amicizia',
+        'messaggio': '${curUser.nickname} vuole aggiungerti agli amici!',
+        'eventoId': '',
+        'tipo': 'richiesta_amicizia',
+        'stato': 'in_attesa',
+        'codiceAmico': curUser.codiceAmico,
+        'data': DateTime.now().toIso8601String(),
+      });
+    }
+  }
+
+  Future<void> rispondiRichiestaAmicizia(String notificaId, String mittente, bool accetta) async {
+    final curUser = _currentUser;
+    if (curUser == null) return;
+    final db = await _getMongoDb();
+    if (db != null && db.isConnected) {
+      ObjectId? objId;
+      try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}
+      final selector = objId != null ? where.id(objId) : where.eq('_id', notificaId);
+
+      await db.collection('Notifiche').update(
+        selector,
+        modify.set('stato', accetta ? 'accettato' : 'rifiutato').set('letto', true),
+      );
+
+      if (accetta) {
+        final docs = await db.collection('Utenti').find().toList();
+        for (var d in docs) {
+          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          if (uName == curUser.nickname.toLowerCase()) {
+            final List<dynamic> amici = List.from(d['amici'] ?? []);
+            if (!amici.any((a) => a.toString().toLowerCase() == mittente.toLowerCase())) {
+              amici.add(mittente);
+              await db.collection('Utenti').update(where.id(d['_id'] as ObjectId), modify.set('amici', amici));
+            }
+          }
+          if (uName == mittente.toLowerCase()) {
+            final List<dynamic> amici = List.from(d['amici'] ?? []);
+            if (!amici.any((a) => a.toString().toLowerCase() == curUser.nickname.toLowerCase())) {
+              amici.add(curUser.nickname);
+              await db.collection('Utenti').update(where.id(d['_id'] as ObjectId), modify.set('amici', amici));
+            }
+          }
+        }
+
+        final updatedAmici = List<String>.from(curUser.amici);
+        if (!updatedAmici.any((a) => a.toLowerCase() == mittente.toLowerCase())) {
+          updatedAmici.add(mittente);
+          _currentUser = _currentUser!.copyWith(amici: updatedAmici);
+          await _saveSession(_currentUser!);
+        }
+      }
+    }
+  }
+
+  // Restituisce ESCLUSIVAMENTE gli utenti presenti nella lista amici di _currentUser per l'invito agli eventi
+  Future<List<Utente>> getGiocatoriInvitabili() async {
+    final curUser = _currentUser;
+    if (curUser == null) return [];
+    final tutti = await getUtenti();
+    final amiciLower = curUser.amici.map((a) => a.toLowerCase()).toSet();
+    return tutti.where((u) => amiciLower.contains(u.nickname.toLowerCase())).toList();
   }
 }
