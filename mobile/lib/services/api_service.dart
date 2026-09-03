@@ -992,13 +992,16 @@ class ApiService {
     final mittente = _currentUser?.nome ?? 'Organizzatore';
     final cleanDest = utenteDestinatario.trim().toLowerCase();
     final ptStr = punti >= 0 ? '+$punti' : '$punti';
-    final logText = '🏆 Ricevuto ${punti >= 0 ? "Bonus" : "Malus"} "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"';
+    final now = DateTime.now();
+    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final logText = '🏆 Ricevuto ${punti >= 0 ? "Bonus" : "Malus"} "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo" ($timeStr)';
 
     // 1. Aggiorna la memoria in-memory del BonusMalus inserendo utenteDestinatario in assegnatoA
     for (int i = 0; i < _bonusMalusList.length; i++) {
       if (_bonusMalusList[i].id == bonusId || _bonusMalusList[i].titolo.toLowerCase() == bonusTitolo.toLowerCase()) {
         final List<String> list = List.from(_bonusMalusList[i].assegnatoA);
-        if (!list.any((u) => u.trim().toLowerCase() == cleanDest)) {
+        final isMulti = _bonusMalusList[i].riassegnabileMoltepliciVolte;
+        if (isMulti || !list.any((u) => u.trim().toLowerCase() == cleanDest)) {
           list.add(utenteDestinatario);
         }
         _bonusMalusList[i] = _bonusMalusList[i].copyWith(assegnatoA: list);
@@ -1021,7 +1024,8 @@ class ApiService {
         }
         if (bmDoc != null) {
           final List<dynamic> assList = List.from(bmDoc['assegnatoA'] ?? []);
-          if (!assList.any((u) => u.toString().trim().toLowerCase() == cleanDest)) {
+          final bool isMulti = bmDoc['riassegnabileMoltepliciVolte'] == true;
+          if (isMulti || !assList.any((u) => u.toString().trim().toLowerCase() == cleanDest)) {
             assList.add(utenteDestinatario);
           }
           await db.collection('BonusMalus').update(
@@ -1038,12 +1042,16 @@ class ApiService {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
             final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
-            if (!oldStorico.any((e) => e.toString() == logText)) {
-              oldStorico.insert(0, logText);
-            }
+            oldStorico.insert(0, logText);
+
+            ObjectId? uObjId;
+            try {
+              uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
+            } catch (_) {}
+            final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
 
             await db.collection('Utenti').update(
-              where.id(uDoc['_id'] as ObjectId),
+              uSelector,
               modify
                   .set('puntiTotali', oldPunti + punti)
                   .set('xp', oldXp + (punti > 0 ? punti * 10 : 0))
@@ -1060,7 +1068,7 @@ class ApiService {
           }
         }
 
-        // 4. Invia notifica BROADCAST a TUTTI i partecipanti dell'evento
+        // 4. Invia notifica BROADCAST a TUTTI i partecipanti dell'evento (con ID e Timestamp univoco)
         final evDocs = await db.collection('Evento').find().toList();
         final evMatch = evDocs.firstWhere(
           (e) => (e['_id']?.toHexString() == eventoId || e['_id']?.toString() == eventoId || (e['titolo'] ?? '').toString().toLowerCase() == eventoTitolo.toLowerCase()),
@@ -1082,8 +1090,10 @@ class ApiService {
           destList.addAll(['Cloud', 'Ugnom']);
         }
 
+        final int ts = now.millisecondsSinceEpoch;
         for (var d in destList) {
           await db.collection('Notifiche').insertOne({
+            'notificaId': 'bm_ass_${ts}_${d.toLowerCase()}',
             'mittente': mittente,
             'destinatario': d,
             'titolo': '🏆 Bonus/Malus Assegnato!',
@@ -1091,8 +1101,9 @@ class ApiService {
             'eventoId': eventoId,
             'tipo': 'info',
             'stato': 'accettato',
+            'letto': false,
             'votoEspresso': 'pro',
-            'data': DateTime.now().toIso8601String(),
+            'data': now.toIso8601String(),
           });
         }
       }
@@ -1446,22 +1457,34 @@ class ApiService {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
             final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
-            oldStorico.insert(0, '⚠️ Annullata assegnazione bonus (-$punti PT)');
+            final now = DateTime.now();
+            final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+            oldStorico.insert(0, '⚠️ Annullata assegnazione bonus (-$punti PT) (ore $timeStr)');
+
+            ObjectId? uObjId;
+            try {
+              uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
+            } catch (_) {}
+            final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
+
+            final newPunti = (oldPunti - punti).clamp(0, 999999);
+            final newXp = (oldXp - (punti > 0 ? punti * 10 : 0)).clamp(100, 999999);
 
             await db.collection('Utenti').update(
-              where.id(uDoc['_id'] as ObjectId),
+              uSelector,
               modify
-                  .set('puntiTotali', oldPunti - punti)
-                  .set('xp', (oldXp - (punti > 0 ? punti * 10 : 0)).clamp(100, 999999))
+                  .set('puntiTotali', newPunti)
+                  .set('xp', newXp)
                   .set('storicoVoti', oldStorico),
             );
 
             if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanDest) {
               _currentUser = _currentUser!.copyWith(
-                puntiTotali: oldPunti - punti,
-                xp: (oldXp - (punti > 0 ? punti * 10 : 0)).clamp(100, 999999),
+                puntiTotali: newPunti,
+                xp: newXp,
                 storicoVoti: oldStorico.map((e) => e.toString()).toList(),
               );
+              await _saveSession(_currentUser!);
             }
           }
         }
