@@ -847,6 +847,7 @@ class ApiService {
           'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
           'propostoDa': curUserNick,
           'stato': 'in_votazione',
+          'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
         });
 
         final Map<String, String> uniqueDestMap = {};
@@ -897,7 +898,8 @@ class ApiService {
     final index = _eventi.indexWhere((e) => e.id == eventoId);
     if (index != -1) {
       final ev = _eventi[index];
-      final quorumCalcolato = 2;
+      final numPartecipanti = ev.partecipanti.length >= 2 ? ev.partecipanti.length : 3;
+      final quorumCalcolato = (numPartecipanti / 2).floor() + 1;
       final curUserNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
 
       final meVotazione = Votazione(
@@ -1175,6 +1177,26 @@ class ApiService {
             }
           }
 
+          final evMatch = _eventi.firstWhere(
+            (e) => e.id.trim().toLowerCase() == evId.trim().toLowerCase() ||
+                e.titolo.trim().toLowerCase() == evId.trim().toLowerCase(),
+            orElse: () => Evento(
+              id: '',
+              titolo: '',
+              descrizione: '',
+              data: DateTime.now(),
+              luogo: '',
+              stato: '',
+              propostoDa: '',
+              partecipanti: [],
+              bonusMalusApplicati: [],
+              votazioniAttive: [],
+            ),
+          );
+
+          final numPartecipanti = evMatch.partecipanti.length >= 2 ? evMatch.partecipanti.length : 3;
+          final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
+
           int fav = 0;
           int cont = 0;
           votiUtenti.forEach((user, vote) {
@@ -1182,9 +1204,25 @@ class ApiService {
             if (vote == 'contro') cont++;
           });
 
-          final isApprovato = (fav >= 2);
-          final isRespinto = (cont >= 2);
+          final totalVotiEspressi = fav + cont;
+          bool isApprovato = (fav >= quorumCalcolato);
+          bool isRespinto = (cont >= quorumCalcolato);
+
+          if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
+            final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
+            final creatoreVoteKey = votiUtenti.keys.firstWhere(
+              (k) => k.trim().toLowerCase() == cleanCreatore,
+              orElse: () => '',
+            );
+            if (creatoreVoteKey.isNotEmpty) {
+              final creatoreVote = votiUtenti[creatoreVoteKey];
+              if (creatoreVote == 'pro') isApprovato = true;
+              if (creatoreVote == 'contro') isRespinto = true;
+            }
+          }
+
           final statoVot = isApprovato ? 'approvato' : (isRespinto ? 'respinto' : 'in_corso');
+          final bool riassegnabile = bm['riassegnabileMoltepliciVolte'] == true;
 
           final bmObj = BonusMalus(
             id: bmId,
@@ -1197,6 +1235,7 @@ class ApiService {
             approvato: isApprovato,
             stato: statoVot,
             assegnatoA: assList,
+            riassegnabileMoltepliciVolte: riassegnabile,
           );
 
           if (isApprovato) {
@@ -1210,7 +1249,7 @@ class ApiService {
             bonusMalus: bmObj,
             votiFavorevoli: fav,
             votiContrari: cont,
-            quorum: 2,
+            quorum: quorumCalcolato,
             stato: statoVot,
             scadenza: DateTime.now().add(const Duration(days: 7)),
             votiUtenti: votiUtenti,
