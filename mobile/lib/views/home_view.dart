@@ -770,15 +770,39 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   }
 
   Widget _buildVotazioniTab() {
+    final activeVotazioni = _votazioniList.where((v) {
+      final evMatch = _eventi.firstWhere(
+        (e) => (v.bonusMalus?.eventoId.isNotEmpty == true && e.id.trim().toLowerCase() == v.bonusMalus!.eventoId.trim().toLowerCase()) ||
+               (e.titolo.isNotEmpty && v.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
+               (e.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+        orElse: () => Evento(
+          id: '',
+          titolo: '',
+          descrizione: '',
+          data: DateTime.now(),
+          luogo: '',
+          stato: '',
+          propostoDa: '',
+          partecipanti: [],
+          bonusMalusApplicati: [],
+          votazioniAttive: [],
+        ),
+      );
+      if (evMatch.id.isNotEmpty && (evMatch.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(evMatch.dataFine))) {
+        return false;
+      }
+      return true;
+    }).toList();
+
     Widget child;
-    if (_votazioniList.isEmpty) {
+    if (activeVotazioni.isEmpty) {
       child = SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: SizedBox(
           height: MediaQuery.of(context).size.height * 0.7,
           child: Center(
             child: Text(
-              'Nessuna votazione attiva al momento.',
+              'Nessuna votazione attiva al momento per eventi in corso.',
               style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
             ),
           ),
@@ -788,9 +812,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
       child = ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        itemCount: _votazioniList.length,
+        itemCount: activeVotazioni.length,
         itemBuilder: (ctx, idx) {
-          final v = _votazioniList[idx];
+          final v = activeVotazioni[idx];
           return VoteCard(
             votazione: v,
             currentUserNickname: _apiService.currentUser?.nome ?? 'Cloud',
