@@ -441,23 +441,36 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     Widget child;
     if (_eventi.isEmpty) {
       child = SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.7,
-          child: Center(
+    final activeEvents = _eventi.where((e) =>
+      e.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(e.dataFine)
+    ).toList();
+
+    Widget child;
+    if (activeEvents.isEmpty) {
+      child = Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.folder_off_rounded, size: 64, color: Color(0xFF64748B)),
                 const SizedBox(height: 16),
                 Text(
-                  'Nessuna cartella evento creata',
+                  'Nessuna cartella evento in corso',
                   style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Crea un evento per sbloccare la sua cartella Bonus/Malus!',
+                  'Crea o partecipa ad un evento attivo per sbloccare i suoi Bonus/Malus!',
                   style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -468,9 +481,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
       child = ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        itemCount: _eventi.length,
+        itemCount: activeEvents.length,
         itemBuilder: (ctx, idx) {
-          final ev = _eventi[idx];
+          final ev = activeEvents[idx];
           final cleanCreatore = (ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa).trim().toLowerCase();
           final isOrganizzatore = cleanCreatore == cleanUser;
 

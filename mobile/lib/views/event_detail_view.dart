@@ -682,24 +682,25 @@ class _EventDetailViewState extends State<EventDetailView> {
                         ),
                       if (!giaPartecipa) const SizedBox(width: 12),
 
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            await Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => AddBonusMalusView(evento: _evento)),
-                            );
-                            widget.onRefresh();
-                          },
-                          icon: const Icon(Icons.stars, color: Colors.white),
-                          label: const Text('PROPONI BONUS'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF9333EA),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      if (_evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(builder: (_) => AddBonusMalusView(evento: _evento)),
+                              );
+                              widget.onRefresh();
+                            },
+                            icon: const Icon(Icons.stars, color: Colors.white),
+                            label: const Text('PROPONI BONUS'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF9333EA),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -714,42 +715,7 @@ class _EventDetailViewState extends State<EventDetailView> {
 
   Widget _buildLeaderboardSection() {
     final now = DateTime.now();
-    final isStarted = now.isAfter(_evento.data) || now.isAtSameMomentAs(_evento.data);
-
-    if (!isStarted) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFF334155)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.lock_clock_rounded, color: Color(0xFFFACC15), size: 24),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '🏆 Classifica Live Evento',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'La classifica si attiverà all\'orario di inizio evento (${_evento.data.day}/${_evento.data.month} alle ${_evento.data.hour.toString().padLeft(2, '0')}:${_evento.data.minute.toString().padLeft(2, '0')}).',
-                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
+    
     // Calcolo Punti Evento per ciascun partecipante
     final Map<String, int> puntiPerPartecipante = {};
     for (var p in _partecipantiConfermati) {
@@ -760,13 +726,10 @@ class _EventDetailViewState extends State<EventDetailView> {
       final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
           bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
       if (isSameEv || _allBonusMalus.length == 1) {
-        for (var assignedUser in bm.assegnatoA) {
-          final matchPart = _partecipantiConfermati.firstWhere(
-            (p) => p.trim().toLowerCase() == assignedUser.trim().toLowerCase(),
-            orElse: () => '',
-          );
-          if (matchPart.isNotEmpty) {
-            puntiPerPartecipante[matchPart] = (puntiPerPartecipante[matchPart] ?? 0) + bm.punti;
+        for (var p in _partecipantiConfermati) {
+          final count = bm.assegnatoA.where((u) => u.trim().toLowerCase() == p.trim().toLowerCase()).length;
+          if (count > 0) {
+            puntiPerPartecipante[p] = (puntiPerPartecipante[p] ?? 0) + (bm.punti * count);
           }
         }
       }
@@ -775,138 +738,153 @@ class _EventDetailViewState extends State<EventDetailView> {
     final sortedEntries = puntiPerPartecipante.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.6), width: 1.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFACC15).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 24),
-              ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '🏆 Classifica Live Evento',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
-                  ),
-                  Text(
-                    'Punteggi aggiornati in tempo reale per "${_evento.titolo}"',
-                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: sortedEntries.length,
-            itemBuilder: (ctx, i) {
-              final entry = sortedEntries[i];
-              final rank = i + 1;
-              final user = entry.key;
-              final points = entry.value;
-              final ptStr = points >= 0 ? '+$points' : '$points';
+    final isConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || now.isAfter(_evento.dataFine);
 
-              String medalEmoji = '🏅';
-              Color rankColor = const Color(0xFF94A3B8);
-              if (rank == 1) {
-                medalEmoji = '🥇';
-                rankColor = const Color(0xFFFACC15);
-              } else if (rank == 2) {
-                medalEmoji = '🥈';
-                rankColor = const Color(0xFFCBD5E1);
-              } else if (rank == 3) {
-                medalEmoji = '🥉';
-                rankColor = const Color(0xFFCD7F32);
-              }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 22),
+            const SizedBox(width: 8),
+            Text(
+              isConcluso ? '🏆 Classifica Finale Evento (Concluso)' : '🏆 Classifica Live Evento',
+              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            const Spacer(),
+            if (isConcluso)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF10B981)),
+                ),
+                child: Text(
+                  '🔒 CONGELATO',
+                  style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Column(
+            children: List.generate(sortedEntries.length, (idx) {
+              final entry = sortedEntries[idx];
+              final nick = entry.key;
+              final pts = entry.value;
+              final isFirst = idx == 0;
+              final isSecond = idx == 1;
+              final isThird = idx == 2;
+
+              final badgeColor = isFirst
+                  ? const Color(0xFFFACC15)
+                  : isSecond
+                      ? const Color(0xFF94A3B8)
+                      : isThird
+                          ? const Color(0xFFB45309)
+                          : const Color(0xFF334155);
+
+              final rankIcon = isFirst ? '🥇' : isSecond ? '🥈' : isThird ? '🥉' : '#${idx + 1}';
 
               return InkWell(
-                onTap: () => _mostraDettaglioStoricoGiocatore(user),
-                borderRadius: BorderRadius.circular(12),
+                onTap: () => _mostraDettaglioStoricoGiocatore(nick),
+                borderRadius: BorderRadius.vertical(
+                  top: idx == 0 ? const Radius.circular(16) : Radius.zero,
+                  bottom: idx == sortedEntries.length - 1 ? const Radius.circular(16) : Radius.zero,
+                ),
                 child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: rank == 1
-                        ? const Color(0xFFFACC15).withValues(alpha: 0.1)
-                        : const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: rank == 1 ? const Color(0xFFFACC15).withValues(alpha: 0.5) : const Color(0xFF334155),
-                    ),
+                    border: idx < sortedEntries.length - 1
+                        ? const Border(bottom: BorderSide(color: Color(0xFF334155)))
+                        : null,
                   ),
                   child: Row(
                     children: [
-                      Text(
-                        '$medalEmoji $rank°',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 15, color: rankColor),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: badgeColor.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          rankIcon,
+                          style: TextStyle(
+                            fontSize: isFirst || isSecond || isThird ? 18 : 13,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              user,
-                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
-                            ),
-                            Text(
-                              'Tocco per info & storico bonus 🔍',
-                              style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF94A3B8)),
-                            ),
-                          ],
+                        child: Text(
+                          nick,
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: points >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                          borderRadius: BorderRadius.circular(8),
+                          color: pts >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          '$ptStr PT',
-                          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.white),
+                          '${pts >= 0 ? "+" : ""}$pts PT',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8), size: 18),
                     ],
                   ),
                 ),
               );
-            },
+            }),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   void _mostraDettaglioStoricoGiocatore(String targetNick) {
     final curUser = _apiService.currentUser?.nome ?? 'Cloud';
     final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
-    final isOrganizzatore = creatore.trim().toLowerCase() == curUser.trim().toLowerCase();
+    final isEventoConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(_evento.dataFine);
+    final isOrganizzatore = !isEventoConcluso && (creatore.trim().toLowerCase() == curUser.trim().toLowerCase());
 
-    final bonusRicevuti = _allBonusMalus.where((bm) {
+    final List<Map<String, dynamic>> istanzeAssegnazioni = [];
+    for (var bm in _allBonusMalus) {
       final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
           bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-      final isAssigned = bm.assegnatoA.any((u) => u.trim().toLowerCase() == targetNick.trim().toLowerCase());
-      return (isSameEv || _allBonusMalus.length == 1) && isAssigned;
-    }).toList();
+      if (isSameEv || _allBonusMalus.length == 1) {
+        final count = bm.assegnatoA.where((u) => u.trim().toLowerCase() == targetNick.trim().toLowerCase()).length;
+        for (int i = 0; i < count; i++) {
+          istanzeAssegnazioni.add({
+            'bonus': bm,
+            'numIstanza': i + 1,
+            'totaleIstanze': count,
+          });
+        }
+      }
+    }
 
     showModalBottomSheet(
       context: context,
@@ -942,7 +920,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                               style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
                             ),
                             Text(
-                              'Bonus e Malus assegnati per "${_evento.titolo}"',
+                              isEventoConcluso
+                                  ? 'Punteggi congelati per l\'evento "${_evento.titolo}"'
+                                  : 'Bonus e Malus assegnati per "${_evento.titolo}"',
                               style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                             ),
                           ],
@@ -952,7 +932,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                   ),
                   const SizedBox(height: 20),
 
-                  if (bonusRicevuti.isEmpty)
+                  if (istanzeAssegnazioni.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -971,11 +951,17 @@ class _EventDetailViewState extends State<EventDetailView> {
                     Flexible(
                       child: ListView.builder(
                         shrinkWrap: true,
-                        itemCount: bonusRicevuti.length,
+                        itemCount: istanzeAssegnazioni.length,
                         itemBuilder: (context, idx) {
-                          final bm = bonusRicevuti[idx];
+                          final item = istanzeAssegnazioni[idx];
+                          final BonusMalus bm = item['bonus'];
+                          final int numIstanza = item['numIstanza'];
+                          final int totaleIstanze = item['totaleIstanze'];
                           final isBonus = bm.punti >= 0;
                           final ptStr = isBonus ? '+${bm.punti}' : '${bm.punti}';
+                          final labelTitolo = totaleIstanze > 1
+                              ? '${bm.titolo} (#$numIstanza)'
+                              : bm.titolo;
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 10),
@@ -998,7 +984,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        bm.titolo,
+                                        labelTitolo,
                                         style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
                                       ),
                                       if (bm.descrizione.isNotEmpty)
@@ -1024,14 +1010,14 @@ class _EventDetailViewState extends State<EventDetailView> {
                                   const SizedBox(width: 8),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),
-                                    tooltip: 'Annulla Assegnazione',
+                                    tooltip: 'Annulla Singola Assegnazione',
                                     onPressed: () async {
                                       final conf = await showDialog<bool>(
                                         context: context,
                                         builder: (dCtx) => AlertDialog(
                                           backgroundColor: const Color(0xFF1E293B),
                                           title: const Text('Annullare Assegnazione?', style: TextStyle(color: Colors.white)),
-                                          content: Text('Vuoi stornare "$bm.titolo" da $targetNick?', style: const TextStyle(color: Color(0xFF94A3B8))),
+                                          content: Text('Vuoi stornare "$labelTitolo" da $targetNick?', style: const TextStyle(color: Color(0xFF94A3B8))),
                                           actions: [
                                             TextButton(onPressed: () => Navigator.pop(dCtx, false), child: const Text('NO', style: TextStyle(color: Colors.white70))),
                                             ElevatedButton(

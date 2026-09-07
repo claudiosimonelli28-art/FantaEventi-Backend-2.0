@@ -1424,11 +1424,14 @@ class ApiService {
     invalidateCache();
     final cleanDest = utenteDestinatario.trim().toLowerCase();
 
-    // 1. In-memory update
+    // 1. In-memory update (rimuove SOLO la singola istanza in caso di assegnazioni multiple)
     for (int i = 0; i < _bonusMalusList.length; i++) {
-      if (_bonusMalusList[i].id == bonusId) {
+      if (_bonusMalusList[i].id == bonusId || _bonusMalusList[i].titolo.toLowerCase() == bonusId.toLowerCase()) {
         final List<String> list = List.from(_bonusMalusList[i].assegnatoA);
-        list.removeWhere((u) => u.trim().toLowerCase() == cleanDest);
+        final idx = list.indexWhere((u) => u.trim().toLowerCase() == cleanDest);
+        if (idx != -1) {
+          list.removeAt(idx);
+        }
         _bonusMalusList[i] = _bonusMalusList[i].copyWith(assegnatoA: list);
       }
     }
@@ -1442,7 +1445,10 @@ class ApiService {
         var bmDoc = await db.collection('BonusMalus').findOne(bmSelector);
         if (bmDoc != null) {
           final List<dynamic> assList = List.from(bmDoc['assegnatoA'] ?? []);
-          assList.removeWhere((u) => u.toString().trim().toLowerCase() == cleanDest);
+          final idx = assList.indexWhere((u) => u.toString().trim().toLowerCase() == cleanDest);
+          if (idx != -1) {
+            assList.removeAt(idx);
+          }
           await db.collection('BonusMalus').update(
             where.id(bmDoc['_id'] as ObjectId),
             modify.set('assegnatoA', assList),
