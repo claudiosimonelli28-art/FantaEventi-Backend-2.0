@@ -438,9 +438,6 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     final currentUserNick = _apiService.currentUser?.nome ?? 'Cloud';
     final cleanUser = currentUserNick.trim().toLowerCase();
 
-    Widget child;
-    if (_eventi.isEmpty) {
-      child = SingleChildScrollView(
     final activeEvents = _eventi.where((e) =>
       e.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(e.dataFine)
     ).toList();
