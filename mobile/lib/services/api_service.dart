@@ -604,17 +604,12 @@ class ApiService {
 
         final Set<String> seenKeys = {};
         for (var d in matchDocs) {
-          final mitt = (d['mittente'] ?? '').toString().trim().toLowerCase();
-          final dest = (d['destinatario'] ?? '').toString().trim().toLowerCase();
-          final tit = (d['titolo'] ?? '').toString().trim().toLowerCase();
-          final evId = (d['eventoId'] ?? '').toString().trim().toLowerCase();
-          final bId = (d['bonusId'] ?? d['bonusTitolo'] ?? d['messaggio'] ?? d['_id']?.toString() ?? '').toString().trim().toLowerCase();
+          final idStr = d['_id']?.toHexString() ?? d['_id']?.toString() ?? d['notificaId']?.toString() ?? '';
 
-          final key = '$mitt|$dest|$tit|$evId|$bId';
-          if (!seenKeys.contains(key)) {
-            seenKeys.add(key);
+          if (idStr.isNotEmpty && !seenKeys.contains(idStr)) {
+            seenKeys.add(idStr);
             notificheList.add({
-              'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
+              'id': idStr,
               'mittente': d['mittente'] ?? 'FantaEventi',
               'destinatario': d['destinatario'] ?? '',
               'titolo': d['titolo'] ?? 'Nuova Notifica',
@@ -1125,6 +1120,18 @@ class ApiService {
             );
           }
         }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> eliminaNotifica(String notificaId) async {
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? objId;
+        try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}
+        final selector = objId != null ? where.id(objId) : where.eq('_id', notificaId);
+        await db.collection('Notifiche').remove(selector);
       }
     } catch (_) {}
   }

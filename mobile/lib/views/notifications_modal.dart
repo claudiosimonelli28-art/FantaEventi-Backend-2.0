@@ -69,6 +69,26 @@ class _NotificationsModalState extends State<NotificationsModal> {
     }
   }
 
+  Future<void> _eliminaNotifica(String notificaId) async {
+    await _apiService.eliminaNotifica(notificaId);
+    if (mounted) {
+      setState(() {
+        _notifiche.removeWhere((n) => (n['id'] ?? n['notificaId']) == notificaId);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF64748B),
+          content: Text(
+            'Notifica rimossa 🗑️',
+            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+    widget.onRefreshHome();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -172,19 +192,27 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                         ),
                                       ),
                                       const SizedBox(width: 8),
-                                      if (!isPending && !isProposal) ...[
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: not['stato'] == 'accettato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            (not['stato'] as String).toUpperCase(),
-                                            style: GoogleFonts.poppins(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ],
+                                       if (!isPending && !isProposal) ...[
+                                         Container(
+                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                           decoration: BoxDecoration(
+                                             color: not['stato'] == 'accettato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                             borderRadius: BorderRadius.circular(8),
+                                           ),
+                                           child: Text(
+                                             (not['stato'] as String).toUpperCase(),
+                                             style: GoogleFonts.poppins(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                           ),
+                                         ),
+                                         const SizedBox(width: 6),
+                                       ],
+                                       IconButton(
+                                         padding: EdgeInsets.zero,
+                                         constraints: const BoxConstraints(),
+                                         icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8), size: 18),
+                                         tooltip: 'Elimina notifica',
+                                         onPressed: () => _eliminaNotifica((not['id'] ?? not['notificaId'] ?? '').toString()),
+                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 6),

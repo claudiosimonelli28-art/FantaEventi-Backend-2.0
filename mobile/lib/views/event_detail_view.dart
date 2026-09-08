@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/evento.dart';
+import '../models/utente.dart';
 import '../models/votazione.dart';
 import '../models/bonus_malus.dart';
 import '../services/api_service.dart';
@@ -864,11 +865,38 @@ class _EventDetailViewState extends State<EventDetailView> {
     );
   }
 
-  void _mostraDettaglioStoricoGiocatore(String targetNick) {
+  Future<void> _mostraDettaglioStoricoGiocatore(String targetNick) async {
     final curUser = _apiService.currentUser?.nome ?? 'Cloud';
     final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
     final isEventoConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(_evento.dataFine);
     final isOrganizzatore = !isEventoConcluso && (creatore.trim().toLowerCase() == curUser.trim().toLowerCase());
+
+    String avatarUrl = '';
+    try {
+      final utenti = await _apiService.getUtenti();
+      final targetUser = utenti.firstWhere(
+        (u) => u.nome.trim().toLowerCase() == targetNick.trim().toLowerCase() || u.nickname.trim().toLowerCase() == targetNick.trim().toLowerCase(),
+        orElse: () => Utente(
+          id: '',
+          nome: targetNick,
+          email: '',
+          avatarUrl: '',
+          livello: 1,
+          xp: 0,
+          xpProssimoLivello: 1000,
+          puntiTotali: 0,
+          badgeList: [],
+          storicoVoti: [],
+          codiceAmico: '',
+          amici: [],
+          richiesteAmicizia: [],
+          badgeVincitore: [],
+        ),
+      );
+      avatarUrl = targetUser.avatarUrl;
+    } catch (_) {}
+
+    if (!mounted) return;
 
     final List<Map<String, dynamic>> istanzeAssegnazioni = [];
     for (var bm in _allBonusMalus) {
@@ -885,6 +913,20 @@ class _EventDetailViewState extends State<EventDetailView> {
         }
       }
     }
+
+    final Widget avatarWidget = (avatarUrl.isNotEmpty && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')))
+        ? CircleAvatar(
+            backgroundColor: const Color(0xFF9333EA),
+            backgroundImage: NetworkImage(avatarUrl),
+            onBackgroundImageError: (_, __) {},
+          )
+        : CircleAvatar(
+            backgroundColor: const Color(0xFF9333EA),
+            child: Text(
+              targetNick.isNotEmpty ? targetNick[0].toUpperCase() : 'U',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          );
 
     showModalBottomSheet(
       context: context,
@@ -903,13 +945,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                 children: [
                   Row(
                     children: [
-                      CircleAvatar(
-                        backgroundColor: const Color(0xFF9333EA),
-                        child: Text(
-                          targetNick.isNotEmpty ? targetNick[0].toUpperCase() : 'U',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
-                      ),
+                      avatarWidget,
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -1023,7 +1059,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                             ElevatedButton(
                                               onPressed: () => Navigator.pop(dCtx, true),
                                               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
-                                              child: const Text('ANNULLA', style: TextStyle(color: Colors.white)),
+                                              child: const Text('SÌ, STORNA', style: TextStyle(color: Colors.white)),
                                             ),
                                           ],
                                         ),
