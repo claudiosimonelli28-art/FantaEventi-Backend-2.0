@@ -49,11 +49,16 @@ class Utente {
       friendCode = 'FE-$codeSeed$numSeed';
     }
 
+    final String rawAvatar = (json['avatarUrl'] ?? '').toString().trim();
+    final String parsedAvatar = rawAvatar.isNotEmpty
+        ? rawAvatar
+        : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(nameValue.toString())}';
+
     return Utente(
       id: json['id'] as String? ?? json['_id']?.toString() ?? '',
       nome: nameValue.toString(),
       email: json['email'] as String? ?? '',
-      avatarUrl: json['avatarUrl'] as String? ?? 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(nameValue.toString())}',
+      avatarUrl: parsedAvatar,
       livello: calcLivello,
       xp: rawXp,
       xpProssimoLivello: calcNextXp,

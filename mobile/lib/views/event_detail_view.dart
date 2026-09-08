@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/evento.dart';
@@ -827,7 +829,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
+                      _buildAvatarWidget(_apiService.getUtenteInMemoria(nick)?.avatarUrl ?? '', nick, radius: 16),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           nick,
@@ -864,6 +868,45 @@ class _EventDetailViewState extends State<EventDetailView> {
         ),
       ],
     );
+  }
+
+  Widget _buildAvatarWidget(String avatarUrl, String nickname, {double radius = 20}) {
+    final cleanUrl = avatarUrl.trim();
+    ImageProvider? imgProvider;
+
+    if (cleanUrl.startsWith('data:image')) {
+      try {
+        final base64Data = cleanUrl.contains(',') ? cleanUrl.split(',').last : cleanUrl;
+        final bytes = base64Decode(base64Data);
+        imgProvider = MemoryImage(bytes);
+      } catch (_) {}
+    } else if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+      imgProvider = NetworkImage(cleanUrl);
+    } else if (cleanUrl.isNotEmpty && File(cleanUrl).existsSync()) {
+      imgProvider = FileImage(File(cleanUrl));
+    }
+
+    if (imgProvider != null) {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFF9333EA),
+        backgroundImage: imgProvider,
+        onBackgroundImageError: (_, __) {},
+      );
+    } else {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFF9333EA),
+        child: Text(
+          nickname.isNotEmpty ? nickname[0].toUpperCase() : 'U',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: radius * 0.85,
+          ),
+        ),
+      );
+    }
   }
 
   void _mostraDettaglioStoricoGiocatore(String targetNick) {
@@ -917,19 +960,7 @@ class _EventDetailViewState extends State<EventDetailView> {
               }).catchError((_) {});
             }
 
-            final Widget avatarWidget = (avatarUrl.isNotEmpty && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')))
-                ? CircleAvatar(
-                    backgroundColor: const Color(0xFF9333EA),
-                    backgroundImage: NetworkImage(avatarUrl),
-                    onBackgroundImageError: (_, __) {},
-                  )
-                : CircleAvatar(
-                    backgroundColor: const Color(0xFF9333EA),
-                    child: Text(
-                      targetNick.isNotEmpty ? targetNick[0].toUpperCase() : 'U',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                  );
+            final Widget avatarWidget = _buildAvatarWidget(avatarUrl, targetNick);
             return Padding(
               padding: const EdgeInsets.all(20),
               child: Column(

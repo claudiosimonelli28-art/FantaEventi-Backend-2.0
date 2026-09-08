@@ -347,12 +347,16 @@ class ApiService {
   }
 
   Utente? getUtenteInMemoria(String nickname) {
-    final clean = nickname.trim().toLowerCase();
-    if (_currentUser != null && (_currentUser!.nome.trim().toLowerCase() == clean || _currentUser!.nickname.trim().toLowerCase() == clean)) {
-      return _currentUser;
+    final clean = nickname.replaceAll(' ', '').trim().toLowerCase();
+    if (_currentUser != null) {
+      final cName = _currentUser!.nome.replaceAll(' ', '').trim().toLowerCase();
+      final cNick = _currentUser!.nickname.replaceAll(' ', '').trim().toLowerCase();
+      if (cName == clean || cNick == clean) return _currentUser;
     }
     for (var u in _utenti) {
-      if (u.nome.trim().toLowerCase() == clean || u.nickname.trim().toLowerCase() == clean) {
+      final uName = u.nome.replaceAll(' ', '').trim().toLowerCase();
+      final uNick = u.nickname.replaceAll(' ', '').trim().toLowerCase();
+      if (uName == clean || uNick == clean) {
         return u;
       }
     }
