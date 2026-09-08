@@ -346,6 +346,19 @@ class ApiService {
     return List.unmodifiable(_utenti);
   }
 
+  Utente? getUtenteInMemoria(String nickname) {
+    final clean = nickname.trim().toLowerCase();
+    if (_currentUser != null && (_currentUser!.nome.trim().toLowerCase() == clean || _currentUser!.nickname.trim().toLowerCase() == clean)) {
+      return _currentUser;
+    }
+    for (var u in _utenti) {
+      if (u.nome.trim().toLowerCase() == clean || u.nickname.trim().toLowerCase() == clean) {
+        return u;
+      }
+    }
+    return null;
+  }
+
   // --- REPERIMENTO EVENTI REALI DA MONGODB ATLAS (CON MANTENIMENTO FINITI 7 GG E BADGE VINCITORE) ---
   Future<List<Evento>> getEventi({bool forceRefresh = false}) async {
     if (!forceRefresh && _lastFetchTime != null && DateTime.now().difference(_lastFetchTime!) < _cacheDuration && _eventi.isNotEmpty) {

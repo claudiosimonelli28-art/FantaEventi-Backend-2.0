@@ -76,6 +76,7 @@ class _EventDetailViewState extends State<EventDetailView> {
         v.descrizione.toLowerCase().contains(_evento.titolo.toLowerCase())
       ).toList();
       bmList = await _apiService.getBonusMalusList();
+      _apiService.getUtenti().catchError((_) => <Utente>[]);
     } catch (_) {}
 
     if (mounted) {
@@ -865,38 +866,11 @@ class _EventDetailViewState extends State<EventDetailView> {
     );
   }
 
-  Future<void> _mostraDettaglioStoricoGiocatore(String targetNick) async {
+  void _mostraDettaglioStoricoGiocatore(String targetNick) {
     final curUser = _apiService.currentUser?.nome ?? 'Cloud';
     final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
     final isEventoConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(_evento.dataFine);
     final isOrganizzatore = !isEventoConcluso && (creatore.trim().toLowerCase() == curUser.trim().toLowerCase());
-
-    String avatarUrl = '';
-    try {
-      final utenti = await _apiService.getUtenti();
-      final targetUser = utenti.firstWhere(
-        (u) => u.nome.trim().toLowerCase() == targetNick.trim().toLowerCase() || u.nickname.trim().toLowerCase() == targetNick.trim().toLowerCase(),
-        orElse: () => Utente(
-          id: '',
-          nome: targetNick,
-          email: '',
-          avatarUrl: '',
-          livello: 1,
-          xp: 0,
-          xpProssimoLivello: 1000,
-          puntiTotali: 0,
-          badgeList: [],
-          storicoVoti: [],
-          codiceAmico: '',
-          amici: [],
-          richiesteAmicizia: [],
-          badgeVincitore: [],
-        ),
-      );
-      avatarUrl = targetUser.avatarUrl;
-    } catch (_) {}
-
-    if (!mounted) return;
 
     final List<Map<String, dynamic>> istanzeAssegnazioni = [];
     for (var bm in _allBonusMalus) {
@@ -914,19 +888,8 @@ class _EventDetailViewState extends State<EventDetailView> {
       }
     }
 
-    final Widget avatarWidget = (avatarUrl.isNotEmpty && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')))
-        ? CircleAvatar(
-            backgroundColor: const Color(0xFF9333EA),
-            backgroundImage: NetworkImage(avatarUrl),
-            onBackgroundImageError: (_, __) {},
-          )
-        : CircleAvatar(
-            backgroundColor: const Color(0xFF9333EA),
-            child: Text(
-              targetNick.isNotEmpty ? targetNick[0].toUpperCase() : 'U',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          );
+    final memUser = _apiService.getUtenteInMemoria(targetNick);
+    String avatarUrl = memUser?.avatarUrl ?? '';
 
     showModalBottomSheet(
       context: context,
@@ -937,6 +900,36 @@ class _EventDetailViewState extends State<EventDetailView> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
+            if (avatarUrl.isEmpty) {
+              _apiService.getUtenti().then((utenti) {
+                final found = utenti.firstWhere(
+                  (u) => u.nome.trim().toLowerCase() == targetNick.trim().toLowerCase() || u.nickname.trim().toLowerCase() == targetNick.trim().toLowerCase(),
+                  orElse: () => Utente(
+                    id: '', nome: targetNick, email: '', avatarUrl: '', livello: 1, xp: 0, xpProssimoLivello: 1000,
+                    puntiTotali: 0, badgeList: [], storicoVoti: [], codiceAmico: '', amici: [], richiesteAmicizia: [], badgeVincitore: [],
+                  ),
+                );
+                if (found.avatarUrl.isNotEmpty && modalCtx.mounted) {
+                  setModalState(() {
+                    avatarUrl = found.avatarUrl;
+                  });
+                }
+              }).catchError((_) {});
+            }
+
+            final Widget avatarWidget = (avatarUrl.isNotEmpty && (avatarUrl.startsWith('http://') || avatarUrl.startsWith('https://')))
+                ? CircleAvatar(
+                    backgroundColor: const Color(0xFF9333EA),
+                    backgroundImage: NetworkImage(avatarUrl),
+                    onBackgroundImageError: (_, __) {},
+                  )
+                : CircleAvatar(
+                    backgroundColor: const Color(0xFF9333EA),
+                    child: Text(
+                      targetNick.isNotEmpty ? targetNick[0].toUpperCase() : 'U',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    ),
+                  );
             return Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
