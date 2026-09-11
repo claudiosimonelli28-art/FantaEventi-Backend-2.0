@@ -11,18 +11,43 @@ class ApiService {
   static List<String> filtraStorico(List<String> storico, {int maxGiorni = 7}) {
     final now = DateTime.now();
     final List<String> result = [];
-    final RegExp dateRegex = RegExp(r'\[(\d{4}-\d{2}-\d{2})\]');
+    final RegExp fullDateRegex = RegExp(r'\[(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}):(\d{2}))?\]');
 
-    for (var item in storico) {
-      final match = dateRegex.firstMatch(item);
+    final totalItems = storico.length;
+
+    for (int i = 0; i < totalItems; i++) {
+      final item = storico[i];
+      final match = fullDateRegex.firstMatch(item);
+
       if (match != null) {
         final dateStr = match.group(1)!;
-        final itemDate = DateTime.tryParse(dateStr);
+        final hourStr = match.group(2) ?? '12';
+        final minStr = match.group(3) ?? '00';
+        final itemDate = DateTime.tryParse('${dateStr}T$hourStr:$minStr:00');
+
         if (itemDate != null) {
+          final diffHours = now.difference(itemDate).inHours;
           final diffDays = now.difference(itemDate).inDays;
-          if (diffDays > maxGiorni) {
-            continue; // Salta elementi più vecchi del limite selezionato
+
+          // Se più vecchio di 7 giorni, viene eliminato/escluso
+          if (diffDays > 7 || diffHours > 168) {
+            continue;
           }
+
+          if (maxGiorni == 1 && diffHours > 24) {
+            continue; // Filtro 24h
+          } else if (maxGiorni == 3 && diffHours > 72) {
+            continue; // Filtro 3 giorni
+          } else if (maxGiorni == 7 && diffDays > 7) {
+            continue; // Filtro 7 giorni
+          }
+        }
+      } else {
+        // Elementi senza tag data (legacy): si accorciano proporzionalmente per 24h / 3gg / 7gg
+        if (maxGiorni == 1 && i >= (totalItems * 0.33).ceil()) {
+          continue;
+        } else if (maxGiorni == 3 && i >= (totalItems * 0.66).ceil()) {
+          continue;
         }
       }
       result.add(item);

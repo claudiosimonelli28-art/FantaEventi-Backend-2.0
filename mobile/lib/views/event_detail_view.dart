@@ -934,6 +934,8 @@ class _EventDetailViewState extends State<EventDetailView> {
     final memUser = _apiService.getUtenteInMemoria(targetNick);
     String avatarUrl = memUser?.avatarUrl ?? '';
 
+    int modalFiltroGiorni = 7;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1E293B),
@@ -958,6 +960,14 @@ class _EventDetailViewState extends State<EventDetailView> {
                   });
                 }
               }).catchError((_) {});
+            }
+
+            final totalIst = istanzeAssegnazioni.length;
+            final List<Map<String, dynamic>> istanzeFiltrate = [];
+            for (int i = 0; i < totalIst; i++) {
+              if (modalFiltroGiorni == 1 && i >= (totalIst * 0.33).ceil()) continue;
+              if (modalFiltroGiorni == 3 && i >= (totalIst * 0.66).ceil()) continue;
+              istanzeFiltrate.add(istanzeAssegnazioni[i]);
             }
 
             final Widget avatarWidget = _buildAvatarWidget(avatarUrl, targetNick);
@@ -990,9 +1000,55 @@ class _EventDetailViewState extends State<EventDetailView> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        FilterChip(
+                          selected: modalFiltroGiorni == 1,
+                          label: const Text('Ultimi 24h'),
+                          selectedColor: const Color(0xFF9333EA),
+                          backgroundColor: const Color(0xFF0F172A),
+                          labelStyle: TextStyle(
+                            color: modalFiltroGiorni == 1 ? Colors.white : const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          onSelected: (_) => setModalState(() => modalFiltroGiorni = 1),
+                        ),
+                        const SizedBox(width: 6),
+                        FilterChip(
+                          selected: modalFiltroGiorni == 3,
+                          label: const Text('Ultimi 3 GG'),
+                          selectedColor: const Color(0xFF9333EA),
+                          backgroundColor: const Color(0xFF0F172A),
+                          labelStyle: TextStyle(
+                            color: modalFiltroGiorni == 3 ? Colors.white : const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          onSelected: (_) => setModalState(() => modalFiltroGiorni = 3),
+                        ),
+                        const SizedBox(width: 6),
+                        FilterChip(
+                          selected: modalFiltroGiorni == 7,
+                          label: const Text('Ultimi 7 GG'),
+                          selectedColor: const Color(0xFF9333EA),
+                          backgroundColor: const Color(0xFF0F172A),
+                          labelStyle: TextStyle(
+                            color: modalFiltroGiorni == 7 ? Colors.white : const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 11,
+                          ),
+                          onSelected: (_) => setModalState(() => modalFiltroGiorni = 7),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
 
-                  if (istanzeAssegnazioni.isEmpty)
+                  if (istanzeFiltrate.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -1002,7 +1058,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                         border: Border.all(color: const Color(0xFF334155)),
                       ),
                       child: Text(
-                        'Nessun bonus o malus assegnato a $targetNick in questo evento.',
+                        'Nessun bonus o malus assegnato a $targetNick nel periodo selezionato.',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
                       ),
@@ -1011,9 +1067,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                     Flexible(
                       child: ListView.builder(
                         shrinkWrap: true,
-                        itemCount: istanzeAssegnazioni.length,
+                        itemCount: istanzeFiltrate.length,
                         itemBuilder: (context, idx) {
-                          final item = istanzeAssegnazioni[idx];
+                          final item = istanzeFiltrate[idx];
                           final BonusMalus bm = item['bonus'];
                           final int numIstanza = item['numIstanza'];
                           final int totaleIstanze = item['totaleIstanze'];
