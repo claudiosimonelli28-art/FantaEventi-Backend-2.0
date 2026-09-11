@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/utente.dart';
 import '../services/api_service.dart';
+import '../widgets/avatar_helper.dart';
 import 'login_view.dart';
 
 class ProfileView extends StatefulWidget {
@@ -321,23 +322,9 @@ class _ProfileViewState extends State<ProfileView> {
   Widget build(BuildContext context) {
     final double xpPercent = (_utente.xp / _utente.xpProssimoLivello).clamp(0.0, 1.0);
 
-    ImageProvider avatarImage;
-    if (_utente.avatarUrl.contains('base64,')) {
-      try {
-        final cleanB64 = _utente.avatarUrl.substring(_utente.avatarUrl.indexOf('base64,') + 7).trim();
-        avatarImage = MemoryImage(base64Decode(cleanB64));
-      } catch (_) {
-        avatarImage = NetworkImage(_avatarsPredefiniti[0]);
-      }
-    } else if (_fotoLocaleFile != null && _fotoLocaleFile!.existsSync()) {
-      avatarImage = FileImage(_fotoLocaleFile!);
-    } else if ((_utente.avatarUrl.startsWith('/') || _utente.avatarUrl.startsWith('C:') || _utente.avatarUrl.contains('data/user')) && File(_utente.avatarUrl).existsSync()) {
-      avatarImage = FileImage(File(_utente.avatarUrl));
-    } else if (_utente.avatarUrl.startsWith('http://') || _utente.avatarUrl.startsWith('https://')) {
-      avatarImage = NetworkImage(_utente.avatarUrl);
-    } else {
-      avatarImage = NetworkImage(_avatarsPredefiniti[0]);
-    }
+    final ImageProvider avatarImage = _fotoLocaleFile != null && _fotoLocaleFile!.existsSync()
+        ? FileImage(_fotoLocaleFile!)
+        : getAvatarImageProvider(_utente.avatarUrl);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),

@@ -1243,17 +1243,7 @@ class ApiService {
                   .toList() ??
               [];
 
-          // Se l'evento associato e' stato eliminato o scaduto, pulisci il bonus orfano
-          if (evId.isNotEmpty && _eventi.isNotEmpty && !_eventi.any((e) => e.id == evId)) {
-            try {
-              ObjectId? bObjId;
-              try { bObjId = ObjectId.fromHexString(bmId); } catch (_) {}
-              final selector = bObjId != null ? where.id(bObjId) : where.eq('_id', bmId);
-              await db.collection('BonusMalus').remove(selector);
-              await db.collection('Votazioni').remove(where.eq('votazioneId', bmId));
-            } catch (_) {}
-            continue;
-          }
+          // Conversione sicura in oggetto BonusMalus
 
           final Map<String, String> votiUtenti = {
             propDa: 'pro',

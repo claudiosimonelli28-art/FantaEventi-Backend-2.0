@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import '../widgets/avatar_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/evento.dart';
@@ -922,42 +921,12 @@ class _EventDetailViewState extends State<EventDetailView> {
   }
 
   Widget _buildAvatarWidget(String avatarUrl, String nickname, {double radius = 20}) {
-    final cleanUrl = avatarUrl.trim();
-    ImageProvider? imgProvider;
-
-    if (cleanUrl.startsWith('data:image')) {
-      try {
-        final base64Data = cleanUrl.contains(',') ? cleanUrl.split(',').last : cleanUrl;
-        final bytes = base64Decode(base64Data);
-        imgProvider = MemoryImage(bytes);
-      } catch (_) {}
-    } else if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-      imgProvider = NetworkImage(cleanUrl);
-    } else if (cleanUrl.isNotEmpty && File(cleanUrl).existsSync()) {
-      imgProvider = FileImage(File(cleanUrl));
-    }
-
-    if (imgProvider != null) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: const Color(0xFF9333EA),
-        backgroundImage: imgProvider,
-        onBackgroundImageError: (_, __) {},
-      );
-    } else {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: const Color(0xFF9333EA),
-        child: Text(
-          nickname.isNotEmpty ? nickname[0].toUpperCase() : 'U',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: radius * 0.85,
-          ),
-        ),
-      );
-    }
+    final imgProvider = getAvatarImageProvider(avatarUrl);
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: const Color(0xFF9333EA),
+      backgroundImage: imgProvider,
+    );
   }
 
   void _mostraDettaglioStoricoGiocatore(String targetNick) {

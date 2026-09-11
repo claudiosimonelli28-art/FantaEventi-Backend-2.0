@@ -28,16 +28,19 @@ class BonusMalus {
   bool get isBonus => punti >= 0;
 
   factory BonusMalus.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id'] ?? json['_id'] ?? '';
+    final rawEvId = json['eventoId'] ?? '';
+
     return BonusMalus(
-      id: json['id'] as String? ?? json['_id'] as String? ?? '',
-      titolo: json['titolo'] as String? ?? json['nome'] as String? ?? '',
+      id: rawId.toString(),
+      titolo: json['titolo'] as String? ?? json['nome'] as String? ?? 'Bonus',
       descrizione: json['descrizione'] as String? ?? '',
       punti: (json['punti'] as num?)?.toInt() ?? 0,
       categoria: json['categoria'] as String? ?? 'Generale',
       propostoDa: json['propostoDa'] as String? ?? json['utente'] as String? ?? 'Anonimo',
       approvato: json['approvato'] as bool? ?? (json['stato'] == 'approvato'),
       stato: json['stato'] as String? ?? 'in_votazione',
-      eventoId: json['eventoId'] as String? ?? '',
+      eventoId: rawEvId.toString(),
       assegnatoA: (json['assegnatoA'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
