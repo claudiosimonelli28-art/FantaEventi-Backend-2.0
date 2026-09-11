@@ -29,6 +29,8 @@ class _ProfileViewState extends State<ProfileView> {
     'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
   ];
 
+  int _filtroGiorniStorico = 7;
+
   @override
   void initState() {
     super.initState();
@@ -840,31 +842,82 @@ class _ProfileViewState extends State<ProfileView> {
               ),
               const SizedBox(height: 28),
 
-              // Storico Attività
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Storico Voti & Attività 📜',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+              // Storico Attività con Filtro Temporale (24h, 3gg, 7gg)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Storico Voti & Attività 📜',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    FilterChip(
+                      selected: _filtroGiorniStorico == 1,
+                      label: const Text('Ultimi 24h'),
+                      selectedColor: const Color(0xFF9333EA),
+                      backgroundColor: const Color(0xFF1E293B),
+                      labelStyle: TextStyle(
+                        color: _filtroGiorniStorico == 1 ? Colors.white : const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                      onSelected: (_) => setState(() => _filtroGiorniStorico = 1),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      selected: _filtroGiorniStorico == 3,
+                      label: const Text('Ultimi 3 Giorni'),
+                      selectedColor: const Color(0xFF9333EA),
+                      backgroundColor: const Color(0xFF1E293B),
+                      labelStyle: TextStyle(
+                        color: _filtroGiorniStorico == 3 ? Colors.white : const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                      onSelected: (_) => setState(() => _filtroGiorniStorico = 3),
+                    ),
+                    const SizedBox(width: 8),
+                    FilterChip(
+                      selected: _filtroGiorniStorico == 7,
+                      label: const Text('Ultimi 7 Giorni'),
+                      selectedColor: const Color(0xFF9333EA),
+                      backgroundColor: const Color(0xFF1E293B),
+                      labelStyle: TextStyle(
+                        color: _filtroGiorniStorico == 7 ? Colors.white : const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                      onSelected: (_) => setState(() => _filtroGiorniStorico = 7),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
-              if (_utente.storicoVoti.isEmpty)
-                Text(
-                  'Nessuna attività registrata finora.',
-                  style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
-                )
-              else
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _utente.storicoVoti.length,
-                  itemBuilder: (context, index) {
-                    final item = _utente.storicoVoti[index];
+              Builder(
+                builder: (context) {
+                  final storicoFiltrato = ApiService.filtraStorico(_utente.storicoVoti, maxGiorni: _filtroGiorniStorico);
+                  if (storicoFiltrato.isEmpty) {
+                    return Text(
+                      'Nessuna attività registrata nel periodo selezionato.',
+                      style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
+                    );
+                  }
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: storicoFiltrato.length,
+                    itemBuilder: (context, index) {
+                      final item = storicoFiltrato[index];
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(12),
@@ -890,7 +943,9 @@ class _ProfileViewState extends State<ProfileView> {
                       ),
                     );
                   },
-                ),
+                );
+              },
+            ),
             ],
           ),
         ),

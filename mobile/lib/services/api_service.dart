@@ -8,6 +8,28 @@ import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
 
 class ApiService {
+  static List<String> filtraStorico(List<String> storico, {int maxGiorni = 7}) {
+    final now = DateTime.now();
+    final List<String> result = [];
+    final RegExp dateRegex = RegExp(r'\[(\d{4}-\d{2}-\d{2})\]');
+
+    for (var item in storico) {
+      final match = dateRegex.firstMatch(item);
+      if (match != null) {
+        final dateStr = match.group(1)!;
+        final itemDate = DateTime.tryParse(dateStr);
+        if (itemDate != null) {
+          final diffDays = now.difference(itemDate).inDays;
+          if (diffDays > maxGiorni) {
+            continue; // Salta elementi più vecchi del limite selezionato
+          }
+        }
+      }
+      result.add(item);
+    }
+    return result;
+  }
+
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
   ApiService._internal();
@@ -449,6 +471,24 @@ class ApiService {
                 await db.collection('Evento').update(where.id(d['_id'] as ObjectId), modify.set('badgeVincitoreAssegnato', true).set('stato', 'concluso'));
               }
             } catch (_) {}
+          }
+
+          final proposedBy = (d['propostoDa'] ?? d['creatore'] ?? 'Cloud').toString().trim().toLowerCase();
+          final invitatiList = (d['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim().toLowerCase()).toList() ?? [];
+          final partecipantiList = partecipanti.map((e) => e.trim().toLowerCase()).toList();
+
+          if (_currentUser != null) {
+            final myName = _currentUser!.nome.trim().toLowerCase();
+            final myNick = _currentUser!.nickname.trim().toLowerCase();
+            final myId = _currentUser!.id.trim().toLowerCase();
+
+            final bool isCreatore = proposedBy == myName || proposedBy == myNick || proposedBy == myId;
+            final bool isPartecipante = partecipantiList.contains(myName) || partecipantiList.contains(myNick) || partecipantiList.contains(myId);
+            final bool isInvitato = invitatiList.contains(myName) || invitatiList.contains(myNick) || invitatiList.contains(myId);
+
+            if (!isCreatore && !isPartecipante && !isInvitato) {
+              continue;
+            }
           }
 
           final Map<String, dynamic> jsonMap = {
@@ -1058,7 +1098,9 @@ class ApiService {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
             final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
-            oldStorico.insert(0, logText);
+            final String dateTag = '[${DateTime.now().toIso8601String().substring(0, 10)}]';
+            final String formattedLog = logText.startsWith('[') ? logText : '$dateTag $logText';
+            oldStorico.insert(0, formattedLog);
 
             ObjectId? uObjId;
             try {
@@ -1493,7 +1535,8 @@ class ApiService {
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
             final now = DateTime.now();
             final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-            oldStorico.insert(0, '⚠️ Annullata assegnazione bonus (-$punti PT) (ore $timeStr)');
+            final dateTag = '[${now.toIso8601String().substring(0, 10)}]';
+            oldStorico.insert(0, '$dateTag ⚠️ Annullata assegnazione bonus (-$punti PT) (ore $timeStr)');
 
             ObjectId? uObjId;
             try {
