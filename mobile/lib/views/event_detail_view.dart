@@ -78,6 +78,17 @@ class _EventDetailViewState extends State<EventDetailView> {
         v.descrizione.toLowerCase().contains(_evento.titolo.toLowerCase())
       ).toList();
       bmList = await _apiService.getBonusMalusList();
+      for (var bm in bmList) {
+        final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+            bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+        if (isSameEv) {
+          for (var u in bm.assegnatoA) {
+            if (u.trim().isNotEmpty && !confermati.any((c) => c.trim().toLowerCase() == u.trim().toLowerCase())) {
+              confermati.add(u.trim());
+            }
+          }
+        }
+      }
       _apiService.getUtenti().catchError((_) => <Utente>[]);
     } catch (_) {}
 
@@ -743,6 +754,22 @@ class _EventDetailViewState extends State<EventDetailView> {
       ..sort((a, b) => b.value.compareTo(a.value));
 
     final isConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || now.isAfter(_evento.dataFine);
+    final isInCorso = !isConcluso && (now.isAfter(_evento.data) || _evento.stato.trim().toLowerCase() == 'in_corso');
+    final isInProgramma = !isConcluso && !isInCorso;
+
+    String headerTitle = '🏆 Classifica Live Evento';
+    String tagText = '🔴 LIVE';
+    Color tagColor = const Color(0xFF9333EA);
+
+    if (isConcluso) {
+      headerTitle = '🏆 Classifica Finale Evento';
+      tagText = '🔒 CONGELATO';
+      tagColor = const Color(0xFF10B981);
+    } else if (isInProgramma) {
+      headerTitle = '📅 Classifica Evento (In Programma)';
+      tagText = '⏳ IN ATTESA';
+      tagColor = const Color(0xFF3B82F6);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -751,27 +778,51 @@ class _EventDetailViewState extends State<EventDetailView> {
           children: [
             const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 22),
             const SizedBox(width: 8),
-            Text(
-              isConcluso ? '🏆 Classifica Finale Evento (Concluso)' : '🏆 Classifica Live Evento',
-              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-            ),
-            const Spacer(),
-            if (isConcluso)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF10B981)),
-                ),
-                child: Text(
-                  '🔒 CONGELATO',
-                  style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
-                ),
+            Expanded(
+              child: Text(
+                headerTitle,
+                style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
               ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: tagColor.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: tagColor),
+              ),
+              child: Text(
+                tagText,
+                style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: tagColor),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 12),
+        if (isInProgramma) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: Color(0xFF3B82F6), size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'L\'evento è in programma. La classifica live si attiverà al momento dell\'inizio dell\'evento.',
+                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         Container(
           decoration: BoxDecoration(
             color: const Color(0xFF1E293B),
