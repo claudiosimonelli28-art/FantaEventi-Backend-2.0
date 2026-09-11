@@ -13,12 +13,8 @@ class ApiService {
     final List<String> result = [];
     final RegExp fullDateRegex = RegExp(r'\[(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}):(\d{2}))?\]');
 
-    final totalItems = storico.length;
-
-    for (int i = 0; i < totalItems; i++) {
-      final item = storico[i];
+    for (var item in storico) {
       final match = fullDateRegex.firstMatch(item);
-
       if (match != null) {
         final dateStr = match.group(1)!;
         final hourStr = match.group(2) ?? '12';
@@ -27,30 +23,23 @@ class ApiService {
 
         if (itemDate != null) {
           final diffHours = now.difference(itemDate).inHours;
-          final diffDays = now.difference(itemDate).inDays;
 
-          // Se più vecchio di 7 giorni, viene eliminato/escluso
-          if (diffDays > 7 || diffHours > 168) {
+          // Se più vecchio di 7 giorni (168 ore), viene eliminato ed escluso dal DB e dalla UI
+          if (diffHours > 168) {
             continue;
           }
 
           if (maxGiorni == 1 && diffHours > 24) {
-            continue; // Filtro 24h
+            continue; // Filtro 24h: solo elementi svolti nelle ultime 24 ore
           } else if (maxGiorni == 3 && diffHours > 72) {
-            continue; // Filtro 3 giorni
-          } else if (maxGiorni == 7 && diffDays > 7) {
-            continue; // Filtro 7 giorni
+            continue; // Filtro 3 giorni: solo elementi svolti nelle ultime 72 ore
+          } else if (maxGiorni == 7 && diffHours > 168) {
+            continue; // Filtro 7 giorni: solo elementi svolti nelle ultime 168 ore
           }
-        }
-      } else {
-        // Elementi senza tag data (legacy): si accorciano proporzionalmente per 24h / 3gg / 7gg
-        if (maxGiorni == 1 && i >= (totalItems * 0.33).ceil()) {
-          continue;
-        } else if (maxGiorni == 3 && i >= (totalItems * 0.66).ceil()) {
-          continue;
+          result.add(item);
         }
       }
-      result.add(item);
+      // Gli elementi senza data valida (legacy) vengono scartati per non mostrare elementi di settimane/mesi fa
     }
     return result;
   }
@@ -1123,7 +1112,9 @@ class ApiService {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
             final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
-            final String dateTag = '[${DateTime.now().toIso8601String().substring(0, 10)}]';
+            final now = DateTime.now();
+            final String timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+            final String dateTag = '[${now.toIso8601String().substring(0, 10)} $timeStr]';
             final String formattedLog = logText.startsWith('[') ? logText : '$dateTag $logText';
             oldStorico.insert(0, formattedLog);
 
@@ -1560,7 +1551,7 @@ class ApiService {
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
             final now = DateTime.now();
             final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-            final dateTag = '[${now.toIso8601String().substring(0, 10)}]';
+            final dateTag = '[${now.toIso8601String().substring(0, 10)} $timeStr]';
             oldStorico.insert(0, '$dateTag ⚠️ Annullata assegnazione bonus (-$punti PT) (ore $timeStr)');
 
             ObjectId? uObjId;
