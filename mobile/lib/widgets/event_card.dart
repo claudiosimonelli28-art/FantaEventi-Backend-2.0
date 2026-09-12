@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/evento.dart';
+import 'live_pulse_badge.dart';
 
 class EventCard extends StatelessWidget {
   final Evento evento;
@@ -40,12 +41,27 @@ class EventCard extends StatelessWidget {
               : isInCorso
                   ? const Color(0xFF10B981).withValues(alpha: 0.8)
                   : isPartecipante
-                      ? const Color(0xFF10B981).withValues(alpha: 0.5)
+                      ? const Color(0xFF10B981).withValues(alpha: 0.4)
                       : isInvitato
                           ? const Color(0xFFFACC15).withValues(alpha: 0.5)
-                          : const Color(0xFF334155),
+                          : Colors.white.withValues(alpha: 0.08),
           width: (isPartecipante || isInvitato || isConcluso || isInCorso) ? 1.5 : 1.0,
         ),
+        boxShadow: isInCorso
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.14),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
       ),
       child: InkWell(
         onTap: onTap,
@@ -62,29 +78,31 @@ class EventCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isConcluso
-                                ? const Color(0xFFEF4444).withValues(alpha: 0.2)
-                                : isInCorso
-                                    ? const Color(0xFF10B981).withValues(alpha: 0.2)
-                                    : const Color(0xFF9333EA).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            isConcluso ? 'EVENTO CONCLUSO' : (isInCorso ? '🟢 IN CORSO' : 'IN PROGRAMMA'),
-                            style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
+                        if (isInCorso)
+                          const LivePulseBadge(
+                            text: 'IN CORSO',
+                            color: Color(0xFF10B981),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
                               color: isConcluso
-                                  ? const Color(0xFFF87171)
-                                  : isInCorso
-                                      ? const Color(0xFF34D399)
-                                      : const Color(0xFFC084FC),
+                                  ? const Color(0xFFEF4444).withValues(alpha: 0.2)
+                                  : const Color(0xFF9333EA).withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              isConcluso ? 'EVENTO CONCLUSO' : 'IN PROGRAMMA',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: isConcluso
+                                    ? const Color(0xFFF87171)
+                                    : const Color(0xFFC084FC),
+                              ),
                             ),
                           ),
-                        ),
                         const SizedBox(height: 8),
                         Text(
                           evento.titolo,

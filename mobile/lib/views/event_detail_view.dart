@@ -1,7 +1,10 @@
 import 'dart:async';
-import '../widgets/avatar_helper.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../widgets/avatar_helper.dart';
+import '../widgets/live_pulse_badge.dart';
+import '../widgets/animated_points_counter.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
 import '../models/votazione.dart';
@@ -783,18 +786,21 @@ class _EventDetailViewState extends State<EventDetailView> {
                 style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: tagColor.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: tagColor),
+            if (isInCorso)
+              const LivePulseBadge(text: 'LIVE', color: Color(0xFF10B981))
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: tagColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: tagColor),
+                ),
+                child: Text(
+                  tagText,
+                  style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: tagColor),
+                ),
               ),
-              child: Text(
-                tagText,
-                style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: tagColor),
-              ),
-            ),
           ],
         ),
         const SizedBox(height: 12),
@@ -898,8 +904,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                           color: pts >= 0 ? const Color(0xFF10B981) : const Color(0xFFEF4444),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Text(
-                          '${pts >= 0 ? "+" : ""}$pts PT',
+                        child: AnimatedPointsCounter(
+                          points: pts,
+                          showPositiveSign: true,
+                          suffix: 'PT',
                           style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 12,
@@ -916,6 +924,12 @@ class _EventDetailViewState extends State<EventDetailView> {
             }),
           ),
         ),
+        if (isConcluso) ...[
+          const SizedBox(height: 18),
+          _buildSpecialTitlesSection(sortedEntries),
+          const SizedBox(height: 12),
+          _buildCondividiPodioButton(sortedEntries),
+        ],
       ],
     );
   }
@@ -926,6 +940,495 @@ class _EventDetailViewState extends State<EventDetailView> {
       radius: radius,
       backgroundColor: const Color(0xFF9333EA),
       backgroundImage: imgProvider,
+    );
+  }
+
+  Widget _buildSpecialTitlesSection(List<MapEntry<String, int>> sortedEntries) {
+    if (sortedEntries.isEmpty) return const SizedBox.shrink();
+
+    // 1. Campione: primo con punteggio maggiore (se >= 0)
+    final campioneEntry = sortedEntries.first;
+    final String campioneNick = campioneEntry.key;
+    final int campionePts = campioneEntry.value;
+
+    // 2. Re dei Malus: chi ha accumulato il maggior totale di punti malus negativi
+    final Map<String, int> malusPunti = {};
+    // 3. Giudice Supremo: chi ha proposto o votato più volte
+    final Map<String, int> attivitaUtenti = {};
+    // 4. Per il Fantasma: totale azioni (ricevute + proposte + voti)
+    final Map<String, int> azioniTotali = {};
+
+    for (var p in _evento.partecipanti) {
+      final pNorm = p.trim().toLowerCase();
+      malusPunti[pNorm] = 0;
+      attivitaUtenti[pNorm] = 0;
+      azioniTotali[pNorm] = 0;
+    }
+
+    for (var bm in _allBonusMalus) {
+      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+      if (!isSameEv && _allBonusMalus.length > 1) continue;
+
+      // Proposte da
+      final prop = bm.propostoDa.trim().toLowerCase();
+      if (attivitaUtenti.containsKey(prop)) {
+        attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
+        azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
+      }
+
+      // Assegnato a
+      for (var u in bm.assegnatoA) {
+        final uNorm = u.trim().toLowerCase();
+        azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+        if (bm.punti < 0) {
+          malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
+        }
+      }
+    }
+
+    for (var v in _votazioniEvento) {
+      for (var u in v.votiUtenti.keys) {
+        final uNorm = u.trim().toLowerCase();
+        if (attivitaUtenti.containsKey(uNorm)) {
+          attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
+          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+        }
+      }
+    }
+
+    // Re dei Malus
+    String? reMalusNick;
+    int maxMalusVal = 0;
+    malusPunti.forEach((nickLower, tot) {
+      if (tot > maxMalusVal) {
+        maxMalusVal = tot;
+        reMalusNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
+    // Giudice Supremo
+    String? giudiceNick;
+    int maxAttivita = 0;
+    attivitaUtenti.forEach((nickLower, count) {
+      if (count > maxAttivita) {
+        maxAttivita = count;
+        giudiceNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
+    // Fantasma: chi ha fatto meno azioni in assoluto (escluso chi ha vinto come campione)
+    String? fantasmaNick;
+    int minAzioni = 999999;
+    if (_evento.partecipanti.length > 1) {
+      for (var p in _evento.partecipanti) {
+        final pLower = p.trim().toLowerCase();
+        if (pLower == campioneNick.trim().toLowerCase()) continue;
+        final azioni = azioniTotali[pLower] ?? 0;
+        if (azioni < minAzioni) {
+          minAzioni = azioni;
+          fantasmaNick = p;
+        }
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.3), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🎖️', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Titoli e Riconoscimenti Speciali',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 1. Campione
+          _buildTitleCard(
+            icon: '👑',
+            title: 'Il Campione',
+            subtitle: '1° Classificato ufficiale ($campionePts PT)',
+            winnerNick: campioneNick,
+            accentColor: const Color(0xFFFACC15),
+          ),
+          // 2. Re dei Malus
+          if (reMalusNick != null && maxMalusVal > 0)
+            _buildTitleCard(
+              icon: '🤡',
+              title: 'Il Re dei Malus',
+              subtitle: 'Più malus collezionati (-$maxMalusVal PT)',
+              winnerNick: reMalusNick,
+              accentColor: const Color(0xFFEF4444),
+            ),
+          // 3. Giudice Supremo
+          if (giudiceNick != null && maxAttivita > 0)
+            _buildTitleCard(
+              icon: '⚖️',
+              title: 'Il Giudice Supremo',
+              subtitle: 'Più attivo tra voti e proposte ($maxAttivita azioni)',
+              winnerNick: giudiceNick,
+              accentColor: const Color(0xFF38BDF8),
+            ),
+          // 4. Il Fantasma
+          if (fantasmaNick != null)
+            _buildTitleCard(
+              icon: '👻',
+              title: 'Il Fantasma',
+              subtitle: 'Ha partecipato al minimo indispensabile ($minAzioni azioni)',
+              winnerNick: fantasmaNick,
+              accentColor: const Color(0xFF94A3B8),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTitleCard({
+    required String icon,
+    required String title,
+    required String subtitle,
+    required String? winnerNick,
+    required Color accentColor,
+  }) {
+    if (winnerNick == null || winnerNick.isEmpty) return const SizedBox.shrink();
+    final avatarUrl = _apiService.getUtenteInMemoria(winnerNick)?.avatarUrl ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accentColor.withValues(alpha: 0.25), width: 1),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Text(icon, style: const TextStyle(fontSize: 16)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: accentColor,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          _buildAvatarWidget(avatarUrl, winnerNick, radius: 12),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 80),
+            child: Text(
+              winnerNick,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCondividiPodioButton(List<MapEntry<String, int>> sortedEntries) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 4, bottom: 8),
+      child: ElevatedButton.icon(
+        onPressed: () => _mostraModalCondividiPodio(sortedEntries),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF9333EA),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: const Color(0xFFFACC15).withValues(alpha: 0.5), width: 1.2),
+          ),
+          elevation: 4,
+        ),
+        icon: const Icon(Icons.share_rounded, color: Color(0xFFFACC15), size: 20),
+        label: Text(
+          'Condividi Podio Serata 📸',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+      ),
+    );
+  }
+
+  void _mostraModalCondividiPodio(List<MapEntry<String, int>> sortedEntries) {
+    final primo = sortedEntries.isNotEmpty ? sortedEntries[0] : null;
+    final secondo = sortedEntries.length > 1 ? sortedEntries[1] : null;
+    final terzo = sortedEntries.length > 2 ? sortedEntries[2] : null;
+
+    final buffer = StringBuffer();
+    buffer.writeln('🏆 *PODIO FANTAEVENTI* - ${_evento.titolo} 🏆');
+    buffer.writeln('');
+    if (primo != null) buffer.writeln('🥇 1°: ${primo.key} (+${primo.value} PT)');
+    if (secondo != null) buffer.writeln('🥈 2°: ${secondo.key} (+${secondo.value} PT)');
+    if (terzo != null) buffer.writeln('🥉 3°: ${terzo.key} (+${terzo.value} PT)');
+    buffer.writeln('');
+    buffer.writeln('🎉 Complimenti a tutti i partecipanti di FantaEventi!');
+    final String riepilogoTestuale = buffer.toString();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.5),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF64748B),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.stars_rounded, color: Color(0xFFFACC15), size: 24),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'PODIO FINALE UFFICIALE',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFFACC15),
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _evento.titolo,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Podio visuale
+              if (primo != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('🥇', style: TextStyle(fontSize: 26)),
+                      const SizedBox(width: 12),
+                      _buildAvatarWidget(_apiService.getUtenteInMemoria(primo.key)?.avatarUrl ?? '', primo.key, radius: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          primo.key,
+                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                      Text(
+                        '+${primo.value} PT',
+                        style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (secondo != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF94A3B8).withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('🥈', style: TextStyle(fontSize: 22)),
+                      const SizedBox(width: 12),
+                      _buildAvatarWidget(_apiService.getUtenteInMemoria(secondo.key)?.avatarUrl ?? '', secondo.key, radius: 16),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          secondo.key,
+                          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                      Text(
+                        '+${secondo.value} PT',
+                        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (terzo != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFB45309).withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('🥉', style: TextStyle(fontSize: 22)),
+                      const SizedBox(width: 12),
+                      _buildAvatarWidget(_apiService.getUtenteInMemoria(terzo.key)?.avatarUrl ?? '', terzo.key, radius: 16),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          terzo.key,
+                          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                      Text(
+                        '+${terzo.value} PT',
+                        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFFB45309)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              Text(
+                '📸 Fai uno screenshot di questa schermata per condividerla nelle tue storie Instagram o gruppi!',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  color: const Color(0xFF94A3B8),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: riepilogoTestuale));
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        backgroundColor: const Color(0xFF10B981),
+                        content: Text(
+                          'Podio copiato negli appunti! 📋 Incollalo su WhatsApp o Instagram!',
+                          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFACC15),
+                    foregroundColor: const Color(0xFF0F172A),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: Text(
+                    'COPIA RIEPILOGO TESTO 📲',
+                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

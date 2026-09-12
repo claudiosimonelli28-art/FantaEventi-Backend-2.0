@@ -32,7 +32,19 @@ class _BonusMalusCardState extends State<BonusMalusCard> {
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(
+          color: isBonus
+              ? const Color(0xFF10B981).withValues(alpha: 0.25)
+              : const Color(0xFFEF4444).withValues(alpha: 0.25),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         children: [

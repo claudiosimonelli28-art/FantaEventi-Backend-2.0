@@ -31,6 +31,10 @@ class _ProfileViewState extends State<ProfileView> {
   ];
 
   int _filtroGiorniStorico = 7;
+  int _countCampione = 0;
+  int _countReMalus = 0;
+  int _countGiudiceSupremo = 0;
+  int _countFantasma = 0;
 
   @override
   void initState() {
@@ -76,6 +80,142 @@ class _ProfileViewState extends State<ProfileView> {
       if (updatedUser != null && mounted) {
         setState(() {
           _utente = updatedUser;
+        });
+      }
+      await _calcolaTitoliSpeciali();
+    } catch (_) {}
+  }
+
+  Future<void> _calcolaTitoliSpeciali() async {
+    try {
+      final userNick = _utente.nickname.trim().toLowerCase();
+      final eventi = await _apiService.getEventi();
+      final allBonus = await _apiService.getBonusMalusList();
+      final allVotazioni = await _apiService.getVotazioni();
+
+      int campione = _utente.badgeVincitore.length;
+      int reMalus = 0;
+      int giudice = 0;
+      int fantasma = 0;
+
+      for (var ev in eventi) {
+        if (!ev.isConcluso) continue;
+
+        final Map<String, int> malusPerUtente = {};
+        final Map<String, int> attivitaPerUtente = {};
+        final Map<String, int> azioniTotaliPerUtente = {};
+
+        for (var p in ev.partecipanti) {
+          final pNorm = p.trim().toLowerCase();
+          malusPerUtente[pNorm] = 0;
+          attivitaPerUtente[pNorm] = 0;
+          azioniTotaliPerUtente[pNorm] = 0;
+        }
+
+        for (var bm in allBonus) {
+          final isSameEv = bm.eventoId.trim().toLowerCase() == ev.id.trim().toLowerCase() ||
+              bm.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
+          if (!isSameEv && allBonus.length > 1) continue;
+
+          final prop = bm.propostoDa.trim().toLowerCase();
+          if (attivitaPerUtente.containsKey(prop)) {
+            attivitaPerUtente[prop] = (attivitaPerUtente[prop] ?? 0) + 1;
+            azioniTotaliPerUtente[prop] = (azioniTotaliPerUtente[prop] ?? 0) + 1;
+          }
+
+          for (var u in bm.assegnatoA) {
+            final uNorm = u.trim().toLowerCase();
+            azioniTotaliPerUtente[uNorm] = (azioniTotaliPerUtente[uNorm] ?? 0) + 1;
+            if (bm.punti < 0) {
+              malusPerUtente[uNorm] = (malusPerUtente[uNorm] ?? 0) + bm.punti.abs();
+            }
+          }
+        }
+
+        for (var v in allVotazioni) {
+          final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+          final isSameEv = evId == ev.id.trim().toLowerCase() ||
+              evId == ev.titolo.trim().toLowerCase();
+          if (!isSameEv && allVotazioni.length > 1) continue;
+
+          for (var u in v.votiUtenti.keys) {
+            final uNorm = u.trim().toLowerCase();
+            if (attivitaPerUtente.containsKey(uNorm)) {
+              attivitaPerUtente[uNorm] = (attivitaPerUtente[uNorm] ?? 0) + 1;
+              azioniTotaliPerUtente[uNorm] = (azioniTotaliPerUtente[uNorm] ?? 0) + 1;
+            }
+          }
+        }
+
+        // 1. Re dei Malus
+        int maxMalus = 0;
+        String? bestMalus;
+        malusPerUtente.forEach((k, v) {
+          if (v > maxMalus) {
+            maxMalus = v;
+            bestMalus = k;
+          }
+        });
+        if (bestMalus == userNick && maxMalus > 0) {
+          reMalus++;
+        }
+
+        // 2. Giudice Supremo
+        int maxAtt = 0;
+        String? bestGiudice;
+        attivitaPerUtente.forEach((k, v) {
+          if (v > maxAtt) {
+            maxAtt = v;
+            bestGiudice = k;
+          }
+        });
+        if (bestGiudice == userNick && maxAtt > 0) {
+          giudice++;
+        }
+
+        // 3. Fantasma (partecipante attivo al minimo indispensabile, escludendo il vincitore)
+        if (ev.partecipanti.length > 1 && ev.partecipanti.any((p) => p.trim().toLowerCase() == userNick)) {
+          String? bestPlayer;
+          int maxPts = -99999;
+          for (var p in ev.partecipanti) {
+            final pNorm = p.trim().toLowerCase();
+            final pts = allBonus
+                .where((b) {
+                  final matchEv = b.eventoId.trim().toLowerCase() == ev.id.trim().toLowerCase() ||
+                      b.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
+                  return (matchEv || allBonus.length == 1) &&
+                      b.assegnatoA.any((x) => x.trim().toLowerCase() == pNorm);
+                })
+                .fold<int>(0, (sum, b) => sum + b.punti);
+            if (pts > maxPts) {
+              maxPts = pts;
+              bestPlayer = pNorm;
+            }
+          }
+
+          int minAzioni = 999999;
+          String? bestFantasma;
+          for (var p in ev.partecipanti) {
+            final pNorm = p.trim().toLowerCase();
+            if (bestPlayer != null && bestPlayer == pNorm) continue;
+            final az = azioniTotaliPerUtente[pNorm] ?? 0;
+            if (az < minAzioni) {
+              minAzioni = az;
+              bestFantasma = pNorm;
+            }
+          }
+          if (bestFantasma == userNick) {
+            fantasma++;
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _countCampione = campione;
+          _countReMalus = reMalus;
+          _countGiudiceSupremo = giudice;
+          _countFantasma = fantasma;
         });
       }
     } catch (_) {}
@@ -631,6 +771,10 @@ class _ProfileViewState extends State<ProfileView> {
               ),
               const SizedBox(height: 24),
 
+              // BACHECA TITOLI E RICONOSCIMENTI
+              _buildBachecaTitoli(),
+              const SizedBox(height: 24),
+
               // AGGIUNGI AMICO PER CODICE AMICO
               Container(
                 padding: const EdgeInsets.all(16),
@@ -936,6 +1080,151 @@ class _ProfileViewState extends State<ProfileView> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBachecaTitoli() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFFACC15).withValues(alpha: 0.3),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.25),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🎖️', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Bacheca Titoli & Riconoscimenti',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Titoli conquistati negli eventi conclusi a cui hai partecipato.',
+            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildBachecaBadge(
+                  icon: '👑',
+                  label: 'Campione',
+                  count: _countCampione,
+                  color: const Color(0xFFFACC15),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildBachecaBadge(
+                  icon: '🤡',
+                  label: 'Re Malus',
+                  count: _countReMalus,
+                  color: const Color(0xFFEF4444),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _buildBachecaBadge(
+                  icon: '⚖️',
+                  label: 'Giudice',
+                  count: _countGiudiceSupremo,
+                  color: const Color(0xFF38BDF8),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildBachecaBadge(
+                  icon: '👻',
+                  label: 'Fantasma',
+                  count: _countFantasma,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBachecaBadge({
+    required String icon,
+    required String label,
+    required int count,
+    required Color color,
+  }) {
+    final bool hasTitle = count > 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasTitle ? color.withValues(alpha: 0.4) : const Color(0xFF334155),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: hasTitle ? Colors.white : const Color(0xFF64748B),
+                  ),
+                ),
+                Text(
+                  hasTitle ? '$count ${count == 1 ? "volta" : "volte"}' : 'Non ancora',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: hasTitle ? FontWeight.w600 : FontWeight.normal,
+                    color: hasTitle ? color : const Color(0xFF64748B),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
