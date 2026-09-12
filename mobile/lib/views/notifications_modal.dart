@@ -161,8 +161,31 @@ class _NotificationsModalState extends State<NotificationsModal> {
                           itemCount: _notifiche.length,
                           itemBuilder: (ctx, idx) {
                             final not = _notifiche[idx];
-                            final isPending = not['stato'] == 'in_attesa';
-                            final isProposal = not['tipo'] == 'info' || not['tipo'] == 'bonus_malus';
+                            final tipo = (not['tipo'] ?? '').toString().toLowerCase().trim();
+                            final titolo = (not['titolo'] ?? '').toString().toLowerCase();
+                            final messaggio = (not['messaggio'] ?? '').toString().toLowerCase();
+                            final stato = (not['stato'] ?? '').toString().toLowerCase().trim();
+
+                            // 1. Notifica di assegnazione o riassegnazione bonus/malus
+                            final bool isAssegnazioneBonusMalus = tipo == 'assegnazione_bonus' ||
+                                titolo.contains('assegnat') ||
+                                titolo.contains('ricevuto') ||
+                                messaggio.contains('ha ricevuto') ||
+                                messaggio.contains('assegnato');
+
+                            // 2. Proposta attiva per Votazioni Live (solo proposte effettive da votare, MAI assegnazioni o info)
+                            final bool isProposal = !isAssegnazioneBonusMalus &&
+                                (tipo == 'proposta' || tipo == 'proposta_votazione' || (tipo == 'bonus_malus' && (titolo.contains('proposta') || messaggio.contains('ha proposto')))) &&
+                                stato == 'in_attesa';
+
+                            // 3. Richiesta in sospeso con opzione ACCETTA / RIFIUTA (inviti evento o richieste amicizia)
+                            final bool isPending = !isAssegnazioneBonusMalus &&
+                                (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
+                                stato == 'in_attesa';
+
+                            // 4. Etichetta di stato (solo per inviti o richieste amicizia già risolti)
+                            final bool showStatusTag = (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
+                                (stato == 'accettato' || stato == 'rifiutato');
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -192,27 +215,27 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                         ),
                                       ),
                                       const SizedBox(width: 8),
-                                       if (!isPending && !isProposal) ...[
-                                         Container(
-                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                           decoration: BoxDecoration(
-                                             color: not['stato'] == 'accettato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                                             borderRadius: BorderRadius.circular(8),
-                                           ),
-                                           child: Text(
-                                             (not['stato'] as String).toUpperCase(),
-                                             style: GoogleFonts.poppins(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
-                                           ),
-                                         ),
-                                         const SizedBox(width: 6),
-                                       ],
-                                       IconButton(
-                                         padding: EdgeInsets.zero,
-                                         constraints: const BoxConstraints(),
-                                         icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8), size: 18),
-                                         tooltip: 'Elimina notifica',
-                                         onPressed: () => _eliminaNotifica((not['id'] ?? not['notificaId'] ?? '').toString()),
-                                       ),
+                                      if (showStatusTag) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: stato == 'accettato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            stato.toUpperCase(),
+                                            style: GoogleFonts.poppins(fontSize: 10, color: Colors.white, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                      ],
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8), size: 18),
+                                        tooltip: 'Elimina notifica',
+                                        onPressed: () => _eliminaNotifica((not['id'] ?? not['notificaId'] ?? '').toString()),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 6),
@@ -220,9 +243,8 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                     not['messaggio'] ?? '',
                                     style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF94A3B8)),
                                   ),
-                                  const SizedBox(height: 12),
-
                                   if (isProposal) ...[
+                                    const SizedBox(height: 12),
                                     SizedBox(
                                       width: double.infinity,
                                       child: ElevatedButton.icon(
@@ -246,6 +268,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                       ),
                                     ),
                                   ] else if (isPending) ...[
+                                    const SizedBox(height: 12),
                                     Row(
                                       children: [
                                         Expanded(
