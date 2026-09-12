@@ -166,25 +166,47 @@ class _NotificationsModalState extends State<NotificationsModal> {
                             final messaggio = (not['messaggio'] ?? '').toString().toLowerCase();
                             final stato = (not['stato'] ?? '').toString().toLowerCase().trim();
 
-                            // 1. Notifica di assegnazione o riassegnazione bonus/malus
+                            // 1. Notifica di amicizia
+                            final bool isAmicizia = tipo.contains('amicizia') ||
+                                tipo.contains('amico') ||
+                                titolo.contains('amicizia') ||
+                                messaggio.contains('amicizia') ||
+                                messaggio.contains('amici');
+
+                            // 2. Notifica di invito evento
+                            final bool isInvito = tipo.contains('invito') ||
+                                titolo.contains('invito') ||
+                                messaggio.contains('invitato') ||
+                                messaggio.contains('partecipare all\'evento');
+
+                            // 3. Notifica di assegnazione o riassegnazione bonus/malus
                             final bool isAssegnazioneBonusMalus = tipo == 'assegnazione_bonus' ||
                                 titolo.contains('assegnat') ||
                                 titolo.contains('ricevuto') ||
                                 messaggio.contains('ha ricevuto') ||
                                 messaggio.contains('assegnato');
 
-                            // 2. Proposta attiva per Votazioni Live (solo proposte effettive da votare, MAI assegnazioni o info)
-                            final bool isProposal = !isAssegnazioneBonusMalus &&
-                                (tipo == 'proposta' || tipo == 'proposta_votazione' || (tipo == 'bonus_malus' && (titolo.contains('proposta') || messaggio.contains('ha proposto')))) &&
-                                stato == 'in_attesa';
+                            // 4. Proposta attiva per Votazioni Live:
+                            // Compare ESCLUSIVAMENTE per le proposte di bonus/malus create dagli utenti in attesa di voto
+                            final bool isProposal = !isAmicizia &&
+                                !isInvito &&
+                                !isAssegnazioneBonusMalus &&
+                                stato == 'in_attesa' &&
+                                (tipo == 'proposta_bonus_malus' ||
+                                 tipo == 'proposta_votazione' ||
+                                 tipo == 'proposta' ||
+                                 (tipo == 'bonus_malus' && (titolo.contains('proposta') || messaggio.contains('ha proposto') || titolo.contains('votazione'))));
 
-                            // 3. Richiesta in sospeso con opzione ACCETTA / RIFIUTA (inviti evento o richieste amicizia)
+                            // 5. Richiesta in sospeso con opzione ACCETTA / RIFIUTA (inviti evento o richieste amicizia)
                             final bool isPending = !isAssegnazioneBonusMalus &&
                                 (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
                                 stato == 'in_attesa';
 
-                            // 4. Etichetta di stato (solo per inviti o richieste amicizia già risolti)
-                            final bool showStatusTag = (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
+                            // 6. Etichetta di stato (solo per richieste o inviti già decisi in precedenza)
+                            final bool showStatusTag = !isProposal &&
+                                !isAssegnazioneBonusMalus &&
+                                !titolo.contains('accettat') &&
+                                (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
                                 (stato == 'accettato' || stato == 'rifiutato');
 
                             return Container(

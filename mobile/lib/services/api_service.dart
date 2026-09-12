@@ -1705,8 +1705,8 @@ class ApiService {
           'titolo': '👥 Richiesta di Amicizia Accettata!',
           'messaggio': '${curUser.nickname} ha accettato la tua richiesta di amicizia! Ora siete amici.',
           'eventoId': '',
-          'tipo': 'info',
-          'stato': 'accettato',
+          'tipo': 'amicizia_accettata',
+          'stato': 'consegnato',
           'data': DateTime.now().toIso8601String(),
         });
       }
