@@ -353,12 +353,8 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
         onPressed: () async {
           if (_tabController.index == 0) {
             await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CreateEventView()));
-          } else if (_tabController.index == 1) {
-            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddBonusMalusView()));
           } else {
-            if (_votazioniList.isNotEmpty) {
-              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => VoteView(votazione: _votazioniList.first)));
-            }
+            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddBonusMalusView()));
           }
           _loadData();
         },
@@ -490,7 +486,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                 b.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
             final isApprovato = b.stato == 'approvato' || b.stato == 'confermato' || b.approvato;
             final isMine = b.propostoDa.trim().toLowerCase() == cleanUser;
-            return (isSameEv || _bonusMalusList.length == 1) && (isApprovato || isMine);
+            return isSameEv && (isApprovato || isMine);
           }).toList();
 
           return Container(
@@ -770,9 +766,16 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   }
 
   Widget _buildVotazioniTab() {
+    final curUser = _apiService.currentUser;
+    final cleanUser = (curUser?.nome ?? 'Cloud').trim().toLowerCase();
+    final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
+    final cleanId = (curUser?.id ?? '').trim().toLowerCase();
+
     final activeVotazioni = _votazioniList.where((v) {
+      final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+
       final evMatch = _eventi.firstWhere(
-        (e) => (v.bonusMalus?.eventoId.isNotEmpty == true && e.id.trim().toLowerCase() == v.bonusMalus!.eventoId.trim().toLowerCase()) ||
+        (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
                (e.titolo.isNotEmpty && v.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
                (e.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
         orElse: () => Evento(
@@ -788,9 +791,31 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           votazioniAttive: [],
         ),
       );
-      if (evMatch.id.isNotEmpty && (evMatch.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(evMatch.dataFine))) {
+
+      // REGOLA ASSOLUTA: Se l'evento non appartiene alla lista degli eventi dell'utente (_eventi),
+      // significa che l'utente non è invitato e non partecipa: LA VOTAZIONE DEVE ESSERE ESCLUSA!
+      if (evMatch.id.isEmpty) {
         return false;
       }
+
+      // Se l'evento è concluso o scaduto, non fa più parte delle votazioni live
+      if (evMatch.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(evMatch.dataFine)) {
+        return false;
+      }
+
+      // Verifica rigorosa di partecipazione: l'utente deve essere confermato come creatore, partecipante o invitato
+      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
+      final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
+      final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
+
+      final bool isCoinvolto = cleanCreatore == cleanUser || cleanCreatore == cleanNick || cleanCreatore == cleanId ||
+                               pList.contains(cleanUser) || pList.contains(cleanNick) || pList.contains(cleanId) ||
+                               iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
+
+      if (!isCoinvolto) {
+        return false;
+      }
+
       return true;
     }).toList();
 

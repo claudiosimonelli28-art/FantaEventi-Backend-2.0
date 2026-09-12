@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../models/evento.dart';
 import '../models/votazione.dart';
 import '../services/api_service.dart';
 
@@ -24,6 +25,51 @@ class _VoteViewState extends State<VoteView> {
   }
 
   Future<void> _esprimiVoto(bool aFavore) async {
+    final curUser = _apiService.currentUser;
+    final curUserNick = curUser?.nome.isNotEmpty == true ? curUser!.nome : 'Cloud';
+    final cleanUser = curUserNick.trim().toLowerCase();
+    final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
+    final cleanId = (curUser?.id ?? '').trim().toLowerCase();
+
+    final evId = _votazione.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+    final evMatch = _apiService.eventi.firstWhere(
+      (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
+             (e.titolo.isNotEmpty && _votazione.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
+             (e.titolo.isNotEmpty && _votazione.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+      orElse: () => Evento(
+        id: '',
+        titolo: '',
+        descrizione: '',
+        data: DateTime.now(),
+        luogo: '',
+        stato: '',
+        propostoDa: '',
+        partecipanti: [],
+        bonusMalusApplicati: [],
+        votazioniAttive: [],
+      ),
+    );
+
+    if (evMatch.id.isNotEmpty) {
+      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
+      final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
+      final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
+
+      final bool isPartecipante = cleanCreatore == cleanUser || cleanCreatore == cleanNick || cleanCreatore == cleanId ||
+                                  pList.contains(cleanUser) || pList.contains(cleanNick) || pList.contains(cleanId) ||
+                                  iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
+
+      if (!isPartecipante) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFEF4444),
+            content: Text('Non puoi votare perché non partecipi a questo evento!'),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() {
       _isSubmitting = true;
     });
@@ -56,10 +102,43 @@ class _VoteViewState extends State<VoteView> {
 
   @override
   Widget build(BuildContext context) {
-    final curUserNick = _apiService.currentUser?.nome.isNotEmpty == true
-        ? _apiService.currentUser!.nome
+    final curUser = _apiService.currentUser;
+    final curUserNick = curUser?.nome.isNotEmpty == true
+        ? curUser!.nome
         : 'Cloud';
     final cleanUser = curUserNick.trim().toLowerCase();
+    final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
+    final cleanId = (curUser?.id ?? '').trim().toLowerCase();
+
+    final evId = _votazione.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+    final evMatch = _apiService.eventi.firstWhere(
+      (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
+             (e.titolo.isNotEmpty && _votazione.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
+             (e.titolo.isNotEmpty && _votazione.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+      orElse: () => Evento(
+        id: '',
+        titolo: '',
+        descrizione: '',
+        data: DateTime.now(),
+        luogo: '',
+        stato: '',
+        propostoDa: '',
+        partecipanti: [],
+        bonusMalusApplicati: [],
+        votazioniAttive: [],
+      ),
+    );
+
+    bool isPartecipante = true;
+    if (evMatch.id.isNotEmpty) {
+      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
+      final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
+      final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
+
+      isPartecipante = cleanCreatore == cleanUser || cleanCreatore == cleanNick || cleanCreatore == cleanId ||
+                       pList.contains(cleanUser) || pList.contains(cleanNick) || pList.contains(cleanId) ||
+                       iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
+    }
 
     final propostoDa = (_votazione.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
     final isProponente = propostoDa.isNotEmpty && propostoDa == cleanUser ||
@@ -264,6 +343,25 @@ class _VoteViewState extends State<VoteView> {
               if (_votazione.stato == 'in_corso') ...[
                 if (_isSubmitting)
                   const Center(child: CircularProgressIndicator(color: Color(0xFFFACC15)))
+                else if (!isPartecipante)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF475569)),
+                    ),
+                    child: Text(
+                      '🔒 Non partecipi a questo evento, pertanto non puoi votare su questa proposta.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFFCBD5E1),
+                      ),
+                    ),
+                  )
                 else if (isProponente)
                   Container(
                     width: double.infinity,

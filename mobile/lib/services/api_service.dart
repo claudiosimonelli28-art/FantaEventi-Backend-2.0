@@ -105,6 +105,7 @@ class ApiService {
   }
 
   Utente? get currentUser => _currentUser;
+  List<Evento> get eventi => List.unmodifiable(_eventi);
 
   Future<void> _saveSession(Utente utente) async {
     try {
@@ -921,8 +922,8 @@ class ApiService {
   // --- PROPOSTA BONUS/MALUS LEGATA A UN EVENTO SPECIFICO ---
   Future<BonusMalus> proponiBonusMalusPerEvento(String eventoId, BonusMalus nuovoBonus) async {
     final curUserNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
-    final evMatch = _eventi.firstWhere(
-      (e) => e.id == eventoId,
+    Evento evMatch = _eventi.firstWhere(
+      (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoId.toLowerCase(),
       orElse: () => Evento(
         id: eventoId,
         titolo: 'Evento Fanta',
@@ -942,6 +943,22 @@ class ApiService {
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
+        if (evMatch.partecipanti.isEmpty) {
+          ObjectId? evObjId;
+          try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
+          final evDoc = await db.collection('Evento').findOne(
+            evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId).or(where.eq('titolo', eventoId))
+          );
+          if (evDoc != null) {
+            evMatch = evMatch.copyWith(
+              titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
+              propostoDa: evDoc['propostoDa'] ?? evDoc['creatore'] ?? evMatch.propostoDa,
+              partecipanti: (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? evMatch.partecipanti,
+              invitati: (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? evMatch.invitati,
+            );
+          }
+        }
+
         await db.collection('BonusMalus').insertOne({
           'eventoId': eventoId,
           'nome': nuovoBonus.titolo,
@@ -954,7 +971,7 @@ class ApiService {
         });
 
         final Map<String, String> uniqueDestMap = {};
-        for (var d in [...evMatch.partecipanti, ...evMatch.invitati, evMatch.propostoDa, 'Cloud', 'Ugnom']) {
+        for (var d in [...evMatch.partecipanti, ...evMatch.invitati, evMatch.propostoDa, evMatch.creatore]) {
           final cleanD = d.trim().toLowerCase();
           if (cleanD.isNotEmpty && cleanD != curUserNick.trim().toLowerCase()) {
             uniqueDestMap[cleanD] = d.trim();
@@ -1194,7 +1211,7 @@ class ApiService {
           }
         }
         if (destList.isEmpty) {
-          destList.addAll(['Cloud', 'Ugnom']);
+          destList.add(utenteDestinatario);
         }
 
         final int ts = now.millisecondsSinceEpoch;
