@@ -31,6 +31,7 @@ class _ProfileViewState extends State<ProfileView> {
   ];
 
   int _filtroGiorniStorico = 7;
+  bool _isTitoliLoading = true;
   int _countCampione = 0;
   int _countReMalus = 0;
   int _countGiudiceSupremo = 0;
@@ -216,9 +217,16 @@ class _ProfileViewState extends State<ProfileView> {
           _countReMalus = reMalus;
           _countGiudiceSupremo = giudice;
           _countFantasma = fantasma;
+          _isTitoliLoading = false;
         });
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isTitoliLoading = false;
+        });
+      }
+    }
   }
 
   // APRE LA VERA FOTOCAMERA FISICA DEL TELEFONO
@@ -1127,49 +1135,79 @@ class _ProfileViewState extends State<ProfileView> {
             style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildBachecaBadge(
-                  icon: '👑',
-                  label: 'Campione',
-                  count: _countCampione,
-                  color: const Color(0xFFFACC15),
+          if (_isTitoliLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFFFACC15),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Calcolo riconoscimenti in corso...',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildBachecaBadge(
-                  icon: '🤡',
-                  label: 'Re Malus',
-                  count: _countReMalus,
-                  color: const Color(0xFFEF4444),
+            )
+          else ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _buildBachecaBadge(
+                    icon: '👑',
+                    label: 'Campione',
+                    count: _countCampione,
+                    color: const Color(0xFFFACC15),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildBachecaBadge(
-                  icon: '⚖️',
-                  label: 'Giudice',
-                  count: _countGiudiceSupremo,
-                  color: const Color(0xFF38BDF8),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildBachecaBadge(
+                    icon: '🤡',
+                    label: 'Re Malus',
+                    count: _countReMalus,
+                    color: const Color(0xFFEF4444),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildBachecaBadge(
-                  icon: '👻',
-                  label: 'Fantasma',
-                  count: _countFantasma,
-                  color: const Color(0xFF94A3B8),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildBachecaBadge(
+                    icon: '⚖️',
+                    label: 'Giudice',
+                    count: _countGiudiceSupremo,
+                    color: const Color(0xFF38BDF8),
+                  ),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildBachecaBadge(
+                    icon: '👻',
+                    label: 'Fantasma',
+                    count: _countFantasma,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

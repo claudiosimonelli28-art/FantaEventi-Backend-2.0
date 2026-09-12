@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/live_pulse_badge.dart';
 import '../widgets/animated_points_counter.dart';
@@ -28,6 +30,7 @@ class EventDetailView extends StatefulWidget {
 
 class _EventDetailViewState extends State<EventDetailView> {
   final ApiService _apiService = ApiService();
+  final ImagePicker _picker = ImagePicker();
   late Evento _evento;
   List<Votazione> _votazioniEvento = [];
   List<BonusMalus> _allBonusMalus = [];
@@ -107,6 +110,9 @@ class _EventDetailViewState extends State<EventDetailView> {
   @override
   Widget build(BuildContext context) {
     final currentUserNick = _apiService.currentUser?.nome ?? 'Cloud';
+    final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
+    final isCreatore = creatore.trim().toLowerCase() == currentUserNick.trim().toLowerCase();
+    final isConcluso = _evento.isConcluso;
     final giaPartecipa = _partecipantiConfermati.contains(currentUserNick) ||
         _partecipantiConfermati.contains(_apiService.currentUser?.id);
 
@@ -133,9 +139,8 @@ class _EventDetailViewState extends State<EventDetailView> {
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Image.network(
-                    _evento.copertinaUrl ??
-                        'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+                  Image(
+                    image: getEventCoverImageProvider(_evento.copertinaUrl),
                     fit: BoxFit.cover,
                     errorBuilder: (ctx, _, __) => Container(
                       color: const Color(0xFF1E293B),
@@ -154,6 +159,47 @@ class _EventDetailViewState extends State<EventDetailView> {
                       ),
                     ),
                   ),
+                  if (isCreatore && !isConcluso)
+                    Positioned(
+                      top: 40,
+                      right: 14,
+                      child: SafeArea(
+                        child: InkWell(
+                          onTap: _mostraModalCambiaCopertina,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.7)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.camera_alt_rounded, size: 14, color: Color(0xFFFACC15)),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'Cambia Foto',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1427,6 +1473,207 @@ class _EventDetailViewState extends State<EventDetailView> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _mostraModalCambiaCopertina() async {
+    final List<Map<String, String>> copertinePredefinite = [
+      {
+        'label': '🎤 Concerto',
+        'url': 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+      },
+      {
+        'label': '🍕 Cena',
+        'url': 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
+      },
+      {
+        'label': '🍾 Party',
+        'url': 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80',
+      },
+      {
+        'label': '🪩 Club / DJ',
+        'url': 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
+      },
+      {
+        'label': '🏖️ Viaggio',
+        'url': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+      },
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E293B),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF64748B),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Modifica Foto Copertina Evento 📷',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Solo tu come organizzatore puoi aggiornare la foto dell\'evento.',
+              style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        final photo = await _picker.pickImage(
+                          source: ImageSource.camera,
+                          imageQuality: 80,
+                          maxWidth: 1080,
+                          maxHeight: 1080,
+                        );
+                        if (photo != null) {
+                          final bytes = await photo.readAsBytes();
+                          final b64 = 'data:image/png;base64,${base64Encode(bytes)}';
+                          setState(() {
+                            _evento = _evento.copyWith(copertinaUrl: b64);
+                          });
+                          await _apiService.aggiornaCopertinaEvento(_evento.id, b64);
+                          widget.onRefresh();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: const Color(0xFF10B981),
+                                content: Text('Foto copertina aggiornata con successo! 📸',
+                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
+                              ),
+                            );
+                          }
+                        }
+                      } catch (_) {}
+                    },
+                    icon: const Icon(Icons.camera_alt_rounded, size: 18, color: Color(0xFF0F172A)),
+                    label: const Text('SCATTA FOTO'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFACC15),
+                      foregroundColor: const Color(0xFF0F172A),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      textStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      try {
+                        final photo = await _picker.pickImage(
+                          source: ImageSource.gallery,
+                          imageQuality: 80,
+                          maxWidth: 1080,
+                          maxHeight: 1080,
+                        );
+                        if (photo != null) {
+                          final bytes = await photo.readAsBytes();
+                          final b64 = 'data:image/png;base64,${base64Encode(bytes)}';
+                          setState(() {
+                            _evento = _evento.copyWith(copertinaUrl: b64);
+                          });
+                          await _apiService.aggiornaCopertinaEvento(_evento.id, b64);
+                          widget.onRefresh();
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: const Color(0xFF10B981),
+                                content: Text('Foto copertina aggiornata con successo! 📸',
+                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
+                              ),
+                            );
+                          }
+                        }
+                      } catch (_) {}
+                    },
+                    icon: const Icon(Icons.photo_library_rounded, size: 18, color: Colors.white),
+                    label: const Text('DALLA GALLERIA'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF9333EA),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      textStyle: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Oppure seleziona un tema predefinito:',
+              style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 38,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: copertinePredefinite.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (c, idx) {
+                  final item = copertinePredefinite[idx];
+                  return ActionChip(
+                    label: Text(item['label']!),
+                    labelStyle: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                    backgroundColor: const Color(0xFF0F172A),
+                    side: const BorderSide(color: Color(0xFF334155)),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final newUrl = item['url']!;
+                      setState(() {
+                        _evento = _evento.copyWith(copertinaUrl: newUrl);
+                      });
+                      await _apiService.aggiornaCopertinaEvento(_evento.id, newUrl);
+                      widget.onRefresh();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: const Color(0xFF10B981),
+                            content: Text('Tema copertina applicato! ✨',
+                                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
+                          ),
+                        );
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
         ),
       ),
     );

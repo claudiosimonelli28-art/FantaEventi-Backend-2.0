@@ -516,6 +516,7 @@ class ApiService {
             'propostoDa': d['propostoDa'] ?? d['creatore'] ?? 'Cloud',
             'partecipanti': partecipanti,
             'invitati': (d['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+            'copertinaUrl': d['copertinaUrl']?.toString(),
             'bonusMalusApplicati': [],
             'votazioniAttive': [],
           };
@@ -836,6 +837,7 @@ class ApiService {
           'creatore': creatore,
           'partecipanti': [creatore],
           'invitati': invitati,
+          'copertinaUrl': nuovoEvento.copertinaUrl,
         });
 
         final insertedEvId = evRes.id?.toHexString() ?? '';
@@ -883,6 +885,37 @@ class ApiService {
     }
 
     return eventPayload;
+  }
+
+  // --- AGGIORNA COPERTINA EVENTO SU MONGODB ATLAS & MEMORIA LOCALE ---
+  Future<void> aggiornaCopertinaEvento(String eventoId, String newCopertinaUrl) async {
+    final evIndex = _eventi.indexWhere((e) =>
+        e.id.trim().toLowerCase() == eventoId.trim().toLowerCase() ||
+        e.titolo.trim().toLowerCase() == eventoId.trim().toLowerCase());
+    if (evIndex != -1) {
+      _eventi[evIndex] = _eventi[evIndex].copyWith(copertinaUrl: newCopertinaUrl);
+    }
+    invalidateCache();
+
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        final evDocs = await db.collection('Evento').find().toList();
+        for (var doc in evDocs) {
+          final dId = (doc['_id']?.toHexString() ?? doc['_id']?.toString() ?? doc['id'] ?? '').toString().trim().toLowerCase();
+          final dTit = (doc['titolo'] ?? doc['nome'] ?? '').toString().trim().toLowerCase();
+          final target = eventoId.trim().toLowerCase();
+
+          if (dId == target || dTit == target) {
+            await db.collection('Evento').update(
+              where.id(doc['_id'] as ObjectId),
+              modify.set('copertinaUrl', newCopertinaUrl),
+            );
+            break;
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   // --- PROPOSTA BONUS/MALUS LEGATA A UN EVENTO SPECIFICO ---

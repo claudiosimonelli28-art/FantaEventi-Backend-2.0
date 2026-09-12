@@ -1,8 +1,11 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/api_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
+import '../widgets/avatar_helper.dart';
 
 class CreateEventView extends StatefulWidget {
   const CreateEventView({super.key});
@@ -18,6 +21,32 @@ class _CreateEventViewState extends State<CreateEventView> {
   final _luogoController = TextEditingController();
   final _copertinaController = TextEditingController();
   final _searchController = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
+
+  final List<Map<String, String>> _copertinePredefinite = [
+    {
+      'label': '🎤 Concerto',
+      'url': 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      'label': '🍕 Cena',
+      'url': 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      'label': '🍾 Party',
+      'url': 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      'label': '🪩 Club / DJ',
+      'url': 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
+    },
+    {
+      'label': '🏖️ Viaggio',
+      'url': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80',
+    },
+  ];
+
+  String _selectedCoverUrl = 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80';
 
   DateTime _selectedStartDate = DateTime.now().add(const Duration(hours: 1));
   DateTime _selectedEndDate = DateTime.now().add(const Duration(days: 1, hours: 1));
@@ -28,6 +57,42 @@ class _CreateEventViewState extends State<CreateEventView> {
   bool _isLoadingUtenti = true;
 
   final ApiService _apiService = ApiService();
+
+  Future<void> _scattaFotoCopertina() async {
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 80,
+        maxWidth: 1080,
+        maxHeight: 1080,
+      );
+      if (photo != null) {
+        final bytes = await photo.readAsBytes();
+        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
+        setState(() {
+          _selectedCoverUrl = base64String;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _scegliFotoCopertinaDaGalleria() async {
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+        maxWidth: 1080,
+        maxHeight: 1080,
+      );
+      if (photo != null) {
+        final bytes = await photo.readAsBytes();
+        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
+        setState(() {
+          _selectedCoverUrl = base64String;
+        });
+      }
+    } catch (_) {}
+  }
 
   Future<void> _pickStartDateTime() async {
     final pickedDate = await showDatePicker(
@@ -177,9 +242,7 @@ class _CreateEventViewState extends State<CreateEventView> {
         partecipanti: _partecipantiSelezionati,
         bonusMalusApplicati: [],
         votazioniAttive: [],
-        copertinaUrl: _copertinaController.text.trim().isNotEmpty
-            ? _copertinaController.text.trim()
-            : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+        copertinaUrl: _selectedCoverUrl,
       );
 
       await _apiService.creaEvento(nuovoEvento);
@@ -233,7 +296,113 @@ class _CreateEventViewState extends State<CreateEventView> {
                   'Seleziona i partecipanti reali registrati nel database MongoDB',
                   style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF94A3B8)),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+
+                // FOTO COPERTINA EVENTO
+                Text(
+                  'Foto Copertina Evento',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 140,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1.5),
+                    image: DecorationImage(
+                      image: getEventCoverImageProvider(_selectedCoverUrl),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.2),
+                          Colors.black.withValues(alpha: 0.65),
+                        ],
+                      ),
+                    ),
+                    alignment: Alignment.bottomRight,
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _scattaFotoCopertina,
+                          icon: const Icon(Icons.camera_alt, size: 16, color: Color(0xFF0F172A)),
+                          label: const Text('SCATTA'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFACC15),
+                            foregroundColor: const Color(0xFF0F172A),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            textStyle: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _scegliFotoCopertinaDaGalleria,
+                          icon: const Icon(Icons.photo_library, size: 16, color: Colors.white),
+                          label: const Text('GALLERIA'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF9333EA),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            textStyle: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Oppure scegli un tema rapido predefinito:',
+                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _copertinePredefinite.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (ctx, idx) {
+                      final item = _copertinePredefinite[idx];
+                      final isSel = _selectedCoverUrl == item['url'];
+                      return ChoiceChip(
+                        label: Text(item['label']!),
+                        labelStyle: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isSel ? const Color(0xFF0F172A) : Colors.white70,
+                        ),
+                        selected: isSel,
+                        selectedColor: const Color(0xFFFACC15),
+                        backgroundColor: const Color(0xFF1E293B),
+                        side: BorderSide(
+                          color: isSel ? const Color(0xFFFACC15) : const Color(0xFF334155),
+                        ),
+                        onSelected: (_) {
+                          setState(() {
+                            _selectedCoverUrl = item['url']!;
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
 
                 // Titolo
                 TextFormField(
