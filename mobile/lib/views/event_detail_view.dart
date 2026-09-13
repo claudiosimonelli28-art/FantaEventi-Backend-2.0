@@ -1483,38 +1483,138 @@ class _EventDetailViewState extends State<EventDetailView> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 22),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'PODIO FINALE UFFICIALE',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFFFACC15),
-                                    letterSpacing: 1.0,
-                                  ),
+                          // BANNER FOTOGRAFICO DELL'EVENTO CON TITOLO OVERLAY
+                          Container(
+                            height: 120,
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1.2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.4),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
+                              ],
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15),
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image(
+                                    image: getEventCoverImageProvider(_evento.copertinaUrl),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (ctx, err, stack) => Container(
+                                      color: const Color(0xFF1E293B),
+                                      child: const Center(
+                                        child: Icon(Icons.celebration_rounded, size: 48, color: Color(0xFFFACC15)),
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                        colors: [
+                                          Colors.black.withValues(alpha: 0.3),
+                                          const Color(0xFF0F172A).withValues(alpha: 0.92),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    top: 10,
+                                    left: 12,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: const Color(0xFFFACC15), width: 1),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 14),
+                                          const SizedBox(width: 5),
+                                          Text(
+                                            'PODIO FINALE',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.bold,
+                                              color: const Color(0xFFFACC15),
+                                              letterSpacing: 0.8,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 10,
+                                    left: 12,
+                                    right: 12,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _evento.titolo,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                            shadows: [
+                                              const Shadow(color: Colors.black, blurRadius: 8),
+                                            ],
+                                          ),
+                                        ),
+                                        Row(
+                                          children: [
+                                            if (_evento.luogo.isNotEmpty) ...[
+                                              const Icon(Icons.place_rounded, color: Color(0xFFFACC15), size: 12),
+                                              const SizedBox(width: 3),
+                                              Flexible(
+                                                child: Text(
+                                                  _evento.luogo,
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: const Color(0xFFCBD5E1),
+                                                    shadows: [const Shadow(color: Colors.black, blurRadius: 4)],
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              const Text('•', style: TextStyle(color: Colors.white54, fontSize: 10)),
+                                              const SizedBox(width: 6),
+                                            ],
+                                            Text(
+                                              '${_evento.data.day}/${_evento.data.month}/${_evento.data.year}',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w500,
+                                                color: const Color(0xFF94A3B8),
+                                                shadows: [const Shadow(color: Colors.black, blurRadius: 4)],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _evento.titolo,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 14),
 
                           // 1° Classificato
                           if (primo != null) ...[
