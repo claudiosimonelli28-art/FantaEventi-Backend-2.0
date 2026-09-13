@@ -92,7 +92,7 @@ class ApiService {
   };
 
   Utente? _currentUser;
-  List<Utente> _utenti = [];
+  final List<Utente> _utenti = [];
   final List<Evento> _eventi = [];
   final List<BonusMalus> _bonusMalusList = [];
   final List<Votazione> _votazioniList = [];
@@ -102,6 +102,14 @@ class ApiService {
 
   void invalidateCache() {
     _lastFetchTime = null;
+  }
+
+  void clearUserSessionCache() {
+    _lastFetchTime = null;
+    _eventi.clear();
+    _bonusMalusList.clear();
+    _votazioniList.clear();
+    _utenti.clear();
   }
 
   Utente? get currentUser => _currentUser;
@@ -117,6 +125,7 @@ class ApiService {
 
   Future<void> logout() async {
     _currentUser = null;
+    clearUserSessionCache();
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('saved_user_json');
@@ -131,6 +140,7 @@ class ApiService {
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
         final Map<String, dynamic> data = jsonDecode(userJsonStr);
         _currentUser = Utente.fromJson(data);
+        clearUserSessionCache();
         return _currentUser;
       }
     } catch (_) {}
@@ -139,6 +149,7 @@ class ApiService {
 
   // --- LOGIN RIGOROSO REALE DA MONGODB ATLAS (ISTANTANEO <20ms) ---
   Future<Utente> login(String identifier) async {
+    clearUserSessionCache();
     final cleanIdentifier = identifier.trim().toLowerCase();
     if (cleanIdentifier.isEmpty) {
       throw Exception('Inserisci il tuo Nickname o la tua Email');
@@ -166,6 +177,7 @@ class ApiService {
               'storicoVoti': d['storicoVoti'] ?? [],
             };
             _currentUser = Utente.fromJson(jsonMap);
+            clearUserSessionCache();
             await _saveSession(_currentUser!);
             return _currentUser!;
           }
@@ -196,6 +208,7 @@ class ApiService {
 
         if (response.statusCode == 200 && data.containsKey('utente')) {
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
+          clearUserSessionCache();
           await _saveSession(_currentUser!);
           return _currentUser!;
         } else if (response.statusCode == 404 || data['notFound'] == true) {
@@ -221,6 +234,7 @@ class ApiService {
     required String nickname,
     required String email,
   }) async {
+    clearUserSessionCache();
     String? lastError;
 
     for (String url in baseUrls) {
@@ -241,6 +255,7 @@ class ApiService {
 
         if (response.statusCode == 200 && data.containsKey('utente')) {
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
+          clearUserSessionCache();
           await _saveSession(_currentUser!);
           return _currentUser!;
         } else if (data.containsKey('error')) {

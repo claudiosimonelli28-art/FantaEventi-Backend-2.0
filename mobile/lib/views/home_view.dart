@@ -38,7 +38,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _loadData();
+    _loadData(forceRefresh: true);
     _liveSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _loadData(silent: true, forceRefresh: false);
     });
@@ -164,7 +164,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
             content: Text('Evento "${evento.titolo}" eliminato con successo! 🗑️', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         );
-        _loadData();
+        _loadData(forceRefresh: true);
       } catch (e) {
         if (!mounted) return;
 
@@ -191,7 +191,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           content: Text('Iscritto con successo a "${evento.titolo}"! 🎉', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
         ),
       );
-      _loadData();
+      _loadData(forceRefresh: true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -356,7 +356,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           } else {
             await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddBonusMalusView()));
           }
-          _loadData();
+          _loadData(forceRefresh: true);
         },
         backgroundColor: const Color(0xFF9333EA),
         icon: const Icon(Icons.add_rounded, color: Colors.white),
@@ -411,9 +411,9 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
             currentUserNickname: userNick,
             onTap: () async {
               await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: _loadData)),
+                MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
               );
-              _loadData();
+              _loadData(forceRefresh: true);
             },
             onPartecipa: () => _partecipaEvento(ev),
             onElimina: () => _confermaEliminazioneEvento(ev),
@@ -423,7 +423,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     }
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(forceRefresh: true),
       color: const Color(0xFFFACC15),
       backgroundColor: const Color(0xFF1E293B),
       child: child,
@@ -565,7 +565,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     }
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(forceRefresh: true),
       color: const Color(0xFFFACC15),
       backgroundColor: const Color(0xFF1E293B),
       child: child,
@@ -742,7 +742,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
                                           ),
                                         ),
                                       );
-                                      _loadData();
+                                      _loadData(forceRefresh: true);
                                     },
                                     icon: const Icon(Icons.check_rounded, size: 16),
                                     label: const Text('Assegna'),
@@ -847,7 +847,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
               await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => VoteView(votazione: v)),
               );
-              _loadData();
+              _loadData(forceRefresh: true);
             },
           );
         },
@@ -855,7 +855,7 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
     }
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: () => _loadData(forceRefresh: true),
       color: const Color(0xFFFACC15),
       backgroundColor: const Color(0xFF1E293B),
       child: child,
