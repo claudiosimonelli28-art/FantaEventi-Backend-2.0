@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/live_pulse_badge.dart';
 import '../widgets/animated_points_counter.dart';
@@ -1262,10 +1267,111 @@ class _EventDetailViewState extends State<EventDetailView> {
     );
   }
 
+  Widget _buildCompactChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF334155)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15))),
+          const SizedBox(width: 4),
+          Text(value, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white)),
+        ],
+      ),
+    );
+  }
+
   void _mostraModalCondividiPodio(List<MapEntry<String, int>> sortedEntries) {
     final primo = sortedEntries.isNotEmpty ? sortedEntries[0] : null;
     final secondo = sortedEntries.length > 1 ? sortedEntries[1] : null;
     final terzo = sortedEntries.length > 2 ? sortedEntries[2] : null;
+
+    final String? campioneNick = primo?.key;
+    final int campionePts = primo?.value ?? 0;
+
+    final Map<String, int> malusPunti = {};
+    final Map<String, int> attivitaUtenti = {};
+    final Map<String, int> azioniTotali = {};
+
+    for (var p in _evento.partecipanti) {
+      final pNorm = p.trim().toLowerCase();
+      malusPunti[pNorm] = 0;
+      attivitaUtenti[pNorm] = 0;
+      azioniTotali[pNorm] = 0;
+    }
+
+    for (var bm in _allBonusMalus) {
+      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+      if (!isSameEv && _allBonusMalus.length > 1) continue;
+
+      final prop = bm.propostoDa.trim().toLowerCase();
+      if (attivitaUtenti.containsKey(prop)) {
+        attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
+        azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
+      }
+
+      for (var u in bm.assegnatoA) {
+        final uNorm = u.trim().toLowerCase();
+        azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+        if (bm.punti < 0) {
+          malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
+        }
+      }
+    }
+
+    for (var v in _votazioniEvento) {
+      for (var u in v.votiUtenti.keys) {
+        final uNorm = u.trim().toLowerCase();
+        if (attivitaUtenti.containsKey(uNorm)) {
+          attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
+          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+        }
+      }
+    }
+
+    String? reMalusNick;
+    int maxMalusVal = 0;
+    malusPunti.forEach((nickLower, tot) {
+      if (tot > maxMalusVal) {
+        maxMalusVal = tot;
+        reMalusNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
+    String? giudiceNick;
+    int maxAttivita = 0;
+    attivitaUtenti.forEach((nickLower, count) {
+      if (count > maxAttivita) {
+        maxAttivita = count;
+        giudiceNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
+    String? fantasmaNick;
+    int minAzioni = 999999;
+    if (_evento.partecipanti.length > 1 && campioneNick != null) {
+      for (var p in _evento.partecipanti) {
+        final pLower = p.trim().toLowerCase();
+        if (pLower == campioneNick.trim().toLowerCase()) continue;
+        final azioni = azioniTotali[pLower] ?? 0;
+        if (azioni < minAzioni) {
+          minAzioni = azioni;
+          fantasmaNick = p;
+        }
+      }
+    }
 
     final buffer = StringBuffer();
     buffer.writeln('🏆 *PODIO FANTAEVENTI* - ${_evento.titolo} 🏆');
@@ -1273,207 +1379,397 @@ class _EventDetailViewState extends State<EventDetailView> {
     if (primo != null) buffer.writeln('🥇 1°: ${primo.key} (+${primo.value} PT)');
     if (secondo != null) buffer.writeln('🥈 2°: ${secondo.key} (+${secondo.value} PT)');
     if (terzo != null) buffer.writeln('🥉 3°: ${terzo.key} (+${terzo.value} PT)');
+    if (campioneNick != null || reMalusNick != null || giudiceNick != null || fantasmaNick != null) {
+      buffer.writeln('');
+      buffer.writeln('🎖️ *RICONOSCIMENTI SPECIALI*:');
+      if (campioneNick != null) buffer.writeln('👑 Il Campione: $campioneNick ($campionePts PT)');
+      if (reMalusNick != null && maxMalusVal > 0) buffer.writeln('🤡 Re dei Malus: $reMalusNick (-$maxMalusVal PT)');
+      if (giudiceNick != null && maxAttivita > 0) buffer.writeln('⚖️ Giudice Supremo: $giudiceNick ($maxAttivita azioni)');
+      if (fantasmaNick != null) buffer.writeln('👻 Il Fantasma: $fantasmaNick ($minAzioni azioni)');
+    }
     buffer.writeln('');
     buffer.writeln('🎉 Complimenti a tutti i partecipanti di FantaEventi!');
     final String riepilogoTestuale = buffer.toString();
+
+    final GlobalKey shareCardKey = GlobalKey();
+    bool isSharing = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E293B),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1.5),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.5),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF64748B),
-                  borderRadius: BorderRadius.circular(2),
+      builder: (ctx) => StatefulBuilder(
+        builder: (modalCtx, setModalState) {
+          return Container(
+            margin: const EdgeInsets.only(top: 24, left: 14, right: 14, bottom: 14),
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFF334155), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  blurRadius: 25,
+                  offset: const Offset(0, 8),
                 ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              ],
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.stars_rounded, color: Color(0xFFFACC15), size: 24),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'PODIO FINALE UFFICIALE',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFFACC15),
-                        letterSpacing: 0.8,
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF64748B),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.share_rounded, color: Color(0xFFFACC15), size: 22),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'CONDIVIDI CON GLI AMICI',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Pubblica la grafica ufficiale su Instagram o inviala su WhatsApp',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // SCHEDA GRAFICA CATTURABILE PER LA CONDIVISIONE
+                  RepaintBoundary(
+                    key: shareCardKey,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1E293B), Color(0xFF0B1120)],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.6), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF9333EA).withValues(alpha: 0.2),
+                            blurRadius: 15,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 22),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'PODIO FINALE UFFICIALE',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFFACC15),
+                                    letterSpacing: 1.0,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _evento.titolo,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // 1° Classificato
+                          if (primo != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text('🥇', style: TextStyle(fontSize: 24)),
+                                  const SizedBox(width: 10),
+                                  _buildAvatarWidget(_apiService.getUtenteInMemoria(primo.key)?.avatarUrl ?? '', primo.key, radius: 16),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      primo.key,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ),
+                                  Text(
+                                    '+${primo.value} PT',
+                                    style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
+                          // 2° Classificato
+                          if (secondo != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFF94A3B8).withValues(alpha: 0.6)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text('🥈', style: TextStyle(fontSize: 20)),
+                                  const SizedBox(width: 10),
+                                  _buildAvatarWidget(_apiService.getUtenteInMemoria(secondo.key)?.avatarUrl ?? '', secondo.key, radius: 14),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      secondo.key,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ),
+                                  Text(
+                                    '+${secondo.value} PT',
+                                    style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
+                          // 3° Classificato
+                          if (terzo != null) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFB45309).withValues(alpha: 0.6)),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Text('🥉', style: TextStyle(fontSize: 20)),
+                                  const SizedBox(width: 10),
+                                  _buildAvatarWidget(_apiService.getUtenteInMemoria(terzo.key)?.avatarUrl ?? '', terzo.key, radius: 14),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      terzo.key,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ),
+                                  Text(
+                                    '+${terzo.value} PT',
+                                    style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFB45309)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+
+                          // Titoli speciali se presenti
+                          if (campioneNick != null || reMalusNick != null || giudiceNick != null || fantasmaNick != null) ...[
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A).withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFF334155)),
+                              ),
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                alignment: WrapAlignment.center,
+                                children: [
+                                  if (campioneNick != null)
+                                    _buildCompactChip('👑 Campione', campioneNick),
+                                  if (reMalusNick != null && maxMalusVal > 0)
+                                    _buildCompactChip('🤡 Re Malus', reMalusNick!),
+                                  if (giudiceNick != null && maxAttivita > 0)
+                                    _buildCompactChip('⚖️ Giudice', giudiceNick!),
+                                  if (fantasmaNick != null)
+                                    _buildCompactChip('👻 Fantasma', fantasmaNick),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+
+                          // Watermark brand
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Color(0xFFFACC15),
+                                ),
+                                child: const Icon(Icons.flash_on, color: Color(0xFF0F172A), size: 12),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'FantaEventi App ⚡',
+                                style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w600, color: const Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // PULSANTE CONDIVIDI FOTO REALE CON TENDINA DI SISTEMA
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: isSharing
+                          ? null
+                          : () async {
+                              setModalState(() => isSharing = true);
+                              try {
+                                await Future.delayed(const Duration(milliseconds: 100));
+                                final boundary = shareCardKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+                                if (boundary != null) {
+                                  final image = await boundary.toImage(pixelRatio: 3.0);
+                                  final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+                                  if (byteData != null) {
+                                    final pngBytes = byteData.buffer.asUint8List();
+                                    final tempDir = await getTemporaryDirectory();
+                                    final cleanTitle = _evento.titolo.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+                                    final filePath = '${tempDir.path}/podio_$cleanTitle.png';
+                                    final file = File(filePath);
+                                    await file.writeAsBytes(pngBytes);
+
+                                    final box = context.findRenderObject() as RenderBox?;
+                                    final sharePositionOrigin = box != null ? box.localToGlobal(Offset.zero) & box.size : null;
+
+                                    await Share.shareXFiles(
+                                      [XFile(file.path, mimeType: 'image/png')],
+                                      text: '🏆 Podio e Riconoscimenti Ufficiali di "${_evento.titolo}" su FantaEventi! 🎉',
+                                      sharePositionOrigin: sharePositionOrigin,
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      backgroundColor: const Color(0xFFEF4444),
+                                      content: Text('Errore durante la condivisione: $e'),
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                setModalState(() => isSharing = false);
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF9333EA),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(color: const Color(0xFFFACC15).withValues(alpha: 0.6), width: 1.2),
+                        ),
+                        elevation: 4,
+                      ),
+                      icon: isSharing
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.share_rounded, color: Color(0xFFFACC15), size: 20),
+                      label: Text(
+                        isSharing ? 'GENERAZIONE IMMAGINE...' : 'CONDIVIDI FOTO (STORIE / STATO) 🚀',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // PULSANTE COPIA TESTO RIEPILOGO
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: riepilogoTestuale));
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: const Color(0xFF10B981),
+                            content: Text(
+                              'Podio copiato negli appunti! 📋 Incollalo su WhatsApp o Instagram!',
+                              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFFACC15),
+                        side: BorderSide(color: const Color(0xFFFACC15).withValues(alpha: 0.4)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: Text(
+                        'COPIA RIEPILOGO TESTO 📲',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                _evento.titolo,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white70,
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Podio visuale
-              if (primo != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🥇', style: TextStyle(fontSize: 26)),
-                      const SizedBox(width: 12),
-                      _buildAvatarWidget(_apiService.getUtenteInMemoria(primo.key)?.avatarUrl ?? '', primo.key, radius: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          primo.key,
-                          style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                      ),
-                      Text(
-                        '+${primo.value} PT',
-                        style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-              if (secondo != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF94A3B8).withValues(alpha: 0.6)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🥈', style: TextStyle(fontSize: 22)),
-                      const SizedBox(width: 12),
-                      _buildAvatarWidget(_apiService.getUtenteInMemoria(secondo.key)?.avatarUrl ?? '', secondo.key, radius: 16),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          secondo.key,
-                          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                      ),
-                      Text(
-                        '+${secondo.value} PT',
-                        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-              ],
-              if (terzo != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFB45309).withValues(alpha: 0.6)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Text('🥉', style: TextStyle(fontSize: 22)),
-                      const SizedBox(width: 12),
-                      _buildAvatarWidget(_apiService.getUtenteInMemoria(terzo.key)?.avatarUrl ?? '', terzo.key, radius: 16),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          terzo.key,
-                          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
-                        ),
-                      ),
-                      Text(
-                        '+${terzo.value} PT',
-                        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFFB45309)),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              Text(
-                '📸 Fai uno screenshot di questa schermata per condividerla nelle tue storie Instagram o gruppi!',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  color: const Color(0xFF94A3B8),
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Clipboard.setData(ClipboardData(text: riepilogoTestuale));
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        backgroundColor: const Color(0xFF10B981),
-                        content: Text(
-                          'Podio copiato negli appunti! 📋 Incollalo su WhatsApp o Instagram!',
-                          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFACC15),
-                    foregroundColor: const Color(0xFF0F172A),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  icon: const Icon(Icons.copy_rounded, size: 18),
-                  label: Text(
-                    'COPIA RIEPILOGO TESTO 📲',
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
