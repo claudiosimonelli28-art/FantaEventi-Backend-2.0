@@ -1380,6 +1380,9 @@ class ApiService {
                 isRespinto = true;
                 paritaDecisaDaOrganizzatore = true;
               }
+            } else if (cleanCreatore.isNotEmpty && cleanCreatore == propDa.trim().toLowerCase()) {
+              isApprovato = true;
+              paritaDecisaDaOrganizzatore = true;
             }
           }
 
@@ -1463,39 +1466,81 @@ class ApiService {
     }
 
     final giaVotato = v.votiUtenti.containsKey(userNick);
-    final votoPrecedente = v.votiUtenti[userNick];
-
-    int fav = v.votiFavorevoli;
-    int cont = v.votiContrari;
-
-    if (giaVotato) {
-      if (votoPrecedente == 'pro') fav--;
-      if (votoPrecedente == 'contro') cont--;
-    }
-
-    if (aFavore) {
-      fav++;
-    } else {
-      cont++;
-    }
-
     final nuoviVotiUtenti = Map<String, String>.from(v.votiUtenti);
     nuoviVotiUtenti[userNick] = aFavore ? 'pro' : 'contro';
 
-    String nuovoStato = v.stato;
-    if (fav >= v.quorum) {
-      nuovoStato = 'approvato';
-    } else if (v.quorum == 2 && cont >= 1) {
-      nuovoStato = 'respinto';
-    } else if (cont >= v.quorum) {
-      nuovoStato = 'respinto';
+    int fav = 0;
+    int cont = 0;
+    nuoviVotiUtenti.forEach((_, vote) {
+      if (vote == 'pro') fav++;
+      if (vote == 'contro') cont++;
+    });
+
+    final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+    final evMatch = _eventi.firstWhere(
+      (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
+             (e.titolo.isNotEmpty && v.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
+             (e.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+      orElse: () => Evento(
+        id: '',
+        titolo: '',
+        descrizione: '',
+        data: DateTime.now(),
+        luogo: '',
+        stato: '',
+        propostoDa: '',
+        partecipanti: [],
+        bonusMalusApplicati: [],
+        votazioniAttive: [],
+      ),
+    );
+
+    final numPartecipanti = evMatch.partecipanti.length >= 2
+        ? evMatch.partecipanti.length
+        : (v.quorum > 0 ? (v.quorum - 1) * 2 : 3);
+    final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
+    final int totalVotiEspressi = fav + cont;
+
+    bool isApprovato = (fav >= quorumCalcolato);
+    bool isRespinto = (cont >= quorumCalcolato);
+    bool paritaDecisaDaOrganizzatore = false;
+    final nomeOrganizzatore = evMatch.creatore.isNotEmpty
+        ? evMatch.creatore
+        : (evMatch.propostoDa.isNotEmpty ? evMatch.propostoDa : (v.nomeOrganizzatore ?? ''));
+
+    final propDa = v.bonusMalus?.propostoDa ?? '';
+
+    if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
+      final cleanCreatore = nomeOrganizzatore.trim().toLowerCase();
+      final creatoreVoteKey = nuoviVotiUtenti.keys.firstWhere(
+        (k) => k.trim().toLowerCase() == cleanCreatore,
+        orElse: () => '',
+      );
+      if (creatoreVoteKey.isNotEmpty) {
+        final creatoreVote = nuoviVotiUtenti[creatoreVoteKey];
+        if (creatoreVote == 'pro') {
+          isApprovato = true;
+          paritaDecisaDaOrganizzatore = true;
+        } else if (creatoreVote == 'contro') {
+          isRespinto = true;
+          paritaDecisaDaOrganizzatore = true;
+        }
+      } else if (cleanCreatore.isNotEmpty && cleanCreatore == propDa.trim().toLowerCase()) {
+        isApprovato = true;
+        paritaDecisaDaOrganizzatore = true;
+      }
     }
+
+    String nuovoStato = isApprovato ? 'approvato' : (isRespinto ? 'respinto' : 'in_corso');
 
     final votazioneAggiornata = v.copyWith(
       votiFavorevoli: fav,
       votiContrari: cont,
+      quorum: quorumCalcolato,
       stato: nuovoStato,
       votiUtenti: nuoviVotiUtenti,
+      paritaDecisaDaOrganizzatore: paritaDecisaDaOrganizzatore,
+      nomeOrganizzatore: nomeOrganizzatore,
     );
 
     _votazioniList[index] = votazioneAggiornata;
@@ -1546,6 +1591,20 @@ class ApiService {
               modify.set('stato', 'approvato').set('approvato', true),
             );
           }
+        } else if (nuovoStato == 'respinto') {
+          ObjectId? bmObjId;
+          try { bmObjId = ObjectId.fromHexString(targetBmId); } catch (_) {}
+          final bmSelector = bmObjId != null ? where.id(bmObjId) : where.eq('_id', targetBmId);
+          var bmDoc = await db.collection('BonusMalus').findOne(bmSelector);
+          if (bmDoc == null) {
+            bmDoc = await db.collection('BonusMalus').findOne(where.eq('nome', targetBmTitle));
+          }
+          if (bmDoc != null) {
+            await db.collection('BonusMalus').update(
+              where.id(bmDoc['_id'] as ObjectId),
+              modify.set('stato', 'respinto').set('approvato', false),
+            );
+          }
         }
       }
     } catch (_) {}
@@ -1566,7 +1625,15 @@ class ApiService {
       );
     }
 
-    return votazioneAggiornata;
+    final updatedFromList = _votazioniList.firstWhere(
+      (item) =>
+          item.id == v.id ||
+          (v.bonusMalus != null && item.bonusMalus?.id == v.bonusMalus!.id) ||
+          item.titolo.toLowerCase() == v.titolo.toLowerCase(),
+      orElse: () => votazioneAggiornata,
+    );
+
+    return updatedFromList;
   }
 
   // --- ANNULLA ASSEGNAZIONE BONUS (ROLLBACK PER IL CREATORE DELL'EVENTO) ---

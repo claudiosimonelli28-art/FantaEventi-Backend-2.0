@@ -671,10 +671,6 @@ class _EventDetailViewState extends State<EventDetailView> {
                                           onPressed: () async {
                                             await _apiService.vota(v.id, true);
                                             widget.onRefresh();
-                                            if (!mounted) return;
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Voto PRO registrato! 👍')),
-                                            );
                                           },
                                           icon: const Icon(Icons.thumb_up_rounded, size: 14, color: Colors.white),
                                           label: const Text('VOTA PRO'),
@@ -692,10 +688,6 @@ class _EventDetailViewState extends State<EventDetailView> {
                                           onPressed: () async {
                                             await _apiService.vota(v.id, false);
                                             widget.onRefresh();
-                                            if (!mounted) return;
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              const SnackBar(content: Text('Voto CONTRO registrato! 👎')),
-                                            );
                                           },
                                           icon: const Icon(Icons.thumb_down_rounded, size: 14, color: Colors.white),
                                           label: const Text('VOTA CONTRO'),
