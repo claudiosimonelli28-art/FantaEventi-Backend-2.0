@@ -979,6 +979,7 @@ class ApiService {
           'nome': nuovoBonus.titolo,
           'descrizione': nuovoBonus.descrizione,
           'punti': nuovoBonus.punti,
+          'categoria': nuovoBonus.categoria,
           'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
           'propostoDa': curUserNick,
           'stato': 'in_votazione',
@@ -1375,6 +1376,8 @@ class ApiService {
 
           final statoVot = isApprovato ? 'approvato' : (isRespinto ? 'respinto' : 'in_corso');
           final bool riassegnabile = bm['riassegnabileMoltepliciVolte'] == true;
+          final rawCat = bm['categoria']?.toString().trim();
+          final catBM = (rawCat != null && rawCat.isNotEmpty) ? rawCat : (tipoBM == 'bonus' ? 'Bonus' : 'Malus');
 
           final bmObj = BonusMalus(
             id: bmId,
@@ -1382,7 +1385,7 @@ class ApiService {
             titolo: nomeBM,
             descrizione: descBM,
             punti: puntiBM,
-            categoria: tipoBM,
+            categoria: catBM,
             propostoDa: propDa,
             approvato: isApprovato,
             stato: statoVot,
@@ -1397,7 +1400,7 @@ class ApiService {
           final votazione = Votazione(
             id: bmId,
             titolo: nomeBM,
-            descrizione: '$nomeBM (${puntiBM >= 0 ? "+$puntiBM" : puntiBM} PT) - Proposto da $propDa',
+            descrizione: descBM.isNotEmpty ? descBM : '$nomeBM (${puntiBM >= 0 ? "+$puntiBM" : puntiBM} PT) - Proposto da $propDa',
             bonusMalus: bmObj,
             votiFavorevoli: fav,
             votiContrari: cont,

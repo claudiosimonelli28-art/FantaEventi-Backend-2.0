@@ -249,16 +249,6 @@ class _CreateEventViewState extends State<CreateEventView> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFFACC15),
-          content: Text(
-            'Evento creato con successo! +100 XP guadagnati! 🎉',
-            style: GoogleFonts.poppins(color: const Color(0xFF0F172A), fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
-
       Navigator.pop(context);
     }
   }

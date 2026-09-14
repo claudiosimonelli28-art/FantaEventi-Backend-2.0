@@ -38,6 +38,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   late AnimationController _fabAnimationController;
   late Animation<double> _fabRotationAnimation;
   late Animation<double> _fabMenuAnimation;
+  late Animation<Offset> _fabSlideAnimation;
   bool _isFabMenuOpen = false;
 
   @override
@@ -52,16 +53,31 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     _fabAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 260),
+      duration: const Duration(milliseconds: 450),
     );
-    // 0.375 giri = 135 gradi (ruota il '+' con rotazione fluida trasformandosi in una 'X')
+    // 0.375 giri = 135 gradi con curva cubica ben visibile ed elegante
     _fabRotationAnimation = Tween<double>(begin: 0.0, end: 0.375).animate(
-      CurvedAnimation(parent: _fabAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+        parent: _fabAnimationController,
+        curve: Curves.easeInOutCubic,
+      ),
     );
+    // Animazione di apparizione / dissolvenza
     _fabMenuAnimation = CurvedAnimation(
       parent: _fabAnimationController,
-      curve: Curves.easeOutBack,
-      reverseCurve: Curves.easeIn,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    // Comparsa graduale dal basso verso l'alto
+    _fabSlideAnimation = Tween<Offset>(
+      begin: const Offset(0.0, 0.45),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _fabAnimationController,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeInCubic,
+      ),
     );
 
     _loadData(forceRefresh: true);
@@ -435,43 +451,46 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Voci menu Speed Dial a comparsa
+          // Voci menu Speed Dial a comparsa con scivolamento da sotto
           if (_isFabMenuOpen || _fabAnimationController.isAnimating)
-            FadeTransition(
-              opacity: _fabMenuAnimation,
-              child: ScaleTransition(
-                scale: _fabMenuAnimation,
-                alignment: Alignment.bottomRight,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _buildSpeedDialItem(
-                      label: 'Crea Evento',
-                      icon: Icons.calendar_today_rounded,
-                      color: const Color(0xFF6366F1),
-                      onTap: () async {
-                        _closeFabMenu();
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const CreateEventView()),
-                        );
-                        _loadData(forceRefresh: true);
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _buildSpeedDialItem(
-                      label: 'Crea Bonus / Malus',
-                      icon: Icons.flash_on_rounded,
-                      color: const Color(0xFFEC4899),
-                      onTap: () async {
-                        _closeFabMenu();
-                        await Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const AddBonusMalusView()),
-                        );
-                        _loadData(forceRefresh: true);
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                  ],
+            SlideTransition(
+              position: _fabSlideAnimation,
+              child: FadeTransition(
+                opacity: _fabMenuAnimation,
+                child: ScaleTransition(
+                  scale: _fabMenuAnimation,
+                  alignment: Alignment.bottomRight,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _buildSpeedDialItem(
+                        label: 'Crea Evento',
+                        icon: Icons.calendar_today_rounded,
+                        color: const Color(0xFF6366F1),
+                        onTap: () async {
+                          _closeFabMenu();
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const CreateEventView()),
+                          );
+                          _loadData(forceRefresh: true);
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _buildSpeedDialItem(
+                        label: 'Crea Bonus / Malus',
+                        icon: Icons.flash_on_rounded,
+                        color: const Color(0xFFEC4899),
+                        onTap: () async {
+                          _closeFabMenu();
+                          await Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AddBonusMalusView()),
+                          );
+                          _loadData(forceRefresh: true);
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                  ),
                 ),
               ),
             ),

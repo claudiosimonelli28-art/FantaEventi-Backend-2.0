@@ -38,7 +38,9 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
   @override
   void initState() {
     super.initState();
-    _eventoSelezionato = widget.evento;
+    if (widget.evento != null && !widget.evento!.isConcluso) {
+      _eventoSelezionato = widget.evento;
+    }
   }
 
   @override
@@ -53,7 +55,20 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
     if (_formKey.currentState?.validate() ?? false) {
       if (_eventoSelezionato == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Seleziona un evento a cui collegare il bonus/malus!')),
+          const SnackBar(
+            backgroundColor: Color(0xFFEF4444),
+            content: Text('Seleziona un evento attivo a cui collegare il bonus/malus!'),
+          ),
+        );
+        return;
+      }
+
+      if (_eventoSelezionato!.isConcluso) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            backgroundColor: Color(0xFFEF4444),
+            content: Text('Questo evento è concluso. Non puoi proporre bonus/malus per eventi chiusi.'),
+          ),
         );
         return;
       }
@@ -85,16 +100,6 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
       await _apiService.proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus);
 
       if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF9333EA),
-          content: Text(
-            'Proposta per "${_eventoSelezionato!.titolo}" inviata! +50 XP guadagnati! 🚀',
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
 
       Navigator.pop(context);
     }
@@ -156,13 +161,49 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                   FutureBuilder<List<Evento>>(
                     future: _apiService.getEventi(),
                     builder: (context, snapshot) {
-                      final eventi = snapshot.data ?? [];
+                      // Filtra rigorosamente solo gli eventi attivi e non conclusi
+                      final eventi = (snapshot.data ?? []).where((e) => !e.isConcluso).toList();
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 20),
+                          child: const Center(
+                            child: SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFACC15)),
+                            ),
+                          ),
+                        );
+                      }
+                      if (eventi.isEmpty) {
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 20),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E293B),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.5)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.event_busy_rounded, color: Color(0xFFEF4444)),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Nessun evento attivo disponibile.\nTutti gli eventi risultano conclusi.',
+                                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
                       return Container(
                         margin: const EdgeInsets.only(bottom: 20),
                         child: DropdownButtonFormField<Evento>(
                           dropdownColor: const Color(0xFF1E293B),
                           decoration: InputDecoration(
-                            labelText: 'Seleziona Evento',
+                            labelText: 'Seleziona Evento Attivo',
                             labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
                             filled: true,
                             fillColor: const Color(0xFF1E293B),

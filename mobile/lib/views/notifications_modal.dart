@@ -75,16 +75,6 @@ class _NotificationsModalState extends State<NotificationsModal> {
       setState(() {
         _notifiche.removeWhere((n) => (n['id'] ?? n['notificaId']) == notificaId);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF64748B),
-          content: Text(
-            'Notifica rimossa 🗑️',
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-          duration: const Duration(seconds: 2),
-        ),
-      );
     }
     widget.onRefreshHome();
   }

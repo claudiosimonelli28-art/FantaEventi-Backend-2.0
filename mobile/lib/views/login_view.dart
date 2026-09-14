@@ -35,23 +35,13 @@ class _LoginViewState extends State<LoginView> {
     });
 
     try {
-      final user = await _apiService.login(_identifierController.text.trim());
+      await _apiService.login(_identifierController.text.trim());
 
       if (!mounted) return;
 
       setState(() {
         _isLoading = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF10B981),
-          content: Text(
-            'Bentornato in gioco, ${user.nome}! 🚀',
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeView()),
@@ -85,7 +75,7 @@ class _LoginViewState extends State<LoginView> {
     });
 
     try {
-      final user = await _apiService.registrazione(
+      await _apiService.registrazione(
         nome: _nomeController.text.trim(),
         cognome: _cognomeController.text.trim(),
         nickname: _nicknameController.text.trim(),
@@ -97,16 +87,6 @@ class _LoginViewState extends State<LoginView> {
       setState(() {
         _isLoading = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF10B981),
-          content: Text(
-            'Registrazione completata! Benvenuto ${user.nome} 🎉',
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeView()),

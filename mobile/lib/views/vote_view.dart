@@ -82,16 +82,6 @@ class _VoteViewState extends State<VoteView> {
         _votazione = vAggiornata;
         _isSubmitting = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF22C55E),
-          content: Text(
-            'Voto registrato con successo! +25 XP! 🗳️',
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -154,6 +144,19 @@ class _VoteViewState extends State<VoteView> {
     final int totale = _votazione.totaleVoti;
     final double favRatio = totale > 0 ? (_votazione.votiFavorevoli / totale) : 0.5;
     final double quorumPercent = (_votazione.totaleVoti / _votazione.quorum).clamp(0.0, 1.0);
+
+    final bm = _votazione.bonusMalus;
+    final int punti = bm?.punti ?? 0;
+    final bool isBonus = punti >= 0;
+    final String puntiText = isBonus ? '+$punti PT (Bonus)' : '$punti PT (Malus)';
+    final Color puntiColor = isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+    final String categoria = (bm?.categoria != null && bm!.categoria.isNotEmpty)
+        ? bm.categoria
+        : (isBonus ? 'Bonus' : 'Malus');
+    final bool riassegnabile = bm?.riassegnabileMoltepliciVolte == true;
+    final String desc = (bm?.descrizione != null && bm!.descrizione.isNotEmpty)
+        ? bm.descrizione
+        : _votazione.descrizione;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -274,16 +277,122 @@ class _VoteViewState extends State<VoteView> {
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                _votazione.descrizione,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: const Color(0xFF94A3B8),
-                  height: 1.5,
-                ),
+              const SizedBox(height: 12),
+
+              // Badges parametri proposta (Punti, Categoria, Riassegnabilità)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  // Badge Punti & Tipo
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: puntiColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: puntiColor.withValues(alpha: 0.6), width: 1.2),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(isBonus ? Icons.add_circle_outline_rounded : Icons.remove_circle_outline_rounded, size: 16, color: puntiColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          puntiText,
+                          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: puntiColor),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Badge Categoria
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF64748B), width: 1.2),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.category_rounded, size: 15, color: Color(0xFF94A3B8)),
+                        const SizedBox(width: 6),
+                        Text(
+                          categoria,
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Badge Riassegnabilità
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: riassegnabile ? const Color(0xFF9333EA).withValues(alpha: 0.2) : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: riassegnabile ? const Color(0xFF9333EA).withValues(alpha: 0.6) : const Color(0xFFF59E0B).withValues(alpha: 0.5),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(riassegnabile ? Icons.replay_rounded : Icons.looks_one_rounded, size: 16, color: riassegnabile ? const Color(0xFFD8B4FE) : const Color(0xFFFACC15)),
+                        const SizedBox(width: 6),
+                        Text(
+                          riassegnabile ? 'Riassegnabile più volte: SÌ' : 'Riassegnabile: Solo una volta',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: riassegnabile ? const Color(0xFFD8B4FE) : const Color(0xFFFACC15),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 14),
+
+              // Scheda Testo Descrizione Regola
+              if (desc.isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.description_outlined, size: 16, color: Color(0xFFFACC15)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Descrizione Completa della Regola:',
+                            style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        desc,
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          color: const Color(0xFFE2E8F0),
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 24),
 
               // Grafico Distribuzione Voti
               Container(
