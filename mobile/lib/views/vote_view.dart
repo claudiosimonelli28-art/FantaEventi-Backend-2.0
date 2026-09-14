@@ -506,69 +506,122 @@ class _VoteViewState extends State<VoteView> {
                     ),
                   )
                 else
-                  Row(
+                  Column(
                     children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 56,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _esprimiVoto(true),
-                            icon: const Icon(Icons.thumb_up, color: Color(0xFF0F172A)),
-                            label: Text(
-                              'VOTA SÌ',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF0F172A),
+                      if (_votazione.nomeOrganizzatore != null && _votazione.nomeOrganizzatore!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFFFACC15)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'In caso di parità, il voto dell\'organizzatore (${_votazione.nomeOrganizzatore}) 👑 sarà determinante',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFFFACC15).withValues(alpha: 0.95), fontWeight: FontWeight.w500),
+                                ),
                               ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.greenAccent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                            ],
+                          ),
+                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _esprimiVoto(true),
+                                icon: const Icon(Icons.thumb_up, color: Color(0xFF0F172A)),
+                                label: Text(
+                                  'VOTA SÌ',
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.greenAccent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: SizedBox(
-                          height: 56,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _esprimiVoto(false),
-                            icon: const Icon(Icons.thumb_down, color: Colors.white),
-                            label: Text(
-                              'VOTA NO',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: SizedBox(
+                              height: 56,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _esprimiVoto(false),
+                                icon: const Icon(Icons.thumb_down, color: Colors.white),
+                                label: Text(
+                                  'VOTA NO',
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
               ] else
                 Container(
+                  width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    'Votazione chiusa con esito: ${_votazione.stato.toUpperCase()}',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white70,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _votazione.stato == 'approvato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                      width: 1.5,
                     ),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _votazione.stato == 'approvato'
+                            ? '🟢 VOTAZIONE CONCLUSA: APPROVATA (${_votazione.votiFavorevoli} PRO - ${_votazione.votiContrari} CONTRO)'
+                            : '🔴 VOTAZIONE CONCLUSA: RESPINTA (${_votazione.votiFavorevoli} PRO - ${_votazione.votiContrari} CONTRO)',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: _votazione.stato == 'approvato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                        ),
+                      ),
+                      if (_votazione.paritaDecisaDaOrganizzatore || (_votazione.votiFavorevoli == _votazione.votiContrari)) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '⚖️ Parità ${_votazione.votiFavorevoli}-${_votazione.votiContrari} risolta dal voto ${_votazione.stato == "approvato" ? "favorevole" : "contrario"} dell\'organizzatore${(_votazione.nomeOrganizzatore != null && _votazione.nomeOrganizzatore!.isNotEmpty) ? " (${_votazione.nomeOrganizzatore}) 👑" : " 👑"}',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _votazione.stato == 'approvato' ? const Color(0xFF34D399) : const Color(0xFFF87171),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
             ],

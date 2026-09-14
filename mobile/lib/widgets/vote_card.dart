@@ -236,10 +236,29 @@ class VoteCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFF10B981), width: 1.5),
               ),
-              child: Text(
-                '🟢 VOTAZIONE CONCLUSA: APPROVATA (${votazione.votiFavorevoli} PRO - ${votazione.votiContrari} CONTRO)',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
+              child: Column(
+                children: [
+                  Text(
+                    '🟢 VOTAZIONE CONCLUSA: APPROVATA (${votazione.votiFavorevoli} PRO - ${votazione.votiContrari} CONTRO)',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
+                  ),
+                  if (votazione.paritaDecisaDaOrganizzatore || (votazione.votiFavorevoli == votazione.votiContrari)) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '⚖️ Parità ${votazione.votiFavorevoli}-${votazione.votiContrari} risolta dal voto favorevole dell\'organizzatore${(votazione.nomeOrganizzatore != null && votazione.nomeOrganizzatore!.isNotEmpty) ? " (${votazione.nomeOrganizzatore}) 👑" : " 👑"}',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF34D399)),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             )
           else if (votazione.stato == 'respinto')
@@ -251,10 +270,29 @@ class VoteCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0xFFEF4444), width: 1.5),
               ),
-              child: Text(
-                '🔴 VOTAZIONE CONCLUSA: RESPINTA (${votazione.votiFavorevoli} PRO - ${votazione.votiContrari} CONTRO)',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444)),
+              child: Column(
+                children: [
+                  Text(
+                    '🔴 VOTAZIONE CONCLUSA: RESPINTA (${votazione.votiFavorevoli} PRO - ${votazione.votiContrari} CONTRO)',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444)),
+                  ),
+                  if (votazione.paritaDecisaDaOrganizzatore || (votazione.votiFavorevoli == votazione.votiContrari)) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '⚖️ Parità ${votazione.votiFavorevoli}-${votazione.votiContrari} risolta dal voto contrario dell\'organizzatore${(votazione.nomeOrganizzatore != null && votazione.nomeOrganizzatore!.isNotEmpty) ? " (${votazione.nomeOrganizzatore}) 👑" : " 👑"}',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFF87171)),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             )
           else if (isProponente)

@@ -53,7 +53,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     _fabAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 450),
+      duration: const Duration(milliseconds: 650),
     );
     // 0.375 giri = 135 gradi con curva cubica ben visibile ed elegante
     _fabRotationAnimation = Tween<double>(begin: 0.0, end: 0.375).animate(

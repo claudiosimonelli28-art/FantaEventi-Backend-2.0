@@ -1361,16 +1361,25 @@ class ApiService {
           bool isApprovato = (fav >= quorumCalcolato);
           bool isRespinto = (cont >= quorumCalcolato);
 
+          bool paritaDecisaDaOrganizzatore = false;
+          final nomeOrganizzatore = evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa;
+
           if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
-            final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
+            final cleanCreatore = nomeOrganizzatore.trim().toLowerCase();
             final creatoreVoteKey = votiUtenti.keys.firstWhere(
               (k) => k.trim().toLowerCase() == cleanCreatore,
               orElse: () => '',
             );
             if (creatoreVoteKey.isNotEmpty) {
               final creatoreVote = votiUtenti[creatoreVoteKey];
-              if (creatoreVote == 'pro') isApprovato = true;
-              if (creatoreVote == 'contro') isRespinto = true;
+              if (creatoreVote == 'pro') {
+                isApprovato = true;
+                paritaDecisaDaOrganizzatore = true;
+              }
+              if (creatoreVote == 'contro') {
+                isRespinto = true;
+                paritaDecisaDaOrganizzatore = true;
+              }
             }
           }
 
@@ -1408,6 +1417,8 @@ class ApiService {
             stato: statoVot,
             scadenza: DateTime.now().add(const Duration(days: 7)),
             votiUtenti: votiUtenti,
+            paritaDecisaDaOrganizzatore: paritaDecisaDaOrganizzatore,
+            nomeOrganizzatore: nomeOrganizzatore,
           );
 
           list.add(votazione);

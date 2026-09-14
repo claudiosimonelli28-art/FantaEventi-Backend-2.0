@@ -11,6 +11,8 @@ class Votazione {
   final String stato; // 'in_corso', 'approvato', 'respinto'
   final DateTime scadenza;
   final Map<String, String> votiUtenti; // userId -> 'pro' | 'contro'
+  final bool paritaDecisaDaOrganizzatore;
+  final String? nomeOrganizzatore;
 
   Votazione({
     required this.id,
@@ -23,6 +25,8 @@ class Votazione {
     required this.stato,
     required this.scadenza,
     required this.votiUtenti,
+    this.paritaDecisaDaOrganizzatore = false,
+    this.nomeOrganizzatore,
   });
 
   int get totaleVoti => votiFavorevoli + votiContrari;
@@ -46,6 +50,8 @@ class Votazione {
       votiUtenti: json['votiUtenti'] != null
           ? Map<String, String>.from(json['votiUtenti'] as Map)
           : {},
+      paritaDecisaDaOrganizzatore: json['paritaDecisaDaOrganizzatore'] as bool? ?? false,
+      nomeOrganizzatore: json['nomeOrganizzatore'] as String?,
     );
   }
 
@@ -61,6 +67,8 @@ class Votazione {
       'stato': stato,
       'scadenza': scadenza.toIso8601String(),
       'votiUtenti': votiUtenti,
+      'paritaDecisaDaOrganizzatore': paritaDecisaDaOrganizzatore,
+      'nomeOrganizzatore': nomeOrganizzatore,
     };
   }
 
@@ -75,6 +83,8 @@ class Votazione {
     String? stato,
     DateTime? scadenza,
     Map<String, String>? votiUtenti,
+    bool? paritaDecisaDaOrganizzatore,
+    String? nomeOrganizzatore,
   }) {
     return Votazione(
       id: id ?? this.id,
@@ -87,6 +97,8 @@ class Votazione {
       stato: stato ?? this.stato,
       scadenza: scadenza ?? this.scadenza,
       votiUtenti: votiUtenti ?? this.votiUtenti,
+      paritaDecisaDaOrganizzatore: paritaDecisaDaOrganizzatore ?? this.paritaDecisaDaOrganizzatore,
+      nomeOrganizzatore: nomeOrganizzatore ?? this.nomeOrganizzatore,
     );
   }
 }
