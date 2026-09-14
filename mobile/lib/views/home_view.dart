@@ -23,7 +23,7 @@ class HomeView extends StatefulWidget {
   State<HomeView> createState() => _HomeViewState();
 }
 
-class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin {
+class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   List<Evento> _eventi = [];
   List<BonusMalus> _bonusMalusList = [];
@@ -34,10 +34,36 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   late TabController _tabController;
   Timer? _liveSyncTimer;
 
+  // Controller e animazioni per lo Speed Dial FAB
+  late AnimationController _fabAnimationController;
+  late Animation<double> _fabRotationAnimation;
+  late Animation<double> _fabMenuAnimation;
+  bool _isFabMenuOpen = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging && _isFabMenuOpen) {
+        _closeFabMenu();
+      }
+    });
+
+    _fabAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    // 0.375 giri = 135 gradi (ruota il '+' con rotazione fluida trasformandosi in una 'X')
+    _fabRotationAnimation = Tween<double>(begin: 0.0, end: 0.375).animate(
+      CurvedAnimation(parent: _fabAnimationController, curve: Curves.easeInOut),
+    );
+    _fabMenuAnimation = CurvedAnimation(
+      parent: _fabAnimationController,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeIn,
+    );
+
     _loadData(forceRefresh: true);
     _liveSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _loadData(silent: true, forceRefresh: false);
@@ -207,7 +233,28 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
   void dispose() {
     _liveSyncTimer?.cancel();
     _tabController.dispose();
+    _fabAnimationController.dispose();
     super.dispose();
+  }
+
+  void _toggleFabMenu() {
+    setState(() {
+      _isFabMenuOpen = !_isFabMenuOpen;
+      if (_isFabMenuOpen) {
+        _fabAnimationController.forward();
+      } else {
+        _fabAnimationController.reverse();
+      }
+    });
+  }
+
+  void _closeFabMenu() {
+    if (_isFabMenuOpen) {
+      setState(() {
+        _isFabMenuOpen = false;
+        _fabAnimationController.reverse();
+      });
+    }
   }
 
   @override
@@ -223,14 +270,29 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
+              width: 36,
+              height: 36,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
+                gradient: const LinearGradient(
                   colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF9333EA).withValues(alpha: 0.4),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/icon/app_icon.jpg',
+                  fit: BoxFit.cover,
                 ),
               ),
-              child: const Icon(Icons.flash_on, color: Color(0xFF0F172A), size: 18),
             ),
             const SizedBox(width: 10),
             Text(
@@ -332,41 +394,163 @@ class _HomeViewState extends State<HomeView> with SingleTickerProviderStateMixin
           ],
         ),
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFFACC15)),
-            )
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                // --- TAB 1: FEED EVENTI ---
-                _buildEventiTab(userNick),
+      body: Stack(
+        children: [
+          _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFFFACC15)),
+                )
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // --- TAB 1: FEED EVENTI ---
+                    _buildEventiTab(userNick),
 
-                // --- TAB 2: BONUS & MALUS ---
-                _buildBonusMalusTab(),
+                    // --- TAB 2: BONUS & MALUS ---
+                    _buildBonusMalusTab(),
 
-                // --- TAB 3: VOTAZIONI LIVE ---
-                _buildVotazioniTab(),
-              ],
+                    // --- TAB 3: VOTAZIONI LIVE ---
+                    _buildVotazioniTab(),
+                  ],
+                ),
+          // Backdrop Overlay quando il menu del FAB è aperto
+          if (_isFabMenuOpen)
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _closeFabMenu,
+                behavior: HitTestBehavior.opaque,
+                child: AnimatedBuilder(
+                  animation: _fabAnimationController,
+                  builder: (context, child) {
+                    return Container(
+                      color: Colors.black.withValues(alpha: 0.55 * _fabAnimationController.value),
+                    );
+                  },
+                ),
+              ),
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          if (_tabController.index == 0) {
-            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CreateEventView()));
-          } else {
-            await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AddBonusMalusView()));
-          }
-          _loadData(forceRefresh: true);
-        },
-        backgroundColor: const Color(0xFF9333EA),
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: Text(
-          _tabController.index == 0
-              ? 'NUOVO EVENTO'
-              : _tabController.index == 1
-                  ? 'NUOVO BONUS'
-                  : 'CREA VOTO',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+        ],
+      ),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Voci menu Speed Dial a comparsa
+          if (_isFabMenuOpen || _fabAnimationController.isAnimating)
+            FadeTransition(
+              opacity: _fabMenuAnimation,
+              child: ScaleTransition(
+                scale: _fabMenuAnimation,
+                alignment: Alignment.bottomRight,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    _buildSpeedDialItem(
+                      label: 'Crea Evento',
+                      icon: Icons.calendar_today_rounded,
+                      color: const Color(0xFF6366F1),
+                      onTap: () async {
+                        _closeFabMenu();
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const CreateEventView()),
+                        );
+                        _loadData(forceRefresh: true);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSpeedDialItem(
+                      label: 'Crea Bonus / Malus',
+                      icon: Icons.flash_on_rounded,
+                      color: const Color(0xFFEC4899),
+                      onTap: () async {
+                        _closeFabMenu();
+                        await Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const AddBonusMalusView()),
+                        );
+                        _loadData(forceRefresh: true);
+                      },
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                ),
+              ),
+            ),
+          // FAB rotondo (+ animato a X)
+          FloatingActionButton(
+            heroTag: 'fab_speed_dial',
+            onPressed: _toggleFabMenu,
+            backgroundColor: const Color(0xFF9333EA),
+            elevation: 6,
+            shape: const CircleBorder(),
+            child: RotationTransition(
+              turns: _fabRotationAnimation,
+              child: const Icon(Icons.add_rounded, color: Colors.white, size: 32),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpeedDialItem({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 4.0),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E293B),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withValues(alpha: 0.6), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Text(
+                label,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [color, color.withValues(alpha: 0.8)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.5),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: Colors.white, size: 24),
+            ),
+          ],
         ),
       ),
     );

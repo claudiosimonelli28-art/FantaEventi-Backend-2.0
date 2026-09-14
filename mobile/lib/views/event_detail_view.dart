@@ -1749,16 +1749,25 @@ class _EventDetailViewState extends State<EventDetailView> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(4),
+                                width: 18,
+                                height: 18,
+                                padding: const EdgeInsets.all(1),
                                 decoration: const BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: Color(0xFFFACC15),
+                                  gradient: LinearGradient(
+                                    colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
+                                  ),
                                 ),
-                                child: const Icon(Icons.flash_on, color: Color(0xFF0F172A), size: 12),
+                                child: ClipOval(
+                                  child: Image.asset(
+                                    'assets/icon/app_icon.jpg',
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                'FantaEventi App ⚡',
+                                'FantaEventi App',
                                 style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w600, color: const Color(0xFF94A3B8)),
                               ),
                             ],

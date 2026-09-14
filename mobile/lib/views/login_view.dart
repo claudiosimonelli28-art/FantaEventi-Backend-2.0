@@ -152,32 +152,36 @@ class _LoginViewState extends State<LoginView> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Header Logo
-                Container(
-                  width: 84,
-                  height: 84,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF9333EA).withValues(alpha: 0.4),
-                        blurRadius: 20,
-                        spreadRadius: 4,
+                // Header Logo con Icona Ufficiale FantaEventi
+                Center(
+                  child: Container(
+                    width: 88,
+                    height: 88,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.military_tech_rounded,
-                    size: 48,
-                    color: Color(0xFF0F172A),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF9333EA).withValues(alpha: 0.45),
+                          blurRadius: 22,
+                          spreadRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icon/app_icon.jpg',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
                 Text(
                   'FantaEventi',
                   textAlign: TextAlign.center,
@@ -188,11 +192,31 @@ class _LoginViewState extends State<LoginView> {
                     letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF9333EA).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1),
+                  ),
+                  child: Text(
+                    '🏆 Trasforma ogni serata con i tuoi amici in una sfida epica! ✨',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFFACC15),
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Text(
                   _isRegisterMode
-                      ? 'Compila la scheda per registrarti su MongoDB Atlas'
-                      : 'Inserisci il tuo Nickname o Email per accedere',
+                      ? 'Crea il tuo profilo e inizia a scalare la classifica!'
+                      : 'Inserisci il tuo Nickname o Email per entrare in gioco',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(
                     fontSize: 13,
