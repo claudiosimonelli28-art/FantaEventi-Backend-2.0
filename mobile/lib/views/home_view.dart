@@ -9,6 +9,7 @@ import '../widgets/avatar_helper.dart';
 import '../widgets/event_card.dart';
 import '../widgets/bonus_malus_card.dart';
 import '../widgets/vote_card.dart';
+import '../widgets/thanos_snap_effect.dart';
 import 'create_event_view.dart';
 import 'add_bonus_malus_view.dart';
 import 'vote_view.dart';
@@ -28,6 +29,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   List<Evento> _eventi = [];
   List<BonusMalus> _bonusMalusList = [];
   List<Votazione> _votazioniList = [];
+  final Set<String> _disintegratingEventoIds = {};
   int _numeroNotifiche = 0;
   bool _isLoading = true;
 
@@ -196,27 +198,23 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
 
     if (confermato == true) {
-      try {
-        await _apiService.eliminaEvento(evento.id, nick);
-        if (!mounted) return;
+      final evId = evento.id;
+      setState(() {
+        _disintegratingEventoIds.add(evId);
+      });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF10B981),
-            content: Text('Evento "${evento.titolo}" eliminato con successo! 🗑️', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        );
-        _loadData(forceRefresh: true);
-      } catch (e) {
-        if (!mounted) return;
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFEF4444),
-            content: Text(e.toString().replaceAll('Exception: ', ''), style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        );
-      }
+      // Avvia la cancellazione su MongoDB Atlas in background durante l'animazione
+      _apiService.eliminaEvento(evId, nick).catchError((e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFFEF4444),
+              content: Text(e.toString().replaceAll('Exception: ', ''),
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          );
+        }
+      });
     }
   }
 
@@ -609,17 +607,31 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemCount: _eventi.length,
         itemBuilder: (ctx, idx) {
           final ev = _eventi[idx];
-          return EventCard(
-            evento: ev,
-            currentUserNickname: userNick,
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
-              );
-              _loadData(forceRefresh: true);
+          final isDisintegrating = _disintegratingEventoIds.contains(ev.id);
+
+          return ThanosSnapEffect(
+            key: ValueKey('thanos_${ev.id}'),
+            isDisintegrating: isDisintegrating,
+            onDisintegrated: () {
+              setState(() {
+                _disintegratingEventoIds.remove(ev.id);
+                _eventi.removeWhere((e) => e.id == ev.id);
+              });
+              _loadData(forceRefresh: true, silent: true);
             },
-            onPartecipa: () => _partecipaEvento(ev),
-            onElimina: () => _confermaEliminazioneEvento(ev),
+            child: EventCard(
+              evento: ev,
+              currentUserNickname: userNick,
+              onTap: () async {
+                if (isDisintegrating) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
+                );
+                _loadData(forceRefresh: true);
+              },
+              onPartecipa: () => _partecipaEvento(ev),
+              onElimina: () => _confermaEliminazioneEvento(ev),
+            ),
           );
         },
       );
