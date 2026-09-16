@@ -98,7 +98,7 @@ class ApiService {
   final List<Votazione> _votazioniList = [];
 
   DateTime? _lastFetchTime;
-  static const Duration _cacheDuration = Duration(seconds: 12);
+  static const Duration _cacheDuration = Duration(seconds: 3);
 
   void invalidateCache() {
     _lastFetchTime = null;

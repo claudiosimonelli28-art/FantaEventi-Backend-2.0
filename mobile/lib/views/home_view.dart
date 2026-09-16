@@ -81,8 +81,8 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
 
     _loadData(forceRefresh: true);
-    _liveSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      _loadData(silent: true, forceRefresh: false);
+    _liveSyncTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _loadData(silent: true, forceRefresh: true);
     });
   }
 
