@@ -389,6 +389,412 @@ class _LoginViewState extends State<LoginView> {
     );
   }
 
+  // Modale di Recupero Password via Codice Email (OTP 6 cifre)
+  void _showForgotPasswordModal() {
+    final resetIdentController = TextEditingController(text: _identifierController.text.trim());
+    final otpCodeController = TextEditingController();
+    final newPassController = TextEditingController();
+    final confirmNewPassController = TextEditingController();
+
+    int step = 1; // 1 = inserisci email/nickname, 2 = inserisci codice + nuova password
+    bool isProcessing = false;
+    bool obscureNew1 = true;
+    bool obscureNew2 = true;
+    String targetEmail = '';
+    String maskedEmail = '';
+    String detectedUsername = '';
+    String? modalError;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF475569),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            step == 1 ? Icons.mark_email_read_outlined : Icons.lock_reset,
+                            color: const Color(0xFFFACC15),
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                step == 1 ? 'Password Dimenticata?' : 'Verifica e Nuova Password',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Text(
+                                step == 1 ? 'Recupero account FantaEventi' : 'Inserisci il codice a 6 cifre',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.5,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    if (modalError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.5)),
+                        ),
+                        child: Text(
+                          modalError!,
+                          style: GoogleFonts.inter(color: const Color(0xFFFCA5A5), fontSize: 12.5),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    if (step == 1) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        child: Text(
+                          'Inserisci il tuo Nickname o l\'Email con cui ti sei registrato. Ti invieremo un codice di verifica a 6 cifre per reimpostare la tua password in totale sicurezza.',
+                          style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFFCBD5E1), height: 1.4),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: resetIdentController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Nickname o Email',
+                          hintText: 'Es. Cloud oppure claudio.simonelli28@...',
+                          hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                          labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                          prefixIcon: const Icon(Icons.person_search_outlined, color: Color(0xFFFACC15)),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: isProcessing ? null : () async {
+                          final ident = resetIdentController.text.trim();
+                          if (ident.isEmpty) {
+                            setModalState(() => modalError = 'Inserisci il tuo Nickname o la tua Email.');
+                            return;
+                          }
+
+                          setModalState(() {
+                            isProcessing = true;
+                            modalError = null;
+                          });
+
+                          try {
+                            final res = await _apiService.richiediCodiceReset(ident);
+                            setModalState(() {
+                              isProcessing = false;
+                              step = 2;
+                              targetEmail = res['email'] ?? '';
+                              maskedEmail = res['maskedEmail'] ?? res['email'] ?? '';
+                              detectedUsername = res['username'] ?? '';
+                            });
+                          } catch (e) {
+                            setModalState(() {
+                              isProcessing = false;
+                              modalError = e.toString().replaceAll('Exception: ', '');
+                            });
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: [Color(0xFFFACC15), Color(0xFFEAB308)]),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Container(
+                            alignment: Alignment.center,
+                            constraints: const BoxConstraints(minHeight: 50),
+                            child: isProcessing
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF0F172A)),
+                                  )
+                                : Text(
+                                    'Invia Codice di Verifica 📩',
+                                    style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        child: RichText(
+                          text: TextSpan(
+                            style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFFCBD5E1), height: 1.4),
+                            children: [
+                              const TextSpan(text: 'Abbiamo inviato un codice di sicurezza a 6 cifre a: '),
+                              TextSpan(
+                                text: maskedEmail,
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFFACC15)),
+                              ),
+                              const TextSpan(text: '.\nInseriscilo qui sotto assieme alla tua nuova password (scade tra 15 minuti).'),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: otpCodeController,
+                        keyboardType: TextInputType.number,
+                        maxLength: 6,
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFFFACC15),
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 8,
+                        ),
+                        textAlign: TextAlign.center,
+                        decoration: InputDecoration(
+                          counterText: '',
+                          labelText: 'Codice OTP (6 cifre)',
+                          labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13, letterSpacing: 0),
+                          prefixIcon: const Icon(Icons.pin_outlined, color: Color(0xFFFACC15)),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: newPassController,
+                        obscureText: obscureNew1,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Nuova Password (minimo 6 caratteri)',
+                          labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                          prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew1 ? Icons.visibility_off : Icons.visibility,
+                              color: const Color(0xFF64748B),
+                            ),
+                            onPressed: () => setModalState(() => obscureNew1 = !obscureNew1),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: confirmNewPassController,
+                        obscureText: obscureNew2,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'Conferma Nuova Password',
+                          labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                          prefixIcon: const Icon(Icons.lock_reset_outlined, color: Color(0xFFFACC15)),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              obscureNew2 ? Icons.visibility_off : Icons.visibility,
+                              color: const Color(0xFF64748B),
+                            ),
+                            onPressed: () => setModalState(() => obscureNew2 = !obscureNew2),
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFF0F172A),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed: isProcessing ? null : () async {
+                          final code = otpCodeController.text.trim();
+                          final p1 = newPassController.text.trim();
+                          final p2 = confirmNewPassController.text.trim();
+
+                          if (code.length != 6) {
+                            setModalState(() => modalError = 'Il codice di verifica deve essere di 6 cifre.');
+                            return;
+                          }
+
+                          if (p1.length < 6) {
+                            setModalState(() => modalError = 'La password deve contenere almeno 6 caratteri.');
+                            return;
+                          }
+
+                          if (p1 != p2) {
+                            setModalState(() => modalError = 'Le due password non coincidono! Controlla e riprova.');
+                            return;
+                          }
+
+                          setModalState(() {
+                            isProcessing = true;
+                            modalError = null;
+                          });
+
+                          try {
+                            await _apiService.confermaCodiceEReset(
+                              email: targetEmail,
+                              codice: code,
+                              nuovaPassword: p1,
+                            );
+
+                            if (!mounted) return;
+                            if (modalCtx.mounted) {
+                              Navigator.of(modalCtx).pop();
+                            }
+
+
+                            if (detectedUsername.isNotEmpty) {
+                              _identifierController.text = detectedUsername;
+                            }
+                            _loginPasswordController.text = p1;
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: const Color(0xFF10B981),
+                                duration: const Duration(seconds: 4),
+                                content: Row(
+                                  children: [
+                                    const Icon(Icons.check_circle, color: Colors.white),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        'Password aggiornata con successo! Ora puoi accedere.',
+                                        style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            setModalState(() {
+                              isProcessing = false;
+                              modalError = e.toString().replaceAll('Exception: ', '');
+                            });
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: [Color(0xFFFACC15), Color(0xFFEAB308)]),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Container(
+                            alignment: Alignment.center,
+                            constraints: const BoxConstraints(minHeight: 50),
+                            child: isProcessing
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF0F172A)),
+                                  )
+                                : Text(
+                                    'Reimposta Password 🔒',
+                                    style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton(
+                          onPressed: isProcessing ? null : () => setModalState(() {
+                            step = 1;
+                            modalError = null;
+                          }),
+                          child: Text(
+                            'Non hai ricevuto l\'email? Riprova',
+                            style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+
   @override
   void dispose() {
     _identifierController.dispose();
@@ -576,34 +982,57 @@ class _LoginViewState extends State<LoginView> {
                           ),
                           const SizedBox(height: 12),
 
-                          InkWell(
-                            onTap: () => setState(() => _rememberMe = !_rememberMe),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    height: 24,
-                                    width: 24,
-                                    child: Checkbox(
-                                      value: _rememberMe,
-                                      onChanged: (val) => setState(() => _rememberMe = val ?? true),
-                                      activeColor: const Color(0xFFFACC15),
-                                      checkColor: const Color(0xFF0F172A),
-                                      side: const BorderSide(color: Color(0xFF64748B)),
-                                    ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              InkWell(
+                                onTap: () => setState(() => _rememberMe = !_rememberMe),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2.0),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: Checkbox(
+                                          value: _rememberMe,
+                                          onChanged: (val) => setState(() => _rememberMe = val ?? true),
+                                          activeColor: const Color(0xFFFACC15),
+                                          checkColor: const Color(0xFF0F172A),
+                                          side: const BorderSide(color: Color(0xFF64748B)),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Ricordami',
+                                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFFCBD5E1)),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Mantieni l\'accesso',
-                                    style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFFCBD5E1)),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ),
+                              TextButton(
+                                onPressed: _showForgotPasswordModal,
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: Text(
+                                  'Password dimenticata?',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFFFACC15),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 18),
+
 
                           ElevatedButton(
                             onPressed: _isLoading ? null : _handleLogin,

@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:mongo_dart/mongo_dart.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/utente.dart';
 import '../models/evento.dart';
@@ -64,6 +66,13 @@ class ApiService {
     return utf8.decode(base64.decode(
         'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOmNsYXVkaW9zaW1vbmVsbGlAY2x1c3RlcjAuemJicWZjci5tb25nb2RiLm5ldC9GYW50YUV2ZW50aT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHkmYXBwTmFtZT1DbHVzdGVyMA=='));
   }
+
+  static String get _resendKey {
+    const envKey = String.fromEnvironment('RESEND_API_KEY');
+    if (envKey.isNotEmpty) return envKey;
+    return utf8.decode(base64.decode('cmVfNDZ2d1ByVmZfMm9RZXdlZm14M053UHBZaWIxdlR4UDhj'));
+  }
+
 
   Db? _db;
 
@@ -516,6 +525,275 @@ class ApiService {
 
     throw Exception(lastError ?? 'Errore durante la registrazione del nuovo utente.');
   }
+
+  // --- INVIO EMAIL TRAMITE RESEND (HELPER DIRETTO) ---
+  Future<bool> _sendResetEmailDirect({
+    required String recipientEmail,
+    required String recipientName,
+    required String code,
+  }) async {
+    try {
+      final html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #FFFFFF; margin: 0; padding: 20px; }
+    .card { background-color: #1E1E1E; border-radius: 16px; border: 1px solid #333333; max-width: 500px; margin: 0 auto; padding: 32px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); text-align: center; }
+    .logo { font-size: 28px; font-weight: bold; color: #E5A93C; letter-spacing: 1px; margin-bottom: 8px; }
+    .subtitle { font-size: 15px; color: #AAAAAA; margin-bottom: 24px; }
+    .code-box { background-color: #2A2A2A; border: 2px dashed #E5A93C; border-radius: 12px; padding: 18px 24px; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #FFD56B; margin: 24px 0; display: inline-block; }
+    .info { font-size: 13px; color: #888888; line-height: 1.6; margin-top: 16px; }
+    .footer { margin-top: 32px; font-size: 12px; color: #555555; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">🎉 FANTA-EVENTI</div>
+    <div class="subtitle">Recupero della Password</div>
+    <p style="color: #DDDDDD; font-size: 16px;">Ciao <b>$recipientName</b>,</p>
+    <p style="color: #BBBBBB; font-size: 14px;">Abbiamo ricevuto una richiesta di reimpostazione della tua password. Usa il seguente codice a 6 cifre per procedere:</p>
+    <div class="code-box">$code</div>
+    <p class="info">Questo codice scadr&agrave; tra <b>15 minuti</b>.<br>Se non hai richiesto tu il recupero, puoi tranquillamente ignorare questa email.</p>
+    <div class="footer">&copy; 2026 Fanta-Eventi. Tutti i diritti riservati.</div>
+  </div>
+</body>
+</html>
+''';
+
+      final res = await http.post(
+        Uri.parse('https://api.resend.com/emails'),
+        headers: {
+          'Authorization': 'Bearer $_resendKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'from': 'Fanta-Eventi <onboarding@resend.dev>',
+          'to': [recipientEmail],
+          'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
+          'html': html,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      return res.statusCode == 200;
+    } catch (e) {
+      print('Errore invio email Resend: $e');
+      return false;
+    }
+  }
+
+  // --- RICHIESTA CODICE RECUPERO PASSWORD (6 CIFRE VIA EMAIL) ---
+  Future<Map<String, String>> richiediCodiceReset(String identifier) async {
+    final cleanIdent = identifier.trim().toLowerCase();
+    if (cleanIdent.isEmpty) {
+      throw Exception('Inserisci il tuo Nickname o la tua Email.');
+    }
+
+    // 1. Prova prima il backend HTTP
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/utenti/richiedi-reset-password'),
+          headers: defaultHeaders,
+          body: jsonEncode({'identifier': cleanIdent}),
+        ).timeout(const Duration(seconds: 4));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          return {
+            'email': data['email']?.toString() ?? '',
+            'maskedEmail': data['maskedEmail']?.toString() ?? '',
+            'username': data['username']?.toString() ?? '',
+          };
+        } else {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          if (data.containsKey('error')) {
+            throw Exception(data['error']);
+          }
+        }
+      } catch (e) {
+        if (e is Exception && !e.toString().contains('Impossibile contattare') && !e.toString().contains('TimeoutException')) {
+          rethrow;
+        }
+      }
+    }
+
+    // 2. Fallback istantaneo diretto MongoDB Atlas
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        final docs = await db.collection('Utenti').find().toList();
+        Map<String, dynamic>? targetDoc;
+
+        for (var d in docs) {
+          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
+          final isClaudioAlias = (cleanIdent == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
+          if (uName == cleanIdent || uEmail == cleanIdent || isClaudioAlias) {
+            targetDoc = d;
+            break;
+          }
+        }
+
+        if (targetDoc == null) {
+          throw Exception('Nessun account trovato con questo Nickname o Email.');
+        }
+
+        final email = (targetDoc['email'] ?? '').toString().trim();
+        final username = (targetDoc['nome'] ?? targetDoc['username'] ?? targetDoc['nickname'] ?? 'Utente').toString();
+
+        if (email.isEmpty) {
+          throw Exception('Nessuna email associata a questo profilo.');
+        }
+
+        // Genera codice casuale a 6 cifre
+        final random = Random.secure();
+        final code = (100000 + random.nextInt(900000)).toString();
+        final expiresAt = DateTime.now().toUtc().add(const Duration(minutes: 15));
+
+        await db.collection('PasswordResetTokens').update(
+          where.eq('email', email),
+          {
+            'email': email,
+            'username': username,
+            'codice': code,
+            'scadenza': expiresAt.toIso8601String(),
+            'tentativi': 0,
+            'creatoIl': DateTime.now().toUtc().toIso8601String(),
+          },
+          upsert: true,
+        );
+
+        final emailSent = await _sendResetEmailDirect(
+          recipientEmail: email,
+          recipientName: username,
+          code: code,
+        );
+
+        if (!emailSent) {
+          throw Exception('Impossibile inviare l\'email di recupero. Verifica la connessione e riprova.');
+        }
+
+        final parts = email.split('@');
+        String maskedEmail = email;
+        if (parts.length == 2) {
+          final local = parts[0];
+          if (local.length > 3) {
+            maskedEmail = '${local.substring(0, 3)}****@${parts[1]}';
+          } else {
+            maskedEmail = '${local[0]}****@${parts[1]}';
+          }
+        }
+
+        return {
+          'email': email,
+          'maskedEmail': maskedEmail,
+          'username': username,
+        };
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+    }
+
+    throw Exception('Impossibile verificare l\'account. Controlla la connessione internet.');
+  }
+
+  // --- CONFERMA CODICE E REIMPOSTAZIONE NUOVA PASSWORD ---
+  Future<void> confermaCodiceEReset({
+    required String email,
+    required String codice,
+    required String nuovaPassword,
+  }) async {
+    final cleanEmail = email.trim();
+    final cleanCode = codice.trim();
+    final cleanPass = nuovaPassword.trim();
+
+    if (cleanPass.length < 6) {
+      throw Exception('La password deve contenere almeno 6 caratteri.');
+    }
+
+    // 1. Prova prima il backend HTTP
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/utenti/conferma-reset-password'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'email': cleanEmail,
+            'codice': cleanCode,
+            'nuovaPassword': cleanPass,
+          }),
+        ).timeout(const Duration(seconds: 4));
+
+        if (response.statusCode == 200) {
+          clearUserSessionCache();
+          return;
+        } else {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          if (data.containsKey('error')) {
+            throw Exception(data['error']);
+          }
+        }
+      } catch (e) {
+        if (e is Exception && !e.toString().contains('Impossibile contattare') && !e.toString().contains('TimeoutException')) {
+          rethrow;
+        }
+      }
+    }
+
+    // 2. Fallback istantaneo diretto MongoDB Atlas
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        final resetToken = await db.collection('PasswordResetTokens').findOne(
+          where.eq('email', cleanEmail),
+        );
+
+        if (resetToken == null) {
+          throw Exception('Nessuna richiesta di recupero attiva per questa email. Richiedi un nuovo codice.');
+        }
+
+        final scadenzaStr = resetToken['scadenza']?.toString() ?? '';
+        final scadenza = DateTime.tryParse(scadenzaStr);
+        if (scadenza == null || DateTime.now().toUtc().isAfter(scadenza)) {
+          await db.collection('PasswordResetTokens').remove(where.eq('email', cleanEmail));
+          throw Exception('Il codice di verifica è scaduto. Richiedine uno nuovo.');
+        }
+
+        final tentativi = (resetToken['tentativi'] ?? 0) as int;
+        if (tentativi >= 5) {
+          await db.collection('PasswordResetTokens').remove(where.eq('email', cleanEmail));
+          throw Exception('Troppi tentativi falliti. Per sicurezza richiedi un nuovo codice.');
+        }
+
+        final codiceSalvato = (resetToken['codice'] ?? '').toString().trim();
+        if (codiceSalvato != cleanCode) {
+          await db.collection('PasswordResetTokens').update(
+            where.eq('email', cleanEmail),
+            modify.inc('tentativi', 1),
+          );
+          throw Exception('Codice di verifica non corretto. Riprova.');
+        }
+
+        // Codice corretto: aggiorno password con hash
+        final hashedPassword = hashPassword(cleanPass);
+        await db.collection('Utenti').update(
+          where.eq('email', cleanEmail),
+          modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
+        );
+
+        await db.collection('PasswordResetTokens').remove(where.eq('email', cleanEmail));
+        clearUserSessionCache();
+        return;
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+    }
+
+    throw Exception('Impossibile completare il reset della password. Riprova.');
+  }
+
 
   Utente getCurrentUser() {
     if (_currentUser == null) {
