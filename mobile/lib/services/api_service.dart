@@ -454,18 +454,6 @@ class ApiService {
             continue;
           }
 
-          // Se l'evento e' in_eliminazione da piu' di 8 secondi, rimuovilo definitivamente
-          if (d['stato'] == 'in_eliminazione') {
-            final elStr = d['eliminatoIl']?.toString();
-            final elDt = elStr != null ? DateTime.tryParse(elStr) : null;
-            if (elDt != null && now.difference(elDt).inSeconds > 8) {
-              if (d['_id'] is ObjectId) {
-                oldExpiredIds.add(d['_id'] as ObjectId);
-              }
-              continue;
-            }
-          }
-
           // Se l'evento e' appena finito (negli ultimi 7 giorni), assegna il Badge Vincitore al 1° in classifica
           if (isConcluso && d['badgeVincitoreAssegnato'] != true) {
             try {
@@ -540,7 +528,7 @@ class ApiService {
             'data': dtStartStr,
             'dataFine': dtEndStr,
             'luogo': d['luogo'] ?? '',
-            'stato': d['stato'] == 'in_eliminazione' ? 'in_eliminazione' : (isConcluso ? 'concluso' : (d['stato'] ?? 'in_programma')),
+            'stato': isConcluso ? 'concluso' : (d['stato'] ?? 'in_programma'),
             'propostoDa': d['propostoDa'] ?? d['creatore'] ?? 'Cloud',
             'partecipanti': partecipanti,
             'invitati': (d['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
@@ -626,28 +614,8 @@ class ApiService {
 
           final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? '').toString().toLowerCase();
 
-          // 1. Contrassegna subito l'evento come "in_eliminazione" su MongoDB Atlas
-          // in modo che gli altri dispositivi connessi (es. Oppo) ricevano l'evento in real-time
-          // e avviino l'animazione di disintegrazione Thanos sincronizzata!
-          await db.collection('Evento').update(
-            evSelector,
-            modify.set('stato', 'in_eliminazione').set('eliminatoIl', DateTime.now().toIso8601String()),
-          );
-
-          final idx = _eventi.indexWhere((e) => e.id == eventoId);
-          if (idx != -1) {
-            _eventi[idx] = _eventi[idx].copyWith(stato: 'in_eliminazione');
-          }
-
-          // Rimuovi definitivamente l'evento dal DB dopo 4.5 secondi (permette a tutti i telefoni di godersi i 2.5s di animazione)
-          Future.delayed(const Duration(milliseconds: 4500), () async {
-            try {
-              final asyncDb = await _getMongoDb();
-              if (asyncDb != null && asyncDb.isConnected) {
-                await asyncDb.collection('Evento').remove(evSelector);
-              }
-            } catch (_) {}
-          });
+          // 1. Rimuovi l'Evento
+          await db.collection('Evento').remove(evSelector);
 
           // 2. Rimuovi tutti i Bonus/Malus e relative Votazioni associati a questo evento
           final bmDocs = await db.collection('BonusMalus').find(where.eq('eventoId', eventoId)).toList();

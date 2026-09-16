@@ -9,7 +9,6 @@ import '../widgets/avatar_helper.dart';
 import '../widgets/event_card.dart';
 import '../widgets/bonus_malus_card.dart';
 import '../widgets/vote_card.dart';
-import '../widgets/thanos_snap_effect.dart';
 import 'create_event_view.dart';
 import 'add_bonus_malus_view.dart';
 import 'vote_view.dart';
@@ -29,7 +28,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   List<Evento> _eventi = [];
   List<BonusMalus> _bonusMalusList = [];
   List<Votazione> _votazioniList = [];
-  final Set<String> _disintegratingEventoIds = {};
   int _numeroNotifiche = 0;
   bool _isLoading = true;
 
@@ -83,7 +81,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
 
     _loadData(forceRefresh: true);
-    _liveSyncTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+    _liveSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _loadData(silent: true, forceRefresh: false);
     });
   }
@@ -102,27 +100,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     final meBonus = await _apiService.getBonusMalusList();
     final meVoti = await _apiService.getVotazioni();
 
-    // Rilevamento in tempo reale degli eventi in eliminazione o rimossi su altri telefoni
-    final List<Evento> eventiFinali = List.from(meEventi);
-
-    // 1. Controlla eventi contrassegnati come 'in_eliminazione' sul cloud
-    for (var ev in meEventi) {
-      if (ev.stato == 'in_eliminazione' && !_disintegratingEventoIds.contains(ev.id)) {
-        _disintegratingEventoIds.add(ev.id);
-      }
-    }
-
-    // 2. Se un evento presente nello schermo locale e' stato eliminato da un altro telefono
-    if (_eventi.isNotEmpty) {
-      final newIds = meEventi.map((e) => e.id).toSet();
-      for (var oldEv in _eventi) {
-        if (!newIds.contains(oldEv.id) && !_disintegratingEventoIds.contains(oldEv.id)) {
-          _disintegratingEventoIds.add(oldEv.id);
-          eventiFinali.add(oldEv);
-        }
-      }
-    }
-
     final curUser = _apiService.currentUser;
     final nick = curUser?.nome ?? 'Cloud';
     final nots = await _apiService.getNotifiche(nick);
@@ -138,7 +115,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     if (!mounted) return;
 
     setState(() {
-      _eventi = eventiFinali;
+      _eventi = meEventi;
       _bonusMalusList = meBonus;
       _votazioniList = meVoti;
       _numeroNotifiche = inAttesa;
@@ -221,21 +198,23 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     if (confermato == true) {
       final evId = evento.id;
       setState(() {
-        _disintegratingEventoIds.add(evId);
+        _eventi.removeWhere((e) => e.id == evId);
       });
 
-      // Avvia la cancellazione su MongoDB Atlas in background durante l'animazione
-      _apiService.eliminaEvento(evId, nick).catchError((e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFFEF4444),
-              content: Text(e.toString().replaceAll('Exception: ', ''),
-                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          );
-        }
-      });
+      try {
+        await _apiService.eliminaEvento(evId, nick);
+        _loadData(forceRefresh: true, silent: true);
+      } catch (e) {
+        if (!mounted) return;
+        _loadData(forceRefresh: true, silent: true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFEF4444),
+            content: Text(e.toString().replaceAll('Exception: ', ''),
+                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        );
+      }
     }
   }
 
@@ -628,31 +607,17 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemCount: _eventi.length,
         itemBuilder: (ctx, idx) {
           final ev = _eventi[idx];
-          final isDisintegrating = _disintegratingEventoIds.contains(ev.id);
-
-          return ThanosSnapEffect(
-            key: ValueKey('thanos_${ev.id}'),
-            isDisintegrating: isDisintegrating,
-            onDisintegrated: () {
-              setState(() {
-                _disintegratingEventoIds.remove(ev.id);
-                _eventi.removeWhere((e) => e.id == ev.id);
-              });
-              _loadData(forceRefresh: true, silent: true);
+          return EventCard(
+            evento: ev,
+            currentUserNickname: userNick,
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
+              );
+              _loadData(forceRefresh: true);
             },
-            child: EventCard(
-              evento: ev,
-              currentUserNickname: userNick,
-              onTap: () async {
-                if (isDisintegrating) return;
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
-                );
-                _loadData(forceRefresh: true);
-              },
-              onPartecipa: () => _partecipaEvento(ev),
-              onElimina: () => _confermaEliminazioneEvento(ev),
-            ),
+            onPartecipa: () => _partecipaEvento(ev),
+            onElimina: () => _confermaEliminazioneEvento(ev),
           );
         },
       );
