@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'package:dotenv/dotenv.dart';
 import 'package:mongo_dart/mongo_dart.dart';
+
 
 class DbService {
   static DbService? _instance;
@@ -25,6 +25,27 @@ class DbService {
   DbCollection get eventiCollection => db.collection('Evento'); // <--- Collezione 'Evento' singolare!
   DbCollection get bonusMalusCollection => db.collection('BonusMalus');
   DbCollection get votazioniCollection => db.collection('Votazioni');
+  DbCollection get passwordResetCollection => db.collection('PasswordResetTokens');
+
+  static String get resendApiKey {
+    final key = Platform.environment['RESEND_API_KEY'];
+    if (key != null && key.trim().isNotEmpty) return key.trim();
+    try {
+      final envFile = File('.env');
+      if (envFile.existsSync()) {
+        final lines = envFile.readAsLinesSync();
+        for (var line in lines) {
+          if (line.startsWith('RESEND_API_KEY=')) {
+            final val = line.substring('RESEND_API_KEY='.length).trim();
+            if (val.isNotEmpty) return val;
+          }
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+
 
   Future<void> connect() async {
     String mongoUri = 'mongodb+srv://Lorenzo:[REDACTED]@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0';
