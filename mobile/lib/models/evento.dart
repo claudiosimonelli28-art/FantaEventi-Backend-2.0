@@ -48,7 +48,9 @@ class Evento {
 
     final now = DateTime.now();
     String calculatedStato = 'in_programma';
-    if (now.isAfter(dtFine)) {
+    if (json['stato'] == 'in_eliminazione') {
+      calculatedStato = 'in_eliminazione';
+    } else if (now.isAfter(dtFine)) {
       calculatedStato = 'concluso';
     } else if (now.isAfter(dtInizio) && now.isBefore(dtFine)) {
       calculatedStato = 'in_corso';

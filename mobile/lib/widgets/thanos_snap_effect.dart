@@ -14,7 +14,7 @@ class ThanosSnapEffect extends StatefulWidget {
     super.key,
     required this.child,
     required this.isDisintegrating,
-    this.duration = const Duration(milliseconds: 1400),
+    this.duration = const Duration(milliseconds: 2500),
     required this.onDisintegrated,
   });
 
@@ -146,51 +146,53 @@ class _ThanosSnapEffectState extends State<ThanosSnapEffect>
         return SizeTransition(
           sizeFactor: _collapseAnimation,
           axisAlignment: -1.0,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // Corpo della Card che si sgretola ed erode da sinistra a destra
-              Transform.translate(
-                offset: Offset(cardOffsetX, cardOffsetY),
-                child: Opacity(
-                  opacity: cardOpacity,
-                  child: ShaderMask(
-                    shaderCallback: (Rect bounds) {
-                      return LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: const [
-                          Colors.transparent,
-                          Colors.transparent,
-                          Colors.white,
-                          Colors.white,
-                        ],
-                        stops: [
-                          0.0,
-                          stop1,
-                          stop2,
-                          1.0,
-                        ],
-                      ).createShader(bounds);
-                    },
-                    blendMode: BlendMode.dstIn,
-                    child: widget.child,
-                  ),
-                ),
-              ),
-
-              // Nuvola di particelle di cenere, fumo e scintille su Canvas
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: _AshParticlePainter(
-                      particles: _particles,
-                      progress: progress,
+          child: RepaintBoundary(
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Corpo della Card che si sgretola ed erode da sinistra a destra
+                Transform.translate(
+                  offset: Offset(cardOffsetX, cardOffsetY),
+                  child: Opacity(
+                    opacity: cardOpacity,
+                    child: ShaderMask(
+                      shaderCallback: (Rect bounds) {
+                        return LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: const [
+                            Colors.transparent,
+                            Colors.transparent,
+                            Colors.white,
+                            Colors.white,
+                          ],
+                          stops: [
+                            0.0,
+                            stop1,
+                            stop2,
+                            1.0,
+                          ],
+                        ).createShader(bounds);
+                      },
+                      blendMode: BlendMode.dstIn,
+                      child: widget.child,
                     ),
                   ),
                 ),
-              ),
-            ],
+
+                // Nuvola di particelle di cenere, fumo e scintille su Canvas
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: _AshParticlePainter(
+                        particles: _particles,
+                        progress: progress,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },

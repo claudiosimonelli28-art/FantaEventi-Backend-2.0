@@ -55,7 +55,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     _fabAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 650),
+      duration: const Duration(milliseconds: 950),
     );
     // 0.375 giri = 135 gradi con curva cubica ben visibile ed elegante
     _fabRotationAnimation = Tween<double>(begin: 0.0, end: 0.375).animate(
@@ -83,7 +83,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
 
     _loadData(forceRefresh: true);
-    _liveSyncTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+    _liveSyncTimer = Timer.periodic(const Duration(milliseconds: 2500), (_) {
       _loadData(silent: true, forceRefresh: false);
     });
   }
@@ -102,6 +102,27 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     final meBonus = await _apiService.getBonusMalusList();
     final meVoti = await _apiService.getVotazioni();
 
+    // Rilevamento in tempo reale degli eventi in eliminazione o rimossi su altri telefoni
+    final List<Evento> eventiFinali = List.from(meEventi);
+
+    // 1. Controlla eventi contrassegnati come 'in_eliminazione' sul cloud
+    for (var ev in meEventi) {
+      if (ev.stato == 'in_eliminazione' && !_disintegratingEventoIds.contains(ev.id)) {
+        _disintegratingEventoIds.add(ev.id);
+      }
+    }
+
+    // 2. Se un evento presente nello schermo locale e' stato eliminato da un altro telefono
+    if (_eventi.isNotEmpty) {
+      final newIds = meEventi.map((e) => e.id).toSet();
+      for (var oldEv in _eventi) {
+        if (!newIds.contains(oldEv.id) && !_disintegratingEventoIds.contains(oldEv.id)) {
+          _disintegratingEventoIds.add(oldEv.id);
+          eventiFinali.add(oldEv);
+        }
+      }
+    }
+
     final curUser = _apiService.currentUser;
     final nick = curUser?.nome ?? 'Cloud';
     final nots = await _apiService.getNotifiche(nick);
@@ -117,7 +138,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     if (!mounted) return;
 
     setState(() {
-      _eventi = meEventi;
+      _eventi = eventiFinali;
       _bonusMalusList = meBonus;
       _votazioniList = meVoti;
       _numeroNotifiche = inAttesa;
