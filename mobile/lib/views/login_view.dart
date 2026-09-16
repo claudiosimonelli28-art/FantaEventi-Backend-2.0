@@ -146,7 +146,7 @@ class _LoginViewState extends State<LoginView> {
     final setupConfirmPassController = TextEditingController();
     bool obscureSetup1 = true;
     bool obscureSetup2 = true;
-    bool setupRememberMe = true;
+    bool setupRememberMe = _rememberMe;
     bool isSaving = false;
 
     showModalBottomSheet(

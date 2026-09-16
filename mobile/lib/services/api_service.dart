@@ -131,10 +131,13 @@ class ApiService {
     return sha256.convert(bytes).toString();
   }
 
-  Future<void> _saveSession(Utente utente, {bool rememberMe = true}) async {
+  bool _rememberMeSession = false;
+
+  Future<void> _saveSession(Utente utente, {bool? rememberMe}) async {
+    final shouldRemember = rememberMe ?? _rememberMeSession;
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (rememberMe) {
+      if (shouldRemember) {
         await prefs.setString('saved_user_json', jsonEncode(utente.toJson()));
         await prefs.setString('saved_user_nickname', utente.nickname);
         await prefs.setBool('has_password_auth_v2', true);
@@ -150,6 +153,7 @@ class ApiService {
 
   Future<void> logout() async {
     _currentUser = null;
+    _rememberMeSession = false;
     clearUserSessionCache();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -171,6 +175,7 @@ class ApiService {
         await prefs.remove('saved_user_json');
         await prefs.remove('saved_user_nickname');
         await prefs.remove('has_password_auth_v2');
+        _rememberMeSession = false;
         return null;
       }
 
@@ -178,16 +183,19 @@ class ApiService {
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
         final Map<String, dynamic> data = jsonDecode(userJsonStr);
         _currentUser = Utente.fromJson(data);
+        _rememberMeSession = true;
         clearUserSessionCache();
         return _currentUser;
       }
     } catch (_) {}
+    _rememberMeSession = false;
     return null;
   }
 
   // --- LOGIN RIGOROSO REALE DA MONGODB ATLAS (CON PASSWORD HASHATA) ---
   Future<Utente> login(String identifier, String password, {bool rememberMe = true}) async {
     clearUserSessionCache();
+    _rememberMeSession = rememberMe;
     final cleanIdentifier = identifier.trim().toLowerCase();
     final cleanPassword = password.trim();
 
@@ -320,6 +328,7 @@ class ApiService {
     bool rememberMe = true,
   }) async {
     clearUserSessionCache();
+    _rememberMeSession = rememberMe;
     final cleanPass = nuovaPassword.trim();
     if (cleanPass.length < 6) {
       throw Exception('La password deve contenere almeno 6 caratteri.');
@@ -413,6 +422,7 @@ class ApiService {
     bool rememberMe = true,
   }) async {
     clearUserSessionCache();
+    _rememberMeSession = rememberMe;
     final cleanPass = password.trim();
     if (cleanPass.length < 6) {
       throw Exception('La password deve contenere almeno 6 caratteri.');
