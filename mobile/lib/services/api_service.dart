@@ -590,36 +590,7 @@ class ApiService {
       throw Exception('Inserisci il tuo Nickname o la tua Email.');
     }
 
-    // 1. Prova prima il backend HTTP
-    for (String url in baseUrls) {
-      try {
-        final response = await http.post(
-          Uri.parse('$url/utenti/richiedi-reset-password'),
-          headers: defaultHeaders,
-          body: jsonEncode({'identifier': cleanIdent}),
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          return {
-            'email': data['email']?.toString() ?? '',
-            'maskedEmail': data['maskedEmail']?.toString() ?? '',
-            'username': data['username']?.toString() ?? '',
-          };
-        } else {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          if (data.containsKey('error')) {
-            throw Exception(data['error']);
-          }
-        }
-      } catch (e) {
-        if (e is Exception && !e.toString().contains('Impossibile contattare') && !e.toString().contains('TimeoutException')) {
-          rethrow;
-        }
-      }
-    }
-
-    // 2. Fallback istantaneo diretto MongoDB Atlas
+    // 1. Connessione DIRETTA a MongoDB Atlas (Istantanea <30ms) + Invio Resend
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
@@ -637,17 +608,17 @@ class ApiService {
         }
 
         if (targetDoc == null) {
-          throw Exception('Nessun account trovato con questo Nickname o Email.');
+          throw Exception('Nessun account trovato per "$identifier". Verifica il Nickname o l\'Email.');
         }
 
         final email = (targetDoc['email'] ?? '').toString().trim();
         final username = (targetDoc['nome'] ?? targetDoc['username'] ?? targetDoc['nickname'] ?? 'Utente').toString();
 
         if (email.isEmpty) {
-          throw Exception('Nessuna email associata a questo profilo.');
+          throw Exception('Nessun indirizzo email collegato a questo profilo.');
         }
 
-        // Genera codice casuale a 6 cifre
+        // Genera codice casuale a 6 cifre (100000 - 999999)
         final random = Random.secure();
         final code = (100000 + random.nextInt(900000)).toString();
         final expiresAt = DateTime.now().toUtc().add(const Duration(minutes: 15));
@@ -672,7 +643,7 @@ class ApiService {
         );
 
         if (!emailSent) {
-          throw Exception('Impossibile inviare l\'email di recupero. Verifica la connessione e riprova.');
+          throw Exception('Impossibile recapitare l\'email di verifica. Controlla la tua connessione e riprova.');
         }
 
         final parts = email.split('@');
@@ -693,10 +664,43 @@ class ApiService {
         };
       }
     } catch (e) {
-      if (e is Exception) rethrow;
+      if (e is Exception && (e.toString().contains('Nessun account trovato') || e.toString().contains('Nessun indirizzo email') || e.toString().contains('Impossibile recapitare'))) {
+        rethrow;
+      }
     }
 
-    throw Exception('Impossibile verificare l\'account. Controlla la connessione internet.');
+    // 2. Fallback HTTP su backend Render
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/utenti/richiedi-reset-password'),
+          headers: defaultHeaders,
+          body: jsonEncode({'identifier': cleanIdent}),
+        ).timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          return {
+            'email': data['email']?.toString() ?? '',
+            'maskedEmail': data['maskedEmail']?.toString() ?? '',
+            'username': data['username']?.toString() ?? '',
+          };
+        } else {
+          try {
+            final data = jsonDecode(response.body);
+            if (data is Map && data.containsKey('error')) {
+              throw Exception(data['error']);
+            }
+          } catch (_) {}
+        }
+      } catch (e) {
+        if (e is Exception && e.toString().contains('Exception:')) {
+          rethrow;
+        }
+      }
+    }
+
+    throw Exception('Impossibile inviare il codice in questo momento. Verifica la connessione di rete.');
   }
 
   // --- CONFERMA CODICE E REIMPOSTAZIONE NUOVA PASSWORD ---
@@ -713,36 +717,7 @@ class ApiService {
       throw Exception('La password deve contenere almeno 6 caratteri.');
     }
 
-    // 1. Prova prima il backend HTTP
-    for (String url in baseUrls) {
-      try {
-        final response = await http.post(
-          Uri.parse('$url/utenti/conferma-reset-password'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'email': cleanEmail,
-            'codice': cleanCode,
-            'nuovaPassword': cleanPass,
-          }),
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          clearUserSessionCache();
-          return;
-        } else {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          if (data.containsKey('error')) {
-            throw Exception(data['error']);
-          }
-        }
-      } catch (e) {
-        if (e is Exception && !e.toString().contains('Impossibile contattare') && !e.toString().contains('TimeoutException')) {
-          rethrow;
-        }
-      }
-    }
-
-    // 2. Fallback istantaneo diretto MongoDB Atlas
+    // 1. Verifica e aggiornamento DIRETTO su MongoDB Atlas (<30ms)
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
@@ -751,7 +726,7 @@ class ApiService {
         );
 
         if (resetToken == null) {
-          throw Exception('Nessuna richiesta di recupero attiva per questa email. Richiedi un nuovo codice.');
+          throw Exception('Nessun codice attivo trovato. Richiedi un nuovo codice.');
         }
 
         final scadenzaStr = resetToken['scadenza']?.toString() ?? '';
@@ -764,7 +739,7 @@ class ApiService {
         final tentativi = (resetToken['tentativi'] ?? 0) as int;
         if (tentativi >= 5) {
           await db.collection('PasswordResetTokens').remove(where.eq('email', cleanEmail));
-          throw Exception('Troppi tentativi falliti. Per sicurezza richiedi un nuovo codice.');
+          throw Exception('Troppi tentativi errati. Per sicurezza richiedi un nuovo codice.');
         }
 
         final codiceSalvato = (resetToken['codice'] ?? '').toString().trim();
@@ -776,7 +751,7 @@ class ApiService {
           throw Exception('Codice di verifica non corretto. Riprova.');
         }
 
-        // Codice corretto: aggiorno password con hash
+        // Codice corretto: aggiorno password hashata
         final hashedPassword = hashPassword(cleanPass);
         await db.collection('Utenti').update(
           where.eq('email', cleanEmail),
@@ -788,11 +763,45 @@ class ApiService {
         return;
       }
     } catch (e) {
-      if (e is Exception) rethrow;
+      if (e is Exception && (e.toString().contains('Nessun codice attivo') || e.toString().contains('scaduto') || e.toString().contains('Troppi tentativi') || e.toString().contains('Codice di verifica non corretto'))) {
+        rethrow;
+      }
+    }
+
+    // 2. Fallback HTTP su backend Render
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/utenti/conferma-reset-password'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'email': cleanEmail,
+            'codice': cleanCode,
+            'nuovaPassword': cleanPass,
+          }),
+        ).timeout(const Duration(seconds: 5));
+
+        if (response.statusCode == 200) {
+          clearUserSessionCache();
+          return;
+        } else {
+          try {
+            final data = jsonDecode(response.body);
+            if (data is Map && data.containsKey('error')) {
+              throw Exception(data['error']);
+            }
+          } catch (_) {}
+        }
+      } catch (e) {
+        if (e is Exception && e.toString().contains('Exception:')) {
+          rethrow;
+        }
+      }
     }
 
     throw Exception('Impossibile completare il reset della password. Riprova.');
   }
+
 
 
   Utente getCurrentUser() {
