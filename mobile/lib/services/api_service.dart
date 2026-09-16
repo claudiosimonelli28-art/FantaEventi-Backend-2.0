@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,15 @@ import '../models/utente.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
+
+class NeedsPasswordSetupException implements Exception {
+  final String username;
+  final String email;
+  NeedsPasswordSetupException({required this.username, required this.email});
+
+  @override
+  String toString() => 'Questo account non ha ancora una password impostata. Impostala ora per proteggere il profilo!';
+}
 
 class ApiService {
   static List<String> filtraStorico(List<String> storico, {int maxGiorni = 7}) {
@@ -115,11 +125,26 @@ class ApiService {
   Utente? get currentUser => _currentUser;
   List<Evento> get eventi => List.unmodifiable(_eventi);
 
-  Future<void> _saveSession(Utente utente) async {
+  static String hashPassword(String password) {
+    const salt = 'FantaEventi2026_Secure_Salt_#99';
+    final bytes = utf8.encode('$password$salt');
+    return sha256.convert(bytes).toString();
+  }
+
+  Future<void> _saveSession(Utente utente, {bool rememberMe = true}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('saved_user_json', jsonEncode(utente.toJson()));
-      await prefs.setString('saved_user_nickname', utente.nickname);
+      if (rememberMe) {
+        await prefs.setString('saved_user_json', jsonEncode(utente.toJson()));
+        await prefs.setString('saved_user_nickname', utente.nickname);
+        await prefs.setBool('has_password_auth_v2', true);
+        await prefs.setBool('remember_me_enabled', true);
+      } else {
+        await prefs.remove('saved_user_json');
+        await prefs.remove('saved_user_nickname');
+        await prefs.remove('has_password_auth_v2');
+        await prefs.setBool('remember_me_enabled', false);
+      }
     } catch (_) {}
   }
 
@@ -130,12 +155,25 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('saved_user_json');
       await prefs.remove('saved_user_nickname');
+      await prefs.remove('has_password_auth_v2');
+      await prefs.remove('remember_me_enabled');
     } catch (_) {}
   }
 
   Future<Utente?> tryAutoLogin() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final hasPasswordAuth = prefs.getBool('has_password_auth_v2') ?? false;
+      final rememberMe = prefs.getBool('remember_me_enabled') ?? false;
+
+      // Se la sessione e' precedente al sistema password o rememberMe e' disattivato, forza il Login
+      if (!hasPasswordAuth || !rememberMe) {
+        await prefs.remove('saved_user_json');
+        await prefs.remove('saved_user_nickname');
+        await prefs.remove('has_password_auth_v2');
+        return null;
+      }
+
       final userJsonStr = prefs.getString('saved_user_json');
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
         final Map<String, dynamic> data = jsonDecode(userJsonStr);
@@ -147,10 +185,12 @@ class ApiService {
     return null;
   }
 
-  // --- LOGIN RIGOROSO REALE DA MONGODB ATLAS (ISTANTANEO <20ms) ---
-  Future<Utente> login(String identifier) async {
+  // --- LOGIN RIGOROSO REALE DA MONGODB ATLAS (CON PASSWORD HASHATA) ---
+  Future<Utente> login(String identifier, String password, {bool rememberMe = true}) async {
     clearUserSessionCache();
     final cleanIdentifier = identifier.trim().toLowerCase();
+    final cleanPassword = password.trim();
+
     if (cleanIdentifier.isEmpty) {
       throw Exception('Inserisci il tuo Nickname o la tua Email');
     }
@@ -164,10 +204,34 @@ class ApiService {
           final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
           if (uName == cleanIdentifier || uEmail == cleanIdentifier) {
+            final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente').toString();
+            final actualEmail = (d['email'] ?? '').toString();
+            final existingPasswordHash = (d['password'] ?? d['passwordHash'] ?? '').toString().trim();
+
+            // Riconoscimento al primo accesso: utente esistente ma senza password impostata
+            if (existingPasswordHash.isEmpty) {
+              throw NeedsPasswordSetupException(
+                username: actualUsername,
+                email: actualEmail,
+              );
+            }
+
+            // Utente con password già registrata
+            if (cleanPassword.isEmpty) {
+              throw Exception('Inserisci la password per accedere.');
+            }
+
+            final inputHash = hashPassword(cleanPassword);
+            if (inputHash != existingPasswordHash) {
+              throw Exception('Password non corretta. Riprova!');
+            }
+
             final jsonMap = {
               'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
-              'nome': d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente',
-              'email': d['email'] ?? '',
+              'nome': actualUsername,
+              'username': actualUsername,
+              'nickname': actualUsername,
+              'email': actualEmail,
               'avatarUrl': d['avatarUrl'] ?? '',
               'livello': d['livello'] ?? 1,
               'xp': d['xp'] ?? 100,
@@ -175,30 +239,41 @@ class ApiService {
               'puntiTotali': d['puntiTotali'] ?? 0,
               'badgeList': d['badgeList'] ?? [],
               'storicoVoti': d['storicoVoti'] ?? [],
+              'codiceAmico': d['codiceAmico'] ?? '',
+              'amici': d['amici'] ?? [],
+              'richiesteAmicizia': d['richiesteAmicizia'] ?? [],
+              'badgeVincitore': d['badgeVincitore'] ?? [],
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
-            await _saveSession(_currentUser!);
+            await _saveSession(_currentUser!, rememberMe: rememberMe);
             return _currentUser!;
           }
         }
         throw Exception('Nessun utente trovato nel database per "$cleanIdentifier". Registrati prima di accedere!');
       }
     } catch (e) {
-      if (e is Exception && e.toString().contains('Nessun utente trovato')) {
+      if (e is NeedsPasswordSetupException) rethrow;
+      if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
         rethrow;
       }
     }
 
     String? lastError;
 
+    // 2. Fallback HTTP su backend Render
     for (String url in baseUrls) {
       try {
         final response = await http.post(
           Uri.parse('$url/login'),
           headers: defaultHeaders,
-          body: jsonEncode({'username': cleanIdentifier, 'email': cleanIdentifier, 'nickname': cleanIdentifier}),
-        ).timeout(const Duration(seconds: 3));
+          body: jsonEncode({
+            'username': cleanIdentifier,
+            'email': cleanIdentifier,
+            'nickname': cleanIdentifier,
+            'password': cleanPassword,
+          }),
+        ).timeout(const Duration(seconds: 4));
 
         if (response.body.contains('<html>') || response.body.contains('Welcome to localhost.run')) {
           continue;
@@ -206,37 +281,197 @@ class ApiService {
 
         final data = jsonDecode(response.body) as Map<String, dynamic>;
 
+        if (data['needsPasswordSetup'] == true) {
+          throw NeedsPasswordSetupException(
+            username: data['username']?.toString() ?? cleanIdentifier,
+            email: data['email']?.toString() ?? '',
+          );
+        }
+
         if (response.statusCode == 200 && data.containsKey('utente')) {
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
           clearUserSessionCache();
-          await _saveSession(_currentUser!);
+          await _saveSession(_currentUser!, rememberMe: rememberMe);
           return _currentUser!;
+        } else if (response.statusCode == 403 || response.statusCode == 401) {
+          throw Exception(data['error']?.toString() ?? 'Password non corretta. Riprova!');
         } else if (response.statusCode == 404 || data['notFound'] == true) {
           throw Exception('Nessun utente trovato nel database per "$cleanIdentifier". Registrati prima di accedere!');
         } else if (data.containsKey('error')) {
           lastError = data['error'].toString();
         }
       } catch (e) {
-        if (e is Exception && e.toString().contains('Nessun utente trovato')) {
+        if (e is NeedsPasswordSetupException) rethrow;
+        if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
           rethrow;
         }
-        lastError = 'Impossibile contattare il server backend API: $e';
+        lastError = 'Impossibile contattare il server: $e';
       }
     }
 
     throw Exception(lastError ?? 'Nessun utente trovato con questo Nickname o Email nel database.');
   }
 
-  // --- REGISTRAZIONE ESPLICITA DI UN NUOVO UTENTE SU MONGODB ATLAS ---
+  // --- IMPOSTAZIONE PASSWORD AL PRIMO ACCESSO (PER UTENTI ESISTENTI) ---
+  Future<Utente> impostaPasswordPrimoAccesso({
+    required String username,
+    required String nuovaPassword,
+    bool rememberMe = true,
+  }) async {
+    clearUserSessionCache();
+    final cleanPass = nuovaPassword.trim();
+    if (cleanPass.length < 6) {
+      throw Exception('La password deve contenere almeno 6 caratteri.');
+    }
+    final hashedPassword = hashPassword(cleanPass);
+    final cleanUser = username.trim().toLowerCase();
+
+    // 1. Connessione DIRETTA a MongoDB Atlas (<30ms)
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        final docs = await db.collection('Utenti').find().toList();
+        for (var d in docs) {
+          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
+          if (uName == cleanUser || uEmail == cleanUser) {
+            ObjectId? objId;
+            try {
+              objId = d['_id'] is ObjectId ? d['_id'] as ObjectId : ObjectId.fromHexString(d['_id'].toString());
+            } catch (_) {}
+            final selector = objId != null ? where.id(objId) : where.eq('_id', d['_id']);
+
+            await db.collection('Utenti').update(
+              selector,
+              modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
+            );
+
+            final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente').toString();
+            final actualEmail = (d['email'] ?? '').toString();
+
+            final jsonMap = {
+              'id': objId?.toHexString() ?? d['_id']?.toString() ?? '',
+              'nome': actualUsername,
+              'username': actualUsername,
+              'nickname': actualUsername,
+              'email': actualEmail,
+              'avatarUrl': d['avatarUrl'] ?? '',
+              'livello': d['livello'] ?? 1,
+              'xp': d['xp'] ?? 100,
+              'xpProssimoLivello': d['xpProssimoLivello'] ?? 1000,
+              'puntiTotali': d['puntiTotali'] ?? 0,
+              'badgeList': d['badgeList'] ?? [],
+              'storicoVoti': d['storicoVoti'] ?? [],
+              'codiceAmico': d['codiceAmico'] ?? '',
+              'amici': d['amici'] ?? [],
+              'richiesteAmicizia': d['richiesteAmicizia'] ?? [],
+              'badgeVincitore': d['badgeVincitore'] ?? [],
+            };
+            _currentUser = Utente.fromJson(jsonMap);
+            clearUserSessionCache();
+            await _saveSession(_currentUser!, rememberMe: rememberMe);
+            return _currentUser!;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback HTTP su backend
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/utenti/imposta-password'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'username': username,
+            'password': cleanPass,
+          }),
+        ).timeout(const Duration(seconds: 10));
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (response.statusCode == 200 && data.containsKey('utente')) {
+          _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
+          clearUserSessionCache();
+          await _saveSession(_currentUser!, rememberMe: rememberMe);
+          return _currentUser!;
+        }
+      } catch (_) {}
+    }
+
+    throw Exception('Impossibile salvare la nuova password. Verifica la connessione di rete.');
+  }
+
+  // --- REGISTRAZIONE ESPLICITA DI UN NUOVO UTENTE SU MONGODB ATLAS (CON PASSWORD) ---
   Future<Utente> registrazione({
     required String nome,
     required String cognome,
     required String nickname,
     required String email,
+    required String password,
+    bool rememberMe = true,
   }) async {
     clearUserSessionCache();
+    final cleanPass = password.trim();
+    if (cleanPass.length < 6) {
+      throw Exception('La password deve contenere almeno 6 caratteri.');
+    }
+    final hashedPassword = hashPassword(cleanPass);
+    final cleanNick = nickname.trim();
+    final cleanEmail = email.trim();
+
+    // 1. Inserimento DIRETTO in MongoDB Atlas (<30ms)
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        final docs = await db.collection('Utenti').find().toList();
+        for (var d in docs) {
+          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
+          if (uName == cleanNick.toLowerCase() || (cleanEmail.isNotEmpty && uEmail == cleanEmail.toLowerCase())) {
+            throw Exception('Un account con questo Nickname o Email esiste già!');
+          }
+        }
+
+        final newDoc = {
+          'nome': cleanNick,
+          'username': cleanNick,
+          'nickname': cleanNick,
+          'cognome': cognome.trim(),
+          'email': cleanEmail.isNotEmpty ? cleanEmail : '${cleanNick.toLowerCase().replaceAll(' ', '')}@fantaeventi.it',
+          'password': hashedPassword,
+          'passwordHash': hashedPassword,
+          'ruolo': 'partecipante',
+          'avatarUrl': '',
+          'livello': 1,
+          'xp': 100,
+          'xpProssimoLivello': 1000,
+          'puntiTotali': 0,
+          'badgeList': [],
+          'storicoVoti': [],
+          'codiceAmico': (cleanNick.length >= 3 ? cleanNick.substring(0, 3).toUpperCase() : 'FAN') + (1000 + (DateTime.now().millisecondsSinceEpoch % 9000)).toString(),
+          'amici': [],
+          'richiesteAmicizia': [],
+          'badgeVincitore': [],
+          'createdAt': DateTime.now().toIso8601String(),
+        };
+
+        final insertResult = await db.collection('Utenti').insertOne(newDoc);
+        final objId = insertResult.id as ObjectId;
+        final jsonMap = Map<String, dynamic>.from(newDoc);
+        jsonMap['id'] = objId.toHexString();
+
+        _currentUser = Utente.fromJson(jsonMap);
+        clearUserSessionCache();
+        await _saveSession(_currentUser!, rememberMe: rememberMe);
+        return _currentUser!;
+      }
+    } catch (e) {
+      if (e is Exception && e.toString().contains('esiste già')) rethrow;
+    }
+
     String? lastError;
 
+    // 2. Fallback HTTP su backend Render
     for (String url in baseUrls) {
       try {
         final response = await http.post(
@@ -245,9 +480,10 @@ class ApiService {
           body: jsonEncode({
             'nome': nome.trim(),
             'cognome': cognome.trim(),
-            'username': nickname.trim(),
-            'nickname': nickname.trim(),
-            'email': email.trim(),
+            'username': cleanNick,
+            'nickname': cleanNick,
+            'email': cleanEmail,
+            'password': cleanPass,
           }),
         ).timeout(const Duration(seconds: 35));
 
@@ -256,7 +492,7 @@ class ApiService {
         if (response.statusCode == 200 && data.containsKey('utente')) {
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
           clearUserSessionCache();
-          await _saveSession(_currentUser!);
+          await _saveSession(_currentUser!, rememberMe: rememberMe);
           return _currentUser!;
         } else if (data.containsKey('error')) {
           lastError = data['error'].toString();

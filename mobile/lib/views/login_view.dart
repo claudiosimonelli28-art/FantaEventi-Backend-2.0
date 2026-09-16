@@ -15,18 +15,40 @@ class _LoginViewState extends State<LoginView> {
   final _registerFormKey = GlobalKey<FormState>();
 
   final _identifierController = TextEditingController();
+  final _loginPasswordController = TextEditingController();
 
   // Campi per la Registrazione
   final _nomeController = TextEditingController();
   final _cognomeController = TextEditingController();
   final _nicknameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _regPasswordController = TextEditingController();
+  final _regConfirmPasswordController = TextEditingController();
+
+  bool _obscureLoginPassword = true;
+  bool _obscureRegPassword = true;
+  bool _obscureRegConfirmPassword = true;
+  bool _rememberMe = true;
 
   bool _isRegisterMode = false;
   bool _isLoading = false;
   final ApiService _apiService = ApiService();
 
-  // Handle Login Rigoroso
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFFEF4444),
+        duration: const Duration(seconds: 4),
+        content: Text(
+          message.replaceAll('Exception: ', ''),
+          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+
+  // Handle Login Rigoroso con Password
   Future<void> _handleLogin() async {
     if (!(_loginFormKey.currentState?.validate() ?? false)) return;
 
@@ -35,7 +57,11 @@ class _LoginViewState extends State<LoginView> {
     });
 
     try {
-      await _apiService.login(_identifierController.text.trim());
+      await _apiService.login(
+        _identifierController.text.trim(),
+        _loginPasswordController.text,
+        rememberMe: _rememberMe,
+      );
 
       if (!mounted) return;
 
@@ -46,6 +72,12 @@ class _LoginViewState extends State<LoginView> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeView()),
       );
+    } on NeedsPasswordSetupException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+      _showPasswordSetupModal(e.username, e.email);
     } catch (e) {
       if (!mounted) return;
 
@@ -53,22 +85,26 @@ class _LoginViewState extends State<LoginView> {
         _isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFEF4444),
-          duration: const Duration(seconds: 4),
-          content: Text(
-            e.toString().replaceAll('Exception: ', ''),
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
+      _showError(e.toString());
     }
   }
 
-  // Handle Registrazione Nuovo Utente in MongoDB Atlas
+  // Handle Registrazione Nuovo Utente in MongoDB Atlas con Password
   Future<void> _handleRegister() async {
     if (!(_registerFormKey.currentState?.validate() ?? false)) return;
+
+    final pass = _regPasswordController.text.trim();
+    final confirmPass = _regConfirmPasswordController.text.trim();
+
+    if (pass.length < 6) {
+      _showError('La password deve contenere almeno 6 caratteri.');
+      return;
+    }
+
+    if (pass != confirmPass) {
+      _showError('Le password non coincidono! Controlla e riprova.');
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -80,6 +116,8 @@ class _LoginViewState extends State<LoginView> {
         cognome: _cognomeController.text.trim(),
         nickname: _nicknameController.text.trim(),
         email: _emailController.text.trim(),
+        password: pass,
+        rememberMe: _rememberMe,
       );
 
       if (!mounted) return;
@@ -98,25 +136,269 @@ class _LoginViewState extends State<LoginView> {
         _isLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFEF4444),
-          content: Text(
-            e.toString().replaceAll('Exception: ', ''),
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
+      _showError(e.toString());
     }
+  }
+
+  // Modale per il Primo Accesso degli utenti storici senza password
+  void _showPasswordSetupModal(String username, String email) {
+    final setupPassController = TextEditingController();
+    final setupConfirmPassController = TextEditingController();
+    bool obscureSetup1 = true;
+    bool obscureSetup2 = true;
+    bool setupRememberMe = true;
+    bool isSaving = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(modalCtx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 48,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF475569),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(Icons.shield_outlined, color: Color(0xFFFACC15), size: 28),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Benvenuto, $username! 👋',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              Text(
+                                'Imposta la tua Password',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  color: const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF334155)),
+                      ),
+                      child: Text(
+                        'Abbiamo aggiornato la sicurezza di FantaEventi! Per proteggere il tuo profilo, i tuoi badge e tutti i tuoi punti, inserisci una password personale.',
+                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFFCBD5E1), height: 1.4),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: setupPassController,
+                      obscureText: obscureSetup1,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Nuova Password (minimo 6 caratteri)',
+                        labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureSetup1 ? Icons.visibility_off : Icons.visibility,
+                            color: const Color(0xFF64748B),
+                          ),
+                          onPressed: () => setModalState(() => obscureSetup1 = !obscureSetup1),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: setupConfirmPassController,
+                      obscureText: obscureSetup2,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'Conferma Nuova Password',
+                        labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                        prefixIcon: const Icon(Icons.lock_reset_outlined, color: Color(0xFFFACC15)),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureSetup2 ? Icons.visibility_off : Icons.visibility,
+                            color: const Color(0xFF64748B),
+                          ),
+                          onPressed: () => setModalState(() => obscureSetup2 = !obscureSetup2),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    InkWell(
+                      onTap: () => setModalState(() => setupRememberMe = !setupRememberMe),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4.0),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: Checkbox(
+                                value: setupRememberMe,
+                                onChanged: (val) => setModalState(() => setupRememberMe = val ?? true),
+                                activeColor: const Color(0xFFFACC15),
+                                checkColor: const Color(0xFF0F172A),
+                                side: const BorderSide(color: Color(0xFF64748B)),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Mantieni l\'accesso su questo dispositivo',
+                              style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFFCBD5E1)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: isSaving ? null : () async {
+                        final p1 = setupPassController.text.trim();
+                        final p2 = setupConfirmPassController.text.trim();
+
+                        if (p1.length < 6) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              backgroundColor: Color(0xFFEF4444),
+                              content: Text('La password deve contenere almeno 6 caratteri.'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (p1 != p2) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              backgroundColor: Color(0xFFEF4444),
+                              content: Text('Le password non coincidono! Controlla e riprova.'),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final messenger = ScaffoldMessenger.of(context);
+                        final nav = Navigator.of(context);
+                        setModalState(() => isSaving = true);
+
+                        try {
+                          await _apiService.impostaPasswordPrimoAccesso(
+                            username: username,
+                            nuovaPassword: p1,
+                            rememberMe: setupRememberMe,
+                          );
+
+                          if (!mounted) return;
+                          Navigator.of(modalCtx).pop(); // Chiudi bottom sheet
+                          nav.pushReplacement(
+                            MaterialPageRoute(builder: (_) => const HomeView()),
+                          );
+                        } catch (err) {
+                          setModalState(() => isSaving = false);
+                          messenger.showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFFEF4444),
+                              content: Text(err.toString().replaceAll('Exception: ', '')),
+                            ),
+                          );
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: const Color(0xFFFACC15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: isSaving
+                          ? const SizedBox(
+                              height: 22,
+                              width: 22,
+                              child: CircularProgressIndicator(color: Color(0xFF0F172A), strokeWidth: 2.5),
+                            )
+                          : Text(
+                              'SALVA PASSWORD ED ENTRA',
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF0F172A),
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
     _identifierController.dispose();
+    _loginPasswordController.dispose();
     _nomeController.dispose();
     _cognomeController.dispose();
     _nicknameController.dispose();
     _emailController.dispose();
+    _regPasswordController.dispose();
+    _regConfirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -265,7 +547,69 @@ class _LoginViewState extends State<LoginView> {
                               return null;
                             },
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 14),
+
+                          TextFormField(
+                            controller: _loginPasswordController,
+                            obscureText: _obscureLoginPassword,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText: 'Password',
+                              hintText: 'Inserisci la tua password',
+                              hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                              prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureLoginPassword ? Icons.visibility_off : Icons.visibility,
+                                  color: const Color(0xFF64748B),
+                                ),
+                                onPressed: () => setState(() => _obscureLoginPassword = !_obscureLoginPassword),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFF0F172A),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) {
+                                return 'Inserisci la tua password';
+                              }
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          InkWell(
+                            onTap: () => setState(() => _rememberMe = !_rememberMe),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: Checkbox(
+                                      value: _rememberMe,
+                                      onChanged: (val) => setState(() => _rememberMe = val ?? true),
+                                      activeColor: const Color(0xFFFACC15),
+                                      checkColor: const Color(0xFF0F172A),
+                                      side: const BorderSide(color: Color(0xFF64748B)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Mantieni l\'accesso',
+                                    style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFFCBD5E1)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
 
                           ElevatedButton(
                             onPressed: _isLoading ? null : _handleLogin,
@@ -393,7 +737,96 @@ class _LoginViewState extends State<LoginView> {
                             ),
                             validator: (val) => val == null || val.trim().isEmpty || !val.contains('@') ? 'Email non valida' : null,
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 12),
+
+                          TextFormField(
+                            controller: _regPasswordController,
+                            obscureText: _obscureRegPassword,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText: 'Password (minimo 6 caratteri)',
+                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                              prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureRegPassword ? Icons.visibility_off : Icons.visibility,
+                                  color: const Color(0xFF64748B),
+                                ),
+                                onPressed: () => setState(() => _obscureRegPassword = !_obscureRegPassword),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFF0F172A),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return 'Inserisci una password';
+                              if (val.trim().length < 6) return 'Almeno 6 caratteri';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          TextFormField(
+                            controller: _regConfirmPasswordController,
+                            obscureText: _obscureRegConfirmPassword,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              labelText: 'Conferma Password',
+                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                              prefixIcon: const Icon(Icons.lock_reset_outlined, color: Color(0xFFFACC15)),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _obscureRegConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                                  color: const Color(0xFF64748B),
+                                ),
+                                onPressed: () => setState(() => _obscureRegConfirmPassword = !_obscureRegConfirmPassword),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFF0F172A),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return 'Conferma la password';
+                              if (val.trim() != _regPasswordController.text.trim()) return 'Le password non coincidono';
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+
+                          InkWell(
+                            onTap: () => setState(() => _rememberMe = !_rememberMe),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: Checkbox(
+                                      value: _rememberMe,
+                                      onChanged: (val) => setState(() => _rememberMe = val ?? true),
+                                      activeColor: const Color(0xFF9333EA),
+                                      checkColor: Colors.white,
+                                      side: const BorderSide(color: Color(0xFF64748B)),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Mantieni l\'accesso',
+                                    style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFFCBD5E1)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
 
                           ElevatedButton(
                             onPressed: _isLoading ? null : _handleRegister,
