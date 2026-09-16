@@ -203,7 +203,8 @@ class ApiService {
         for (var d in docs) {
           final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-          if (uName == cleanIdentifier || uEmail == cleanIdentifier) {
+          final isClaudioAlias = (cleanIdentifier == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
+          if (uName == cleanIdentifier || uEmail == cleanIdentifier || isClaudioAlias) {
             final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente').toString();
             final actualEmail = (d['email'] ?? '').toString();
             final existingPasswordHash = (d['password'] ?? d['passwordHash'] ?? '').toString().trim();
@@ -334,7 +335,8 @@ class ApiService {
         for (var d in docs) {
           final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-          if (uName == cleanUser || uEmail == cleanUser) {
+          final isClaudioAlias = (cleanUser == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
+          if (uName == cleanUser || uEmail == cleanUser || isClaudioAlias) {
             ObjectId? objId;
             try {
               objId = d['_id'] is ObjectId ? d['_id'] as ObjectId : ObjectId.fromHexString(d['_id'].toString());

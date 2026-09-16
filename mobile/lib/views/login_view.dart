@@ -573,12 +573,6 @@ class _LoginViewState extends State<LoginView> {
                                 borderSide: BorderSide.none,
                               ),
                             ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) {
-                                return 'Inserisci la tua password';
-                              }
-                              return null;
-                            },
                           ),
                           const SizedBox(height: 12),
 
