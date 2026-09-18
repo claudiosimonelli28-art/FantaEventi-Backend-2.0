@@ -28,7 +28,8 @@ class _LoginViewState extends State<LoginView> {
   bool _obscureLoginPassword = true;
   bool _obscureRegPassword = true;
   bool _obscureRegConfirmPassword = true;
-  bool _rememberMe = true;
+  bool _rememberMe = false;
+
 
   bool _isRegisterMode = false;
   bool _isLoading = false;
@@ -291,7 +292,7 @@ class _LoginViewState extends State<LoginView> {
                               width: 24,
                               child: Checkbox(
                                 value: setupRememberMe,
-                                onChanged: (val) => setModalState(() => setupRememberMe = val ?? true),
+                                onChanged: (val) => setModalState(() => setupRememberMe = val ?? false),
                                 activeColor: const Color(0xFFFACC15),
                                 checkColor: const Color(0xFF0F172A),
                                 side: const BorderSide(color: Color(0xFF64748B)),
@@ -998,7 +999,8 @@ class _LoginViewState extends State<LoginView> {
                                         width: 24,
                                         child: Checkbox(
                                           value: _rememberMe,
-                                          onChanged: (val) => setState(() => _rememberMe = val ?? true),
+                                          onChanged: (val) => setState(() => _rememberMe = val ?? false),
+
                                           activeColor: const Color(0xFFFACC15),
                                           checkColor: const Color(0xFF0F172A),
                                           side: const BorderSide(color: Color(0xFF64748B)),
@@ -1234,7 +1236,7 @@ class _LoginViewState extends State<LoginView> {
                                     width: 24,
                                     child: Checkbox(
                                       value: _rememberMe,
-                                      onChanged: (val) => setState(() => _rememberMe = val ?? true),
+                                      onChanged: (val) => setState(() => _rememberMe = val ?? false),
                                       activeColor: const Color(0xFF9333EA),
                                       checkColor: Colors.white,
                                       side: const BorderSide(color: Color(0xFF64748B)),
