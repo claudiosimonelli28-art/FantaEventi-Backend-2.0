@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -21,7 +22,7 @@ class FounderInfo {
   });
 }
 
-class FounderBadge extends StatelessWidget {
+class FounderBadge extends StatefulWidget {
   final String nickname;
   final bool isLarge;
 
@@ -81,98 +82,215 @@ class FounderBadge extends StatelessWidget {
   }
 
   @override
+  State<FounderBadge> createState() => _FounderBadgeState();
+}
+
+class _FounderBadgeState extends State<FounderBadge>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final info = getFounderInfo(nickname);
+    final info = FounderBadge.getFounderInfo(widget.nickname);
     if (info == null) return const SizedBox.shrink();
 
-    if (isLarge) {
-      return Container(
-        margin: const EdgeInsets.only(top: 8, bottom: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: info.gradientColors,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: info.borderColor, width: 1.4),
-          boxShadow: [
-            BoxShadow(
-              color: info.shadowColor.withValues(alpha: 0.35),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
+    return AnimatedBuilder(
+      animation: _animController,
+      builder: (context, child) {
+        // Valore sinusoidale continuo per l'effetto respiro (0.0 -> 1.0)
+        final pulse = (math.sin(_animController.value * 2 * math.pi) + 1) / 2;
+        final shimmerPos = _animController.value;
+
+        if (widget.isLarge) {
+          return Container(
+            margin: const EdgeInsets.only(top: 8, bottom: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: info.shadowColor.withValues(alpha: 0.25 + (pulse * 0.35)),
+                  blurRadius: 10 + (pulse * 8),
+                  spreadRadius: 1 + (pulse * 1.5),
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(info.emoji, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(
+                children: [
+                  // Sfondo con gradiente e bordo lucido
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: info.gradientColors,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Color.lerp(info.borderColor, Colors.white, pulse * 0.4) ?? info.borderColor,
+                        width: 1.4 + (pulse * 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Transform.scale(
+                          scale: 1.0 + (pulse * 0.12),
+                          child: Text(info.emoji, style: const TextStyle(fontSize: 19)),
+                        ),
+                        const SizedBox(width: 10),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              info.title,
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.8,
+                                color: info.textColor,
+                              ),
+                            ),
+                            Text(
+                              info.subtitle,
+                              style: GoogleFonts.inter(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Riflesso Shimmer metallico che scorre da sinistra a destra
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          gradient: LinearGradient(
+                            begin: Alignment(-2.5 + (shimmerPos * 4.5), -1.0),
+                            end: Alignment(-1.5 + (shimmerPos * 4.5), 1.0),
+                            colors: [
+                              Colors.transparent,
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.white.withValues(alpha: 0.28),
+                              Colors.white.withValues(alpha: 0.0),
+                              Colors.transparent,
+                            ],
+                            stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Versione Pill Compatta (per liste amici e schede)
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: info.shadowColor.withValues(alpha: 0.2 + (pulse * 0.25)),
+                blurRadius: 5 + (pulse * 4),
+                spreadRadius: pulse * 1.0,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Stack(
               children: [
-                Text(
-                  info.title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                    color: info.textColor,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: info.gradientColors,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Color.lerp(info.borderColor, Colors.white, pulse * 0.3) ?? info.borderColor,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Transform.scale(
+                        scale: 1.0 + (pulse * 0.1),
+                        child: Text(info.emoji, style: const TextStyle(fontSize: 11)),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        info.title,
+                        style: GoogleFonts.poppins(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.4,
+                          color: info.textColor,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  info.subtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white.withValues(alpha: 0.85),
+
+                // Shimmer sweep pill
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        gradient: LinearGradient(
+                          begin: Alignment(-2.5 + (shimmerPos * 4.5), -1.0),
+                          end: Alignment(-1.5 + (shimmerPos * 4.5), 1.0),
+                          colors: [
+                            Colors.transparent,
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.white.withValues(alpha: 0.32),
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
-          ],
-        ),
-      );
-    }
-
-    // Small pill version (for lists, modal cards, chips)
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: info.gradientColors,
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: info.borderColor.withValues(alpha: 0.8), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: info.shadowColor.withValues(alpha: 0.25),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
           ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(info.emoji, style: const TextStyle(fontSize: 11)),
-          const SizedBox(width: 4),
-          Text(
-            info.title,
-            style: GoogleFonts.poppins(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.4,
-              color: info.textColor,
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
