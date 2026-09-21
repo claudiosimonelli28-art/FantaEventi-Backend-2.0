@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/utente.dart';
 import '../services/api_service.dart';
 import '../widgets/avatar_helper.dart';
+import '../widgets/founder_badge.dart';
 import 'login_view.dart';
 
 class ProfileView extends StatefulWidget {
@@ -228,13 +229,24 @@ class _ProfileViewState extends State<ProfileView> {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            displayName,
-                                            style: GoogleFonts.poppins(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                              color: Colors.white,
-                                            ),
+                                          Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  displayName,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: GoogleFonts.poppins(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (FounderBadge.isFounder(amicoNick) || FounderBadge.isFounder(displayName)) ...[
+                                                const SizedBox(width: 8),
+                                                FounderBadge(nickname: amicoNick, isLarge: false),
+                                              ],
+                                            ],
                                           ),
                                           const SizedBox(height: 2),
                                           Row(
@@ -972,6 +984,9 @@ class _ProfileViewState extends State<ProfileView> {
                         color: Colors.white,
                       ),
                     ),
+                    if (FounderBadge.isFounder(_utente.nickname)) ...[
+                      FounderBadge(nickname: _utente.nickname, isLarge: true),
+                    ],
                     const SizedBox(height: 4),
                     Text(
                       _getRankTitle(_utente.livello),
