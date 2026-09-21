@@ -13,6 +13,9 @@ class Utente {
   final List<String> amici;
   final List<Map<String, dynamic>> richiesteAmicizia;
   final List<Map<String, dynamic>> badgeVincitore;
+  final int countGiudice;
+  final int countReMalus;
+  final int countFantasma;
 
   Utente({
     required this.id,
@@ -29,10 +32,15 @@ class Utente {
     required this.amici,
     required this.richiesteAmicizia,
     required this.badgeVincitore,
+    this.countGiudice = 0,
+    this.countReMalus = 0,
+    this.countFantasma = 0,
   });
 
   String get nickname => nome;
   String get username => nome;
+  int get countCampione => badgeVincitore.length;
+
 
   factory Utente.fromJson(Map<String, dynamic> json) {
     final nameValue = json['nickname'] ?? json['nome'] ?? json['username'] ?? 'Utente';
@@ -81,6 +89,9 @@ class Utente {
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           [],
+      countGiudice: (json['countGiudice'] as num?)?.toInt() ?? 0,
+      countReMalus: (json['countReMalus'] as num?)?.toInt() ?? 0,
+      countFantasma: (json['countFantasma'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -100,6 +111,9 @@ class Utente {
       'amici': amici,
       'richiesteAmicizia': richiesteAmicizia,
       'badgeVincitore': badgeVincitore,
+      'countGiudice': countGiudice,
+      'countReMalus': countReMalus,
+      'countFantasma': countFantasma,
     };
   }
 
@@ -118,6 +132,9 @@ class Utente {
     List<String>? amici,
     List<Map<String, dynamic>>? richiesteAmicizia,
     List<Map<String, dynamic>>? badgeVincitore,
+    int? countGiudice,
+    int? countReMalus,
+    int? countFantasma,
   }) {
     return Utente(
       id: id ?? this.id,
@@ -134,6 +151,10 @@ class Utente {
       amici: amici ?? this.amici,
       richiesteAmicizia: richiesteAmicizia ?? this.richiesteAmicizia,
       badgeVincitore: badgeVincitore ?? this.badgeVincitore,
+      countGiudice: countGiudice ?? this.countGiudice,
+      countReMalus: countReMalus ?? this.countReMalus,
+      countFantasma: countFantasma ?? this.countFantasma,
     );
   }
 }
+

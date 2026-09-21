@@ -31,7 +31,6 @@ class _ProfileViewState extends State<ProfileView> {
   ];
 
   int _filtroGiorniStorico = 7;
-  bool _isTitoliLoading = true;
   int _countCampione = 0;
   int _countReMalus = 0;
   int _countGiudiceSupremo = 0;
@@ -41,6 +40,10 @@ class _ProfileViewState extends State<ProfileView> {
   void initState() {
     super.initState();
     _utente = _apiService.currentUser ?? _apiService.getCurrentUser();
+    _countCampione = _utente.countCampione;
+    _countReMalus = _utente.countReMalus;
+    _countGiudiceSupremo = _utente.countGiudice;
+    _countFantasma = _utente.countFantasma;
     _caricaProfiloAggiornato();
   }
 
@@ -81,152 +84,547 @@ class _ProfileViewState extends State<ProfileView> {
       if (updatedUser != null && mounted) {
         setState(() {
           _utente = updatedUser;
+          _countCampione = _utente.countCampione;
+          _countReMalus = _utente.countReMalus;
+          _countGiudiceSupremo = _utente.countGiudice;
+          _countFantasma = _utente.countFantasma;
         });
       }
-      await _calcolaTitoliSpeciali();
+      await _apiService.getUtenti();
+      if (mounted) setState(() {});
     } catch (_) {}
   }
 
-  Future<void> _calcolaTitoliSpeciali() async {
-    try {
-      final userNick = _utente.nickname.trim().toLowerCase();
-      final eventi = await _apiService.getEventi();
-      final allBonus = await _apiService.getBonusMalusList();
-      final allVotazioni = await _apiService.getVotazioni();
+  // MODALE CON LA LISTA COMPLETA DEGLI AMICI
+  void _mostraModalAmici() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (context, scrollController) {
+            final amiciList = _utente.amici;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF64748B),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('👥', style: TextStyle(fontSize: 22)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'I Tuoi Amici (${amiciList.length})',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Elenco completo dei tuoi compagni e dettagli del loro profilo',
+                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: amiciList.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.people_outline_rounded, size: 48, color: Color(0xFF64748B)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Nessun amico ancora aggiunto',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Condividi il tuo Codice Amico per collegarti con i tuoi amici!',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: amiciList.length,
+                            itemBuilder: (context, index) {
+                              final amicoNick = amiciList[index];
+                              final amicoUtente = _apiService.getUtenteInMemoria(amicoNick);
+                              final displayName = (amicoUtente?.nome.isNotEmpty == true)
+                                  ? amicoUtente!.nome
+                                  : amicoNick;
+                              final avatarUrl = amicoUtente?.avatarUrl;
+                              final friendCode = amicoUtente?.codiceAmico ?? '';
+                              final points = amicoUtente?.puntiTotali ?? 0;
+                              final level = amicoUtente?.livello ?? 1;
 
-      int campione = _utente.badgeVincitore.length;
-      int reMalus = 0;
-      int giudice = 0;
-      int fantasma = 0;
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: const Color(0xFF334155)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(2),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFF10B981).withValues(alpha: 0.6),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: CircleAvatar(
+                                        radius: 22,
+                                        backgroundImage: getAvatarImageProvider(avatarUrl),
+                                        backgroundColor: const Color(0xFF334155),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            displayName,
+                                            style: GoogleFonts.poppins(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF1E293B),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  'Liv. $level',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: const Color(0xFFFACC15),
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                '$points PT',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: const Color(0xFF10B981),
+                                                ),
+                                              ),
+                                              if (friendCode.isNotEmpty) ...[
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  '• $friendCode',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 11,
+                                                    color: const Color(0xFF94A3B8),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
-      for (var ev in eventi) {
-        if (!ev.isConcluso) continue;
+  // MODALE CON LA BACHECA VITTORIE / SALA TROFEI
+  void _mostraModalVittorie() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (context, scrollController) {
+            final vittorie = _utente.badgeVincitore;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF64748B),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('🏆', style: TextStyle(fontSize: 22)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Sala Trofei (${vittorie.length})',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Tutti gli eventi in cui hai conquistato il 1° posto',
+                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: vittorie.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.emoji_events_outlined, size: 48, color: Color(0xFF64748B)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Nessun trofeo conquistato al momento',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Conquista il primo posto nei tuoi prossimi eventi per arricchire la tua sala trofei!',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: vittorie.length,
+                            itemBuilder: (context, index) {
+                              final b = vittorie[index];
+                              final evName = b['evento'] ?? 'Evento';
+                              final pts = b['punti'] ?? 0;
+                              String dataStr = '';
+                              if (b['data'] != null) {
+                                try {
+                                  final dt = DateTime.parse(b['data'].toString());
+                                  dataStr = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+                                } catch (_) {}
+                              }
 
-        final Map<String, int> malusPerUtente = {};
-        final Map<String, int> attivitaPerUtente = {};
-        final Map<String, int> azioniTotaliPerUtente = {};
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFFFACC15), Color(0xFFB45309)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFFACC15).withValues(alpha: 0.2),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF0F172A).withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.emoji_events_rounded, color: Color(0xFF0F172A), size: 28),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '1° POSTO: $evName',
+                                            style: GoogleFonts.poppins(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                'Punti: $pts PT',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: const Color(0xFF0F172A).withValues(alpha: 0.9),
+                                                ),
+                                              ),
+                                              if (dataStr.isNotEmpty)
+                                                Text(
+                                                  dataStr,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: const Color(0xFF0F172A).withValues(alpha: 0.75),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
-        for (var p in ev.partecipanti) {
-          final pNorm = p.trim().toLowerCase();
-          malusPerUtente[pNorm] = 0;
-          attivitaPerUtente[pNorm] = 0;
-          azioniTotaliPerUtente[pNorm] = 0;
-        }
-
-        for (var bm in allBonus) {
-          final isSameEv = bm.eventoId.trim().toLowerCase() == ev.id.trim().toLowerCase() ||
-              bm.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
-          if (!isSameEv && allBonus.length > 1) continue;
-
-          final prop = bm.propostoDa.trim().toLowerCase();
-          if (attivitaPerUtente.containsKey(prop)) {
-            attivitaPerUtente[prop] = (attivitaPerUtente[prop] ?? 0) + 1;
-            azioniTotaliPerUtente[prop] = (azioniTotaliPerUtente[prop] ?? 0) + 1;
-          }
-
-          for (var u in bm.assegnatoA) {
-            final uNorm = u.trim().toLowerCase();
-            azioniTotaliPerUtente[uNorm] = (azioniTotaliPerUtente[uNorm] ?? 0) + 1;
-            if (bm.punti < 0) {
-              malusPerUtente[uNorm] = (malusPerUtente[uNorm] ?? 0) + bm.punti.abs();
-            }
-          }
-        }
-
-        for (var v in allVotazioni) {
-          final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
-          final isSameEv = evId == ev.id.trim().toLowerCase() ||
-              evId == ev.titolo.trim().toLowerCase();
-          if (!isSameEv && allVotazioni.length > 1) continue;
-
-          for (var u in v.votiUtenti.keys) {
-            final uNorm = u.trim().toLowerCase();
-            if (attivitaPerUtente.containsKey(uNorm)) {
-              attivitaPerUtente[uNorm] = (attivitaPerUtente[uNorm] ?? 0) + 1;
-              azioniTotaliPerUtente[uNorm] = (azioniTotaliPerUtente[uNorm] ?? 0) + 1;
-            }
-          }
-        }
-
-        // 1. Re dei Malus
-        int maxMalus = 0;
-        String? bestMalus;
-        malusPerUtente.forEach((k, v) {
-          if (v > maxMalus) {
-            maxMalus = v;
-            bestMalus = k;
-          }
-        });
-        if (bestMalus == userNick && maxMalus > 0) {
-          reMalus++;
-        }
-
-        // 2. Giudice Supremo
-        int maxAtt = 0;
-        String? bestGiudice;
-        attivitaPerUtente.forEach((k, v) {
-          if (v > maxAtt) {
-            maxAtt = v;
-            bestGiudice = k;
-          }
-        });
-        if (bestGiudice == userNick && maxAtt > 0) {
-          giudice++;
-        }
-
-        // 3. Fantasma (partecipante attivo al minimo indispensabile, escludendo il vincitore)
-        if (ev.partecipanti.length > 1 && ev.partecipanti.any((p) => p.trim().toLowerCase() == userNick)) {
-          String? bestPlayer;
-          int maxPts = -99999;
-          for (var p in ev.partecipanti) {
-            final pNorm = p.trim().toLowerCase();
-            final pts = allBonus
-                .where((b) {
-                  final matchEv = b.eventoId.trim().toLowerCase() == ev.id.trim().toLowerCase() ||
-                      b.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
-                  return (matchEv || allBonus.length == 1) &&
-                      b.assegnatoA.any((x) => x.trim().toLowerCase() == pNorm);
-                })
-                .fold<int>(0, (sum, b) => sum + b.punti);
-            if (pts > maxPts) {
-              maxPts = pts;
-              bestPlayer = pNorm;
-            }
-          }
-
-          int minAzioni = 999999;
-          String? bestFantasma;
-          for (var p in ev.partecipanti) {
-            final pNorm = p.trim().toLowerCase();
-            if (bestPlayer != null && bestPlayer == pNorm) continue;
-            final az = azioniTotaliPerUtente[pNorm] ?? 0;
-            if (az < minAzioni) {
-              minAzioni = az;
-              bestFantasma = pNorm;
-            }
-          }
-          if (bestFantasma == userNick) {
-            fantasma++;
-          }
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _countCampione = campione;
-          _countReMalus = reMalus;
-          _countGiudiceSupremo = giudice;
-          _countFantasma = fantasma;
-          _isTitoliLoading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isTitoliLoading = false;
-        });
-      }
-    }
+  // MODALE CON LA LISTA COMPLETA DEI BADGE SBLOCCATI
+  void _mostraModalBadge() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          expand: false,
+          builder: (context, scrollController) {
+            final badges = _utente.badgeList;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF64748B),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Text('🎖️', style: TextStyle(fontSize: 22)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Badge Sbloccati (${badges.length})',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Tutti i badge e le partecipazioni agli eventi della tua carriera',
+                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: badges.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.military_tech_outlined, size: 48, color: Color(0xFF64748B)),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Nessun badge sbloccato',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Partecipa ai tuoi primi eventi per sbloccare i tuoi badge ufficiali!',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: badges.length,
+                            itemBuilder: (context, index) {
+                              final badge = badges[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFFACC15).withValues(alpha: 0.4),
+                                    width: 1.2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFFACC15).withValues(alpha: 0.08),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.stars_rounded, color: Color(0xFFFACC15), size: 24),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Text(
+                                        badge,
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   // APRE LA VERA FOTOCAMERA FISICA DEL TELEFONO
@@ -722,53 +1120,63 @@ class _ProfileViewState extends State<ProfileView> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              children: [
-                                Text(
-                                  '${_utente.amici.length}',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF10B981),
+                          child: InkWell(
+                            onTap: _mostraModalAmici,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${_utente.amici.length}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF10B981),
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  'Amici',
-                                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
-                                ),
-                              ],
+                                  Text(
+                                    'Amici 👥',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Column(
-                              children: [
-                                Text(
-                                  '${_utente.badgeVincitore.length}',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF9333EA),
+                          child: InkWell(
+                            onTap: _mostraModalVittorie,
+                            borderRadius: BorderRadius.circular(14),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF9333EA).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${_utente.badgeVincitore.length}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF9333EA),
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  'Vittorie 🏆',
-                                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
-                                ),
-                              ],
+                                  Text(
+                                    'Vittorie 🏆',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -777,11 +1185,169 @@ class _ProfileViewState extends State<ProfileView> {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
               // BACHECA TITOLI E RICONOSCIMENTI
               _buildBachecaTitoli(),
-              const SizedBox(height: 24),
+              const SizedBox(height: 16),
+
+              // BACHECA VITTORIE (Card Compatta Cliccabile)
+              InkWell(
+                onTap: _mostraModalVittorie,
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xFFFACC15).withValues(alpha: 0.35),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 24),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Bacheca Vittorie',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFACC15).withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${_utente.badgeVincitore.length}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFFFACC15),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tocca per ammirare la sala trofei nei dettagli',
+                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFFFACC15), size: 16),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // BADGE SBLOCCATI (Card Compatta Cliccabile)
+              InkWell(
+                onTap: _mostraModalBadge,
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: const Color(0xFF9333EA).withValues(alpha: 0.4),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF9333EA).withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Text('🎖️', style: TextStyle(fontSize: 22)),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Badge Sbloccati',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF9333EA).withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    '${_utente.badgeList.length}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFFC084FC),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Tocca per visualizzare la lista dei tuoi badge ed eventi',
+                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFFC084FC), size: 16),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
 
               // AGGIUNGI AMICO PER CODICE AMICO
               Container(
@@ -836,150 +1402,7 @@ class _ProfileViewState extends State<ProfileView> {
                   ],
                 ),
               ),
-              // LISTA AMICI CONFERMATI
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'I Tuoi Amici (${_utente.amici.length}) 👥',
-                  style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                ),
-              ),
-              const SizedBox(height: 10),
-              if (_utente.amici.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF334155)),
-                  ),
-                  child: Text(
-                    'Non hai ancora aggiunto nessun amico. Condividi il tuo Codice Amico!',
-                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: _utente.amici.map((amico) {
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.6)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircleAvatar(
-                            radius: 12,
-                            backgroundColor: const Color(0xFF10B981),
-                            child: Text(
-                              amico.isNotEmpty ? amico[0].toUpperCase() : 'A',
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            amico,
-                            style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
               const SizedBox(height: 24),
-
-              // BACHECA TROFEI VINCITORE
-              if (_utente.badgeVincitore.isNotEmpty) ...[
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Bacheca Vittorie 🏆',
-                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _utente.badgeVincitore.length,
-                  itemBuilder: (ctx, i) {
-                    final b = _utente.badgeVincitore[i];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [Color(0xFFFACC15), Color(0xFFB45309)]),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.emoji_events_rounded, color: Color(0xFF0F172A), size: 28),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('1° POSTO: ${b['evento'] ?? "Evento"}', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: const Color(0xFF0F172A))),
-                                Text('Punti totalizzati: ${b['punti'] ?? 0} PT', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A))),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 24),
-              ],
-
-              // Badge Section
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Badge Sbloccati 🏆',
-                  style: GoogleFonts.poppins(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _utente.badgeList.map((badge) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.5)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFFACC15).withValues(alpha: 0.1),
-                          blurRadius: 6,
-                        ),
-                      ],
-                    ),
-                    child: Text(
-                      badge,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 28),
 
               // Storico Attività con Filtro Temporale (24h, 3gg, 7gg)
               Row(
@@ -1135,36 +1558,7 @@ class _ProfileViewState extends State<ProfileView> {
             style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
           ),
           const SizedBox(height: 14),
-          if (_isTitoliLoading)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Color(0xFFFACC15),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Calcolo riconoscimenti in corso...',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: const Color(0xFF94A3B8),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else ...[
-            Row(
+          Row(
               children: [
                 Expanded(
                   child: _buildBachecaBadge(
@@ -1208,9 +1602,8 @@ class _ProfileViewState extends State<ProfileView> {
               ],
             ),
           ],
-        ],
-      ),
-    );
+        ),
+      );
   }
 
   Widget _buildBachecaBadge({

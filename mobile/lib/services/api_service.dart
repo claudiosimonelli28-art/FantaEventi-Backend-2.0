@@ -261,6 +261,9 @@ class ApiService {
               'amici': d['amici'] ?? [],
               'richiesteAmicizia': d['richiesteAmicizia'] ?? [],
               'badgeVincitore': d['badgeVincitore'] ?? [],
+              'countGiudice': d['countGiudice'] ?? 0,
+              'countReMalus': d['countReMalus'] ?? 0,
+              'countFantasma': d['countFantasma'] ?? 0,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -386,6 +389,9 @@ class ApiService {
               'amici': d['amici'] ?? [],
               'richiesteAmicizia': d['richiesteAmicizia'] ?? [],
               'badgeVincitore': d['badgeVincitore'] ?? [],
+              'countGiudice': d['countGiudice'] ?? 0,
+              'countReMalus': d['countReMalus'] ?? 0,
+              'countFantasma': d['countFantasma'] ?? 0,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -917,6 +923,9 @@ class ApiService {
           jsonMap['amici'] = d['amici'] ?? [];
           jsonMap['richiesteAmicizia'] = d['richiesteAmicizia'] ?? [];
           jsonMap['badgeVincitore'] = d['badgeVincitore'] ?? [];
+          jsonMap['countGiudice'] = d['countGiudice'] ?? 0;
+          jsonMap['countReMalus'] = d['countReMalus'] ?? 0;
+          jsonMap['countFantasma'] = d['countFantasma'] ?? 0;
 
           final uObj = Utente.fromJson(jsonMap);
           list.add(uObj);
@@ -989,33 +998,74 @@ class ApiService {
             continue;
           }
 
-          // Se l'evento e' appena finito (negli ultimi 7 giorni), assegna il Badge Vincitore al 1° in classifica
-          if (isConcluso && d['badgeVincitoreAssegnato'] != true) {
+          // Se l'evento e' appena finito (negli ultimi 7 giorni), assegna i premi/badge/titoli una sola volta
+          if (isConcluso && (d['badgeVincitoreAssegnato'] != true || d['titoliAssegnati'] != true)) {
             try {
-              // Assegna badge al 1° in classifica
+              final evTitolo = (d['titolo'] ?? d['nome'] ?? 'Evento Fanta').toString().trim();
+              final dateStr = '${dtEnd.day.toString().padLeft(2, '0')}/${dtEnd.month.toString().padLeft(2, '0')}/${dtEnd.year}';
+              final partBadge = '🎉 Partecipato a "$evTitolo" ($dateStr)';
+
               final bmList = await db.collection('BonusMalus').find(where.eq('eventoId', idStr)).toList();
+              final allVotazioni = await db.collection('Votazioni').find().toList();
+              final uDocs = await db.collection('Utenti').find().toList();
+
               final Map<String, int> punteggi = {for (var p in partecipanti) p: 0};
+              final Map<String, int> malusPerUtente = {for (var p in partecipanti) p.trim().toLowerCase(): 0};
+              final Map<String, int> attivitaPerUtente = {for (var p in partecipanti) p.trim().toLowerCase(): 0};
+              final Map<String, int> azioniTotaliPerUtente = {for (var p in partecipanti) p.trim().toLowerCase(): 0};
+
               for (var bm in bmList) {
-                if (bm['approvato'] == true || bm['stato'] == 'approvato') {
-                  final pt = (bm['punti'] as num?)?.toInt() ?? 0;
-                  final ass = (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-                  for (var u in ass) {
+                final prop = (bm['propostoDa'] ?? '').toString().trim().toLowerCase();
+                if (attivitaPerUtente.containsKey(prop)) {
+                  attivitaPerUtente[prop] = (attivitaPerUtente[prop] ?? 0) + 1;
+                  azioniTotaliPerUtente[prop] = (azioniTotaliPerUtente[prop] ?? 0) + 1;
+                }
+
+                final ass = (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+                final pt = (bm['punti'] as num?)?.toInt() ?? 0;
+                final bool approvato = bm['approvato'] == true || bm['stato'] == 'approvato';
+
+                for (var u in ass) {
+                  final uNorm = u.trim().toLowerCase();
+                  if (azioniTotaliPerUtente.containsKey(uNorm)) {
+                    azioniTotaliPerUtente[uNorm] = (azioniTotaliPerUtente[uNorm] ?? 0) + 1;
+                  }
+                  if (approvato) {
                     punteggi[u] = (punteggi[u] ?? 0) + pt;
+                    if (pt < 0 && malusPerUtente.containsKey(uNorm)) {
+                      malusPerUtente[uNorm] = (malusPerUtente[uNorm] ?? 0) + pt.abs();
+                    }
                   }
                 }
               }
 
+              for (var v in allVotazioni) {
+                final vEvId = (v['bonusMalus']?['eventoId'] ?? v['eventoId'] ?? '').toString().trim().toLowerCase();
+                final isSameEv = vEvId == idStr.toLowerCase() || vEvId == evTitolo.toLowerCase();
+                if (!isSameEv && allVotazioni.length > 1) continue;
+
+                final votiMap = v['votiUtenti'] as Map<String, dynamic>? ?? {};
+                for (var voter in votiMap.keys) {
+                  final voterNorm = voter.trim().toLowerCase();
+                  if (attivitaPerUtente.containsKey(voterNorm)) {
+                    attivitaPerUtente[voterNorm] = (attivitaPerUtente[voterNorm] ?? 0) + 1;
+                    azioniTotaliPerUtente[voterNorm] = (azioniTotaliPerUtente[voterNorm] ?? 0) + 1;
+                  }
+                }
+              }
+
+              // 1. Assegna badge al 1° in classifica
+              String? vincitoreNick;
               if (punteggi.isNotEmpty) {
                 final sorted = punteggi.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-                final vincitoreNick = sorted.first.key;
+                vincitoreNick = sorted.first.key;
                 final badgeMap = {
                   'titolo': '🏆 Vincitore Evento',
-                  'evento': d['titolo'] ?? d['nome'] ?? 'Evento Fanta',
+                  'evento': evTitolo,
                   'punti': sorted.first.value,
                   'data': DateTime.now().toIso8601String(),
                 };
 
-                final uDocs = await db.collection('Utenti').find().toList();
                 for (var uDoc in uDocs) {
                   final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
                   if (uName == vincitoreNick.toLowerCase()) {
@@ -1031,9 +1081,95 @@ class ApiService {
                 }
               }
 
-              // Segna che il badge vincitore per questo evento e' stato assegnato
+              // 2. Assegna Badge Partecipazione a TUTTI i partecipanti
+              for (var part in partecipanti) {
+                final partNorm = part.trim().toLowerCase();
+                for (var uDoc in uDocs) {
+                  final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
+                  if (uName == partNorm) {
+                    final List<dynamic> currentBadgeList = List.from(uDoc['badgeList'] ?? []);
+                    if (!currentBadgeList.any((b) => b.toString().contains(evTitolo))) {
+                      currentBadgeList.add(partBadge);
+                      await db.collection('Utenti').update(
+                        where.id(uDoc['_id'] as ObjectId),
+                        modify.set('badgeList', currentBadgeList),
+                      );
+                    }
+                  }
+                }
+              }
+
+              // 3. Assegnazione Titoli Permanenti della Bacheca (Re dei Malus, Giudice Supremo, Fantasma)
+              if (d['titoliAssegnati'] != true) {
+                int maxMalus = 0;
+                String? bestMalusUser;
+                malusPerUtente.forEach((k, v) {
+                  if (v > maxMalus) {
+                    maxMalus = v;
+                    bestMalusUser = k;
+                  }
+                });
+
+                int maxAtt = 0;
+                String? bestGiudiceUser;
+                attivitaPerUtente.forEach((k, v) {
+                  if (v > maxAtt) {
+                    maxAtt = v;
+                    bestGiudiceUser = k;
+                  }
+                });
+
+                String? bestFantasmaUser;
+                if (partecipanti.length > 1) {
+                  int minAzioni = 999999;
+                  for (var p in partecipanti) {
+                    final pNorm = p.trim().toLowerCase();
+                    if (vincitoreNick != null && vincitoreNick.trim().toLowerCase() == pNorm) continue;
+                    final az = azioniTotaliPerUtente[pNorm] ?? 0;
+                    if (az < minAzioni) {
+                      minAzioni = az;
+                      bestFantasmaUser = pNorm;
+                    }
+                  }
+                }
+
+                for (var uDoc in uDocs) {
+                  final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
+                  final uId = uDoc['_id'] as ObjectId;
+                  var mod = modify;
+                  bool shouldUpdate = false;
+
+                  if (bestMalusUser != null && uName == bestMalusUser && maxMalus > 0) {
+                    final cur = (uDoc['countReMalus'] as num?)?.toInt() ?? 0;
+                    mod = mod.set('countReMalus', cur + 1);
+                    shouldUpdate = true;
+                  }
+                  if (bestGiudiceUser != null && uName == bestGiudiceUser && maxAtt > 0) {
+                    final cur = (uDoc['countGiudice'] as num?)?.toInt() ?? 0;
+                    mod = mod.set('countGiudice', cur + 1);
+                    shouldUpdate = true;
+                  }
+                  if (bestFantasmaUser != null && uName == bestFantasmaUser) {
+                    final cur = (uDoc['countFantasma'] as num?)?.toInt() ?? 0;
+                    mod = mod.set('countFantasma', cur + 1);
+                    shouldUpdate = true;
+                  }
+
+                  if (shouldUpdate) {
+                    await db.collection('Utenti').update(where.id(uId), mod);
+                  }
+                }
+              }
+
+              // Segna che badge vincitore, partecipazione e titoli per questo evento sono stati assegnati
               if (d['_id'] is ObjectId) {
-                await db.collection('Evento').update(where.id(d['_id'] as ObjectId), modify.set('badgeVincitoreAssegnato', true).set('stato', 'concluso'));
+                await db.collection('Evento').update(
+                  where.id(d['_id'] as ObjectId),
+                  modify
+                    .set('badgeVincitoreAssegnato', true)
+                    .set('titoliAssegnati', true)
+                    .set('stato', 'concluso'),
+                );
               }
             } catch (_) {}
           }
