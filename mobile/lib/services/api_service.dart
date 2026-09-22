@@ -73,6 +73,13 @@ class ApiService {
     return utf8.decode(base64.decode('cmVfNDZ2d1ByVmZfMm9RZXdlZm14M053UHBZaWIxdlR4UDhj'));
   }
 
+  static String get _brevoKey {
+    const envKey = String.fromEnvironment('BREVO_API_KEY');
+    if (envKey.isNotEmpty) return envKey;
+    return utf8.decode(base64.decode(
+        'eGtleXNpYi0zOWNhZDc2MjQ5ODFkOWQ4YzVmYjE2MmYyMjYyY2VjYTkyOWU0ODQ1MjRmZGEzMDliMWUxZGIxNWVmMDIxNDktR3dmR1hQVXVFVVU1OFA5Sg=='));
+  }
+
 
   Db? _db;
 
@@ -532,14 +539,13 @@ class ApiService {
     throw Exception(lastError ?? 'Errore durante la registrazione del nuovo utente.');
   }
 
-  // --- INVIO EMAIL TRAMITE RESEND (HELPER DIRETTO) ---
+  // --- INVIO EMAIL TRAMITE BREVO (CON FALLBACK RESEND) ---
   Future<bool> _sendResetEmailDirect({
     required String recipientEmail,
     required String recipientName,
     required String code,
   }) async {
-    try {
-      final html = '''
+    final html = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -568,6 +574,41 @@ class ApiService {
 </html>
 ''';
 
+    // 1. Invio principale tramite Brevo REST API (consegna a qualsiasi indirizzo senza vincoli)
+    try {
+      final res = await http.post(
+        Uri.parse('https://api.brevo.com/v3/smtp/email'),
+        headers: {
+          'api-key': _brevoKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'sender': {
+            'name': 'Fanta-Eventi',
+            'email': 'claudio.simonelli28@gmail.com',
+          },
+          'to': [
+            {
+              'email': recipientEmail,
+              'name': recipientName,
+            }
+          ],
+          'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
+          'htmlContent': html,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return true;
+      }
+      print('Errore risposta Brevo (${res.statusCode}): ${res.body}');
+    } catch (e) {
+      print('Eccezione invio Brevo: $e');
+    }
+
+    // 2. Fallback tramite Resend
+    try {
       final res = await http.post(
         Uri.parse('https://api.resend.com/emails'),
         headers: {
@@ -584,7 +625,7 @@ class ApiService {
 
       return res.statusCode == 200;
     } catch (e) {
-      print('Errore invio email Resend: $e');
+      print('Errore invio email Resend fallback: $e');
       return false;
     }
   }

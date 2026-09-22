@@ -19,14 +19,7 @@ Future<bool> sendResetEmail({
   required String recipientName,
   required String code,
 }) async {
-  final apiKey = DbService.resendApiKey;
-  final client = HttpClient();
-  try {
-    final request = await client.postUrl(Uri.parse('https://api.resend.com/emails'));
-    request.headers.set('Authorization', 'Bearer $apiKey');
-    request.headers.set('Content-Type', 'application/json');
-
-    final htmlContent = '''
+  final htmlContent = '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -55,24 +48,72 @@ Future<bool> sendResetEmail({
 </html>
 ''';
 
-    final payload = {
-      'from': 'Fanta-Eventi <onboarding@resend.dev>',
-      'to': [recipientEmail],
-      'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
-      'html': htmlContent,
-    };
+  // 1. Invio primario tramite Brevo API (recapito illimitato a tutti i destinatari)
+  final brevoKey = DbService.brevoApiKey;
+  if (brevoKey.isNotEmpty) {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(Uri.parse('https://api.brevo.com/v3/smtp/email'));
+      request.headers.set('api-key', brevoKey);
+      request.headers.set('Content-Type', 'application/json');
+      request.headers.set('Accept', 'application/json');
 
-    request.write(jsonEncode(payload));
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
-    print('📧 [Resend] Invio email a $recipientEmail - Status: ${response.statusCode} - Body: $body');
-    return response.statusCode == 200;
-  } catch (e) {
-    print('❌ [Resend] Errore invio email: $e');
-    return false;
-  } finally {
-    client.close();
+      final payload = {
+        'sender': {
+          'name': 'Fanta-Eventi',
+          'email': 'claudio.simonelli28@gmail.com',
+        },
+        'to': [
+          {'email': recipientEmail, 'name': recipientName}
+        ],
+        'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
+        'htmlContent': htmlContent,
+      };
+
+      request.add(utf8.encode(jsonEncode(payload)));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      print('📧 [Brevo] Invio email a $recipientEmail - Status: ${response.statusCode} - Body: $body');
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+    } catch (e) {
+      print('❌ [Brevo] Errore invio: $e');
+    } finally {
+      client.close();
+    }
   }
+
+  // 2. Fallback tramite Resend
+  final resendKey = DbService.resendApiKey;
+  if (resendKey.isNotEmpty) {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(Uri.parse('https://api.resend.com/emails'));
+      request.headers.set('Authorization', 'Bearer $resendKey');
+      request.headers.set('Content-Type', 'application/json');
+
+      final payload = {
+        'from': 'Fanta-Eventi <onboarding@resend.dev>',
+        'to': [recipientEmail],
+        'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
+        'html': htmlContent,
+      };
+
+      request.add(utf8.encode(jsonEncode(payload)));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      print('📧 [Resend Fallback] Invio email a $recipientEmail - Status: ${response.statusCode} - Body: $body');
+      return response.statusCode == 200;
+    } catch (e) {
+      print('❌ [Resend Fallback] Errore invio email: $e');
+      return false;
+    } finally {
+      client.close();
+    }
+  }
+
+  return false;
 }
 
 
