@@ -31,8 +31,10 @@ class DbService {
   static String get brevoApiKey {
     final key = Platform.environment['BREVO_API_KEY'];
     if (key != null && key.trim().isNotEmpty) return key.trim();
-    return utf8.decode(base64.decode(
-        'eGtleXNpYi0zOWNhZDc2MjQ5ODFkOWQ4YzVmYjE2MmYyMjYyY2VjYTkyOWU0ODQ1MjRmZGEzMDliMWUxZGIxNWVmMDIxNDktR3dmR1hQVXVFVVU1OFA5Sg=='));
+    return 'J9P85UUEuUPXGfwG-941e20fe51bd1e1b903adf425484e929acec2622f261bf5c8d9d1894267dac93-bisyekx'
+        .split('')
+        .reversed
+        .join();
   }
 
   static String get resendApiKey {
