@@ -67,11 +67,6 @@ class ApiService {
         'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOmNsYXVkaW9zaW1vbmVsbGlAY2x1c3RlcjAuemJicWZjci5tb25nb2RiLm5ldC9GYW50YUV2ZW50aT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHkmYXBwTmFtZT1DbHVzdGVyMA=='));
   }
 
-  static String get _resendKey {
-    const envKey = String.fromEnvironment('RESEND_API_KEY');
-    if (envKey.isNotEmpty) return envKey;
-    return utf8.decode(base64.decode('cmVfNDZ2d1ByVmZfMm9RZXdlZm14M053UHBZaWIxdlR4UDhj'));
-  }
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
@@ -541,7 +536,7 @@ class ApiService {
     throw Exception(lastError ?? 'Errore durante la registrazione del nuovo utente.');
   }
 
-  // --- INVIO EMAIL TRAMITE BREVO (CON FALLBACK RESEND) ---
+  // --- INVIO EMAIL TRAMITE BREVO (DIRETTO) ---
   Future<bool> _sendResetEmailDirect({
     required String recipientEmail,
     required String recipientName,
@@ -576,7 +571,7 @@ class ApiService {
 </html>
 ''';
 
-    // 1. Invio principale tramite Brevo REST API (consegna a qualsiasi indirizzo senza vincoli)
+    // Invio tramite Brevo REST API (recapito istantaneo a qualsiasi indirizzo)
     try {
       final res = await http.post(
         Uri.parse('https://api.brevo.com/v3/smtp/email'),
@@ -605,29 +600,9 @@ class ApiService {
         return true;
       }
       print('Errore risposta Brevo (${res.statusCode}): ${res.body}');
+      return false;
     } catch (e) {
       print('Eccezione invio Brevo: $e');
-    }
-
-    // 2. Fallback tramite Resend
-    try {
-      final res = await http.post(
-        Uri.parse('https://api.resend.com/emails'),
-        headers: {
-          'Authorization': 'Bearer $_resendKey',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'from': 'Fanta-Eventi <onboarding@resend.dev>',
-          'to': [recipientEmail],
-          'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
-          'html': html,
-        }),
-      ).timeout(const Duration(seconds: 10));
-
-      return res.statusCode == 200;
-    } catch (e) {
-      print('Errore invio email Resend fallback: $e');
       return false;
     }
   }
@@ -639,7 +614,7 @@ class ApiService {
       throw Exception('Inserisci il tuo Nickname o la tua Email.');
     }
 
-    // 1. Connessione DIRETTA a MongoDB Atlas (Istantanea <30ms) + Invio Resend
+    // 1. Connessione DIRETTA a MongoDB Atlas (Istantanea <30ms) + Invio Brevo
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {

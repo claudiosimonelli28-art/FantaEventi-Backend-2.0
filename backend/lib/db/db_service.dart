@@ -37,23 +37,6 @@ class DbService {
         .join();
   }
 
-  static String get resendApiKey {
-    final key = Platform.environment['RESEND_API_KEY'];
-    if (key != null && key.trim().isNotEmpty) return key.trim();
-    try {
-      final envFile = File('.env');
-      if (envFile.existsSync()) {
-        final lines = envFile.readAsLinesSync();
-        for (var line in lines) {
-          if (line.startsWith('RESEND_API_KEY=')) {
-            final val = line.substring('RESEND_API_KEY='.length).trim();
-            if (val.isNotEmpty) return val;
-          }
-        }
-      }
-    } catch (_) {}
-    return '';
-  }
 
 
 

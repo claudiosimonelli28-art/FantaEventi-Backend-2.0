@@ -84,35 +84,6 @@ Future<bool> sendResetEmail({
     }
   }
 
-  // 2. Fallback tramite Resend
-  final resendKey = DbService.resendApiKey;
-  if (resendKey.isNotEmpty) {
-    final client = HttpClient();
-    try {
-      final request = await client.postUrl(Uri.parse('https://api.resend.com/emails'));
-      request.headers.set('Authorization', 'Bearer $resendKey');
-      request.headers.set('Content-Type', 'application/json');
-
-      final payload = {
-        'from': 'Fanta-Eventi <onboarding@resend.dev>',
-        'to': [recipientEmail],
-        'subject': '🔑 Il tuo codice di recupero Fanta-Eventi: $code',
-        'html': htmlContent,
-      };
-
-      request.add(utf8.encode(jsonEncode(payload)));
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      print('📧 [Resend Fallback] Invio email a $recipientEmail - Status: ${response.statusCode} - Body: $body');
-      return response.statusCode == 200;
-    } catch (e) {
-      print('❌ [Resend Fallback] Errore invio email: $e');
-      return false;
-    } finally {
-      client.close();
-    }
-  }
-
   return false;
 }
 
@@ -469,9 +440,9 @@ class UtenteController {
         upsert: true,
       );
 
-      print('🔑 Codice $code generato per $username ($email). Invio email via Resend...');
+      print('🔑 Codice $code generato per $username ($email). Invio email via Brevo...');
 
-      // Invio email via Resend
+      // Invio email via Brevo
       final inviata = await sendResetEmail(
         recipientEmail: email,
         recipientName: username,
