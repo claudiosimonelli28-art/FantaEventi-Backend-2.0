@@ -11,6 +11,7 @@ class Evento {
   final String propostoDa;
   final List<String> partecipanti;
   final List<String> invitati;
+  final int penalitaFalsaTestimonianza;
 
   Evento({
     this.id,
@@ -23,6 +24,7 @@ class Evento {
     required this.propostoDa,
     List<String>? partecipanti,
     List<String>? invitati,
+    this.penalitaFalsaTestimonianza = -10,
   })  : dataFine = dataFine ?? data.add(const Duration(hours: 4)),
         partecipanti = partecipanti ?? [],
         invitati = invitati ?? [];
@@ -60,6 +62,7 @@ class Evento {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      penalitaFalsaTestimonianza: (map['penalitaFalsaTestimonianza'] as num?)?.toInt() ?? -10,
     );
   }
 
@@ -76,6 +79,7 @@ class Evento {
       'creatore': propostoDa,
       'partecipanti': partecipanti,
       'invitati': invitati,
+      'penalitaFalsaTestimonianza': penalitaFalsaTestimonianza,
     };
     if (id != null) {
       map['_id'] = id;
@@ -97,6 +101,7 @@ class Evento {
       'creatore': propostoDa,
       'partecipanti': partecipanti,
       'invitati': invitati,
+      'penalitaFalsaTestimonianza': penalitaFalsaTestimonianza,
     };
   }
 }

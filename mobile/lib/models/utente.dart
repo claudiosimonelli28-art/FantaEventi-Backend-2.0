@@ -16,6 +16,8 @@ class Utente {
   final int countGiudice;
   final int countReMalus;
   final int countFantasma;
+  final int countSbirro;
+  final int countGiustiziere;
 
   Utente({
     required this.id,
@@ -35,6 +37,8 @@ class Utente {
     this.countGiudice = 0,
     this.countReMalus = 0,
     this.countFantasma = 0,
+    this.countSbirro = 0,
+    this.countGiustiziere = 0,
   });
 
   String get nickname => nome;
@@ -92,6 +96,8 @@ class Utente {
       countGiudice: (json['countGiudice'] as num?)?.toInt() ?? 0,
       countReMalus: (json['countReMalus'] as num?)?.toInt() ?? 0,
       countFantasma: (json['countFantasma'] as num?)?.toInt() ?? 0,
+      countSbirro: (json['countSbirro'] as num?)?.toInt() ?? 0,
+      countGiustiziere: (json['countGiustiziere'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -114,6 +120,8 @@ class Utente {
       'countGiudice': countGiudice,
       'countReMalus': countReMalus,
       'countFantasma': countFantasma,
+      'countSbirro': countSbirro,
+      'countGiustiziere': countGiustiziere,
     };
   }
 
@@ -135,6 +143,8 @@ class Utente {
     int? countGiudice,
     int? countReMalus,
     int? countFantasma,
+    int? countSbirro,
+    int? countGiustiziere,
   }) {
     return Utente(
       id: id ?? this.id,
@@ -154,6 +164,8 @@ class Utente {
       countGiudice: countGiudice ?? this.countGiudice,
       countReMalus: countReMalus ?? this.countReMalus,
       countFantasma: countFantasma ?? this.countFantasma,
+      countSbirro: countSbirro ?? this.countSbirro,
+      countGiustiziere: countGiustiziere ?? this.countGiustiziere,
     );
   }
 }

@@ -15,6 +15,7 @@ import 'vote_view.dart';
 import 'profile_view.dart';
 import 'notifications_modal.dart';
 import 'event_detail_view.dart';
+import 'var_submission_modal.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -680,6 +681,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           final ev = activeEvents[idx];
           final cleanCreatore = (ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa).trim().toLowerCase();
           final isOrganizzatore = cleanCreatore == cleanUser;
+          final isPartecipante = ev.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
 
           // Filtra tutti i bonus/malus approvati per questo evento
           final approvedForEvent = _bonusMalusList.where((b) {
@@ -753,6 +755,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                                 onAssegna: isOrganizzatore
                                     ? () => _apriSelettoreAssegnazione(ev, bm)
                                     : null,
+                                onRichiediVar: (isPartecipante || isOrganizzatore)
+                                    ? () => _apriRichiestaVar(ev, bm)
+                                    : null,
                               );
                             }).toList(),
                           ),
@@ -785,6 +790,19 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       _cachedAvatarProvider = getAvatarImageProvider(avatarUrl);
     }
     return _cachedAvatarProvider!;
+  }
+
+  void _apriRichiestaVar(Evento ev, BonusMalus bm) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => VarSubmissionModal(
+        evento: ev,
+        bonusMalus: bm,
+        onSubmitted: () => _loadData(forceRefresh: true),
+      ),
+    );
   }
 
   void _apriSelettoreAssegnazione(Evento ev, BonusMalus bm) {

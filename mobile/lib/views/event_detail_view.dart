@@ -16,6 +16,7 @@ import '../models/evento.dart';
 import '../models/utente.dart';
 import '../models/votazione.dart';
 import '../models/bonus_malus.dart';
+import '../models/richiesta_var.dart';
 import '../services/api_service.dart';
 import 'add_bonus_malus_view.dart';
 
@@ -39,6 +40,7 @@ class _EventDetailViewState extends State<EventDetailView> {
   late Evento _evento;
   List<Votazione> _votazioniEvento = [];
   List<BonusMalus> _allBonusMalus = [];
+  List<RichiestaVar> _richiesteVarEvento = [];
   Set<String> _invitatiInSospeso = {};
   List<String> _partecipantiConfermati = [];
   Timer? _liveLeaderboardTimer;
@@ -100,6 +102,12 @@ class _EventDetailViewState extends State<EventDetailView> {
         }
       }
       _apiService.getUtenti().catchError((_) => <Utente>[]);
+      final varReqs = await _apiService.getRichiesteVarEvento(_evento.id);
+      if (mounted) {
+        setState(() {
+          _richiesteVarEvento = varReqs;
+        });
+      }
     } catch (_) {}
 
     if (mounted) {
@@ -1081,6 +1089,46 @@ class _EventDetailViewState extends State<EventDetailView> {
       }
     }
 
+    // 5. Lo Sbirro: chi ha effettuato più denunce malus confermate dal VAR
+    final Map<String, int> sbirroCounts = {};
+    // 6. Il Giustiziere: chi ha ottenuto più bonus personali convalidati al VAR
+    final Map<String, int> giustiziereCounts = {};
+
+    for (var r in _richiesteVarEvento) {
+      if (r.isApprovata) {
+        final req = r.richiedente.trim().toLowerCase();
+        if (r.isMalus) {
+          sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
+        } else if (r.isBonus) {
+          giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
+        }
+      }
+    }
+
+    String? sbirroNick;
+    int maxSbirroVal = 0;
+    sbirroCounts.forEach((nickLower, count) {
+      if (count > maxSbirroVal) {
+        maxSbirroVal = count;
+        sbirroNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
+    String? giustiziereNick;
+    int maxGiustiziereVal = 0;
+    giustiziereCounts.forEach((nickLower, count) {
+      if (count > maxGiustiziereVal) {
+        maxGiustiziereVal = count;
+        giustiziereNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1149,6 +1197,24 @@ class _EventDetailViewState extends State<EventDetailView> {
               subtitle: 'Ha partecipato al minimo indispensabile ($minAzioni azioni)',
               winnerNick: fantasmaNick,
               accentColor: const Color(0xFF94A3B8),
+            ),
+          // 5. Lo Sbirro
+          if (sbirroNick != null && maxSbirroVal > 0)
+            _buildTitleCard(
+              icon: '🕵️',
+              title: 'Lo Sbirro',
+              subtitle: 'Più denunce di malus convalidate al VAR ($maxSbirroVal denunce)',
+              winnerNick: sbirroNick,
+              accentColor: const Color(0xFFF97316),
+            ),
+          // 6. Il Giustiziere
+          if (giustiziereNick != null && maxGiustiziereVal > 0)
+            _buildTitleCard(
+              icon: '🎯',
+              title: 'Il Giustiziere',
+              subtitle: 'Più bonus personali convalidati al VAR ($maxGiustiziereVal convalidati)',
+              winnerNick: giustiziereNick,
+              accentColor: const Color(0xFF10B981),
             ),
         ],
       ),

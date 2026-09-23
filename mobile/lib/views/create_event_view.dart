@@ -51,6 +51,7 @@ class _CreateEventViewState extends State<CreateEventView> {
   DateTime _selectedStartDate = DateTime.now().add(const Duration(hours: 1));
   DateTime _selectedEndDate = DateTime.now().add(const Duration(days: 1, hours: 1));
   final List<String> _partecipantiSelezionati = [];
+  int _penalitaFalsaTestimonianza = -10;
   List<Utente> _utentiMongoDB = [];
   List<Utente> _utentiFiltrati = [];
   bool _isLoading = false;
@@ -243,6 +244,7 @@ class _CreateEventViewState extends State<CreateEventView> {
         bonusMalusApplicati: [],
         votazioniAttive: [],
         copertinaUrl: _selectedCoverUrl,
+        penalitaFalsaTestimonianza: _penalitaFalsaTestimonianza,
       );
 
       await _apiService.creaEvento(nuovoEvento);
@@ -519,6 +521,79 @@ class _CreateEventViewState extends State<CreateEventView> {
                       ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 20),
+
+                // SEZIONE SANZIONE FALSA TESTIMONIANZA VAR
+                Row(
+                  children: [
+                    const Text('🚨', style: TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Sanzione Falsa Testimonianza VAR',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Punti decurtati a chi inoltra una denuncia malus infondata o falsa (clicca per scegliere):',
+                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [-5, -10, -15, -20].map((val) {
+                    final bool isSel = _penalitaFalsaTestimonianza == val;
+                    return Expanded(
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _penalitaFalsaTestimonianza = val;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(
+                              color: isSel ? const Color(0xFFEF4444) : const Color(0xFF1E293B),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isSel ? const Color(0xFFEF4444) : const Color(0xFF334155),
+                                width: isSel ? 2 : 1,
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  '$val PT',
+                                  style: GoogleFonts.poppins(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                if (val == -10)
+                                  Text(
+                                    'Default',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9,
+                                      color: isSel ? Colors.white70 : const Color(0xFF94A3B8),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 28),
 

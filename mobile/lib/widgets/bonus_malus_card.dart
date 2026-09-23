@@ -6,12 +6,14 @@ class BonusMalusCard extends StatefulWidget {
   final BonusMalus bonusMalus;
   final VoidCallback? onElimina;
   final VoidCallback? onAssegna;
+  final VoidCallback? onRichiediVar;
 
   const BonusMalusCard({
     super.key,
     required this.bonusMalus,
     this.onElimina,
     this.onAssegna,
+    this.onRichiediVar,
   });
 
   @override
@@ -99,6 +101,44 @@ class _BonusMalusCardState extends State<BonusMalusCard> {
                       ),
                     ),
                   ),
+                  if (widget.onRichiediVar != null) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: widget.onRichiediVar,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('📺', style: TextStyle(fontSize: 11)),
+                            const SizedBox(width: 4),
+                            Text(
+                              'VAR',
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Icon(
                     _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
@@ -165,13 +205,35 @@ class _BonusMalusCardState extends State<BonusMalusCard> {
 
                   Row(
                     children: [
+                      if (widget.onRichiediVar != null) ...[
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: widget.onRichiediVar,
+                            icon: const Text('📺', style: TextStyle(fontSize: 14)),
+                            label: Text(
+                              'RICHIEDI VAR',
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                                color: Colors.white,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6366F1),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                        if (widget.onAssegna != null) const SizedBox(width: 8),
+                      ],
                       if (widget.onAssegna != null)
                         Expanded(
                           child: ElevatedButton.icon(
                             onPressed: widget.onAssegna,
                             icon: const Icon(Icons.emoji_events_rounded, size: 16, color: Color(0xFF0F172A)),
                             label: Text(
-                              'ASSEGNA A GIOCATORE',
+                              'ASSEGNA',
                               style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 11, color: const Color(0xFF0F172A)),
                             ),
                             style: ElevatedButton.styleFrom(

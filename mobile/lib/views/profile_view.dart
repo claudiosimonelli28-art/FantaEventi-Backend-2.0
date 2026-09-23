@@ -36,6 +36,8 @@ class _ProfileViewState extends State<ProfileView> {
   int _countReMalus = 0;
   int _countGiudiceSupremo = 0;
   int _countFantasma = 0;
+  int _countSbirro = 0;
+  int _countGiustiziere = 0;
 
   @override
   void initState() {
@@ -45,6 +47,8 @@ class _ProfileViewState extends State<ProfileView> {
     _countReMalus = _utente.countReMalus;
     _countGiudiceSupremo = _utente.countGiudice;
     _countFantasma = _utente.countFantasma;
+    _countSbirro = _utente.countSbirro;
+    _countGiustiziere = _utente.countGiustiziere;
     _caricaProfiloAggiornato();
   }
 
@@ -89,6 +93,8 @@ class _ProfileViewState extends State<ProfileView> {
           _countReMalus = _utente.countReMalus;
           _countGiudiceSupremo = _utente.countGiudice;
           _countFantasma = _utente.countFantasma;
+          _countSbirro = _utente.countSbirro;
+          _countGiustiziere = _utente.countGiustiziere;
         });
       }
       await _apiService.getUtenti();
@@ -1612,6 +1618,28 @@ class _ProfileViewState extends State<ProfileView> {
                     label: 'Fantasma',
                     count: _countFantasma,
                     color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildBachecaBadge(
+                    icon: '🕵️',
+                    label: 'Lo Sbirro',
+                    count: _countSbirro,
+                    color: const Color(0xFFF97316),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildBachecaBadge(
+                    icon: '🎯',
+                    label: 'Giustiziere',
+                    count: _countGiustiziere,
+                    color: const Color(0xFF10B981),
                   ),
                 ),
               ],

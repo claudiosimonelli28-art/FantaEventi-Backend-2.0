@@ -9,6 +9,7 @@ import '../models/utente.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
+import '../models/richiesta_var.dart';
 
 class NeedsPasswordSetupException implements Exception {
   final String username;
@@ -119,6 +120,7 @@ class ApiService {
   final List<Evento> _eventi = [];
   final List<BonusMalus> _bonusMalusList = [];
   final List<Votazione> _votazioniList = [];
+  final List<RichiestaVar> _richiesteVar = [];
 
   DateTime? _lastFetchTime;
   static const Duration _cacheDuration = Duration(seconds: 3);
@@ -133,6 +135,7 @@ class ApiService {
     _bonusMalusList.clear();
     _votazioniList.clear();
     _utenti.clear();
+    _richiesteVar.clear();
   }
 
   Utente? get currentUser => _currentUser;
@@ -268,6 +271,8 @@ class ApiService {
               'countGiudice': d['countGiudice'] ?? 0,
               'countReMalus': d['countReMalus'] ?? 0,
               'countFantasma': d['countFantasma'] ?? 0,
+              'countSbirro': d['countSbirro'] ?? 0,
+              'countGiustiziere': d['countGiustiziere'] ?? 0,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -396,6 +401,8 @@ class ApiService {
               'countGiudice': d['countGiudice'] ?? 0,
               'countReMalus': d['countReMalus'] ?? 0,
               'countFantasma': d['countFantasma'] ?? 0,
+              'countSbirro': d['countSbirro'] ?? 0,
+              'countGiustiziere': d['countGiustiziere'] ?? 0,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -944,6 +951,8 @@ class ApiService {
           jsonMap['countGiudice'] = d['countGiudice'] ?? 0;
           jsonMap['countReMalus'] = d['countReMalus'] ?? 0;
           jsonMap['countFantasma'] = d['countFantasma'] ?? 0;
+          jsonMap['countSbirro'] = d['countSbirro'] ?? 0;
+          jsonMap['countGiustiziere'] = d['countGiustiziere'] ?? 0;
 
           final uObj = Utente.fromJson(jsonMap);
           list.add(uObj);
@@ -1151,6 +1160,57 @@ class ApiService {
                   }
                 }
 
+                final String evIdStr = (d['_id'] is ObjectId ? (d['_id'] as ObjectId).toHexString() : d['_id']?.toString() ?? d['id']?.toString() ?? '');
+                // Auto-scadenza richieste VAR pendenti ed eliminazione foto
+                try {
+                  await db.collection('RichiesteVar').update(
+                    where.eq('eventoId', evIdStr).and(where.eq('stato', 'in_attesa')),
+                    modify.set('stato', 'scaduta').unset('fotoBase64'),
+                    multiUpdate: true,
+                  );
+                  await db.collection('RichiesteVar').update(
+                    where.eq('eventoId', evIdStr),
+                    modify.unset('fotoBase64'),
+                    multiUpdate: true,
+                  );
+                } catch (_) {}
+
+                // Calcolo Lo Sbirro e Il Giustiziere per questo evento
+                final Map<String, int> sbirroPerUtente = {};
+                final Map<String, int> giustizierePerUtente = {};
+                try {
+                  final varDocs = await db.collection('RichiesteVar').find(where.eq('eventoId', evIdStr)).toList();
+                  for (var r in varDocs) {
+                    if (r['stato'] == 'approvata') {
+                      final tipo = (r['tipo'] ?? '').toString().toLowerCase();
+                      final req = (r['richiedente'] ?? '').toString().trim().toLowerCase();
+                      if (tipo == 'malus') {
+                        sbirroPerUtente[req] = (sbirroPerUtente[req] ?? 0) + 1;
+                      } else if (tipo == 'bonus') {
+                        giustizierePerUtente[req] = (giustizierePerUtente[req] ?? 0) + 1;
+                      }
+                    }
+                  }
+                } catch (_) {}
+
+                int maxSbirro = 0;
+                String? bestSbirroUser;
+                sbirroPerUtente.forEach((k, v) {
+                  if (v > maxSbirro) {
+                    maxSbirro = v;
+                    bestSbirroUser = k;
+                  }
+                });
+
+                int maxGiustiziere = 0;
+                String? bestGiustiziereUser;
+                giustizierePerUtente.forEach((k, v) {
+                  if (v > maxGiustiziere) {
+                    maxGiustiziere = v;
+                    bestGiustiziereUser = k;
+                  }
+                });
+
                 for (var uDoc in uDocs) {
                   final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
                   final uId = uDoc['_id'] as ObjectId;
@@ -1170,6 +1230,16 @@ class ApiService {
                   if (bestFantasmaUser != null && uName == bestFantasmaUser) {
                     final cur = (uDoc['countFantasma'] as num?)?.toInt() ?? 0;
                     mod = mod.set('countFantasma', cur + 1);
+                    shouldUpdate = true;
+                  }
+                  if (bestSbirroUser != null && uName == bestSbirroUser && maxSbirro > 0) {
+                    final cur = (uDoc['countSbirro'] as num?)?.toInt() ?? 0;
+                    mod = mod.set('countSbirro', cur + 1);
+                    shouldUpdate = true;
+                  }
+                  if (bestGiustiziereUser != null && uName == bestGiustiziereUser && maxGiustiziere > 0) {
+                    final cur = (uDoc['countGiustiziere'] as num?)?.toInt() ?? 0;
+                    mod = mod.set('countGiustiziere', cur + 1);
                     shouldUpdate = true;
                   }
 
@@ -1399,6 +1469,7 @@ class ApiService {
               'bonusId': d['bonusId'] ?? '',
               'bonusTitolo': d['bonusTitolo'] ?? '',
               'tipo': d['tipo'] ?? 'invito',
+              'varId': d['varId'] ?? '',
               'stato': d['stato'] ?? 'in_attesa',
               'letto': d['letto'] == true,
               'votoEspresso': d['votoEspresso'] ?? '',
@@ -2522,5 +2593,363 @@ class ApiService {
     final tutti = await getUtenti();
     final amiciLower = curUser.amici.map((a) => a.toLowerCase()).toSet();
     return tutti.where((u) => amiciLower.contains(u.nickname.toLowerCase())).toList();
+  }
+
+  // ==========================================
+  // SEZIONE VAR (VERIFICA ASSISTITA DA REGIA)
+  // ==========================================
+
+  Future<String?> inviaRichiestaVar({
+    required String eventoId,
+    required String eventoTitolo,
+    required String tipo, // 'bonus' o 'malus'
+    required String bonusMalusId,
+    required String bonusMalusTitolo,
+    required int punti,
+    required String richiedente,
+    required String bersaglio,
+    required String descrizione,
+    String? fotoBase64,
+    required List<String> testimoni,
+    required String giudice,
+    int penalitaPunti = -10,
+  }) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return null;
+
+      final now = DateTime.now();
+      final varDoc = {
+        'eventoId': eventoId,
+        'eventoTitolo': eventoTitolo,
+        'tipo': tipo,
+        'bonusMalusId': bonusMalusId,
+        'bonusMalusTitolo': bonusMalusTitolo,
+        'punti': punti,
+        'richiedente': richiedente,
+        'bersaglio': bersaglio,
+        'descrizione': descrizione,
+        if (fotoBase64 != null && fotoBase64.isNotEmpty) 'fotoBase64': fotoBase64,
+        'testimoni': testimoni,
+        'votiTestimoni': <String, bool>{},
+        'giudice': giudice,
+        'stato': 'in_attesa',
+        'dataCreazione': now.toIso8601String(),
+        'sanzioneApplicata': false,
+        'penalitaPunti': penalitaPunti,
+      };
+
+      final result = await db.collection('RichiesteVar').insertOne(varDoc);
+      final varId = (varDoc['_id'] as ObjectId?)?.toHexString() ??
+          (result.id is ObjectId ? (result.id as ObjectId).toHexString() : result.id.toString());
+
+      final ts = now.millisecondsSinceEpoch;
+
+      // 1. Notifica all'arbitro (Giudice)
+      final ptSign = punti >= 0 ? '+$punti' : '$punti';
+      final msgGiudice = tipo == 'bonus'
+          ? '$richiedente ha richiesto la verifica VAR per il bonus "$bonusMalusTitolo" ($ptSign PT).'
+          : '$richiedente ha denunciato $bersaglio al VAR per il malus "$bonusMalusTitolo" ($ptSign PT).';
+
+      await db.collection('Notifiche').insertOne({
+        'notificaId': 'var_g_${ts}_${giudice.toLowerCase()}',
+        'mittente': richiedente,
+        'destinatario': giudice,
+        'titolo': '📺 VAR: Richiesta da Esaminare!',
+        'messaggio': msgGiudice,
+        'eventoId': eventoId,
+        'varId': varId,
+        'tipo': 'var_richiesta_giudice',
+        'stato': 'in_attesa',
+        'letto': false,
+        'data': now.toIso8601String(),
+      });
+
+      // 2. Notifica a ciascun testimone
+      for (var t in testimoni) {
+        await db.collection('Notifiche').insertOne({
+          'notificaId': 'var_t_${ts}_${t.toLowerCase()}',
+          'mittente': richiedente,
+          'destinatario': t,
+          'titolo': '👀 Chiamata a Testimoniare al VAR',
+          'messaggio': '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
+          'eventoId': eventoId,
+          'varId': varId,
+          'tipo': 'var_testimone',
+          'stato': 'in_attesa',
+          'letto': false,
+          'data': now.toIso8601String(),
+        });
+      }
+
+      invalidateCache();
+      return varId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<RichiestaVar?> getRichiestaVar(String id) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return null;
+
+      ObjectId? objId;
+      try {
+        objId = ObjectId.fromHexString(id);
+      } catch (_) {}
+      final selector = objId != null ? where.id(objId) : where.eq('_id', id);
+      final doc = await db.collection('RichiesteVar').findOne(selector);
+      if (doc != null) {
+        return RichiestaVar.fromJson(doc);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<List<RichiestaVar>> getRichiesteVarEvento(String eventoId) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return [];
+
+      final docs = await db.collection('RichiesteVar').find(where.eq('eventoId', eventoId)).toList();
+      return docs.map((d) => RichiestaVar.fromJson(d)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<List<RichiestaVar>> getRichiesteVarInSospesoPerGiudice(String giudiceNick) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return [];
+
+      final docs = await db.collection('RichiesteVar').find(where.eq('stato', 'in_attesa')).toList();
+
+      final cleanGiudice = giudiceNick.trim().toLowerCase();
+      return docs
+          .where((d) => (d['giudice'] ?? '').toString().trim().toLowerCase() == cleanGiudice)
+          .map((d) => RichiestaVar.fromJson(d))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<bool> votaTestimonianzaVar({
+    required String varId,
+    required String testimoneNick,
+    required bool conferma,
+  }) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return false;
+
+      ObjectId? objId;
+      try {
+        objId = ObjectId.fromHexString(varId);
+      } catch (_) {}
+      final selector = objId != null ? where.id(objId) : where.eq('_id', varId);
+
+      final doc = await db.collection('RichiesteVar').findOne(selector);
+      if (doc == null) return false;
+      if (doc['stato'] != 'in_attesa') return false; // Già decisa!
+
+      final cleanNick = testimoneNick.trim().toLowerCase();
+      await db.collection('RichiesteVar').update(
+        selector,
+        modify.set('votiTestimoni.$cleanNick', conferma),
+      );
+
+      // Aggiorna notifica testimone a stato votato
+      await db.collection('Notifiche').update(
+        where.eq('varId', varId).and(where.eq('destinatario', testimoneNick)),
+        modify.set('stato', conferma ? 'confermato' : 'negato').set('letto', true),
+      );
+
+      invalidateCache();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> decidiRichiestaVar({
+    required String varId,
+    required String giudiceNick,
+    required bool approva,
+    bool sanzionaFalsaTestimonianza = false,
+  }) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return false;
+
+      ObjectId? objId;
+      try {
+        objId = ObjectId.fromHexString(varId);
+      } catch (_) {}
+      final selector = objId != null ? where.id(objId) : where.eq('_id', varId);
+
+      final doc = await db.collection('RichiesteVar').findOne(selector);
+      if (doc == null) return false;
+      if (doc['stato'] != 'in_attesa') return false; // Già processata
+
+      final richiesta = RichiestaVar.fromJson(doc);
+      final now = DateTime.now();
+      final ts = now.millisecondsSinceEpoch;
+
+      if (approva) {
+        // 1. Assegna punti al bersaglio
+        await assegnaBonusMalusAPartecipante(
+          eventoId: richiesta.eventoId,
+          bonusId: richiesta.bonusMalusId,
+          utenteDestinatario: richiesta.bersaglio,
+          punti: richiesta.punti,
+          eventoTitolo: richiesta.eventoTitolo,
+          bonusTitolo: richiesta.bonusMalusTitolo,
+        );
+
+        // 2. Se era una denuncia Malus, assegna +25 XP al richiedente per merito civico
+        if (richiesta.tipo == 'malus') {
+          final uDocs = await db.collection('Utenti').find().toList();
+          for (var uDoc in uDocs) {
+            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
+            if (uName == richiesta.richiedente.trim().toLowerCase()) {
+              final curXp = (uDoc['xp'] as num?)?.toInt() ?? ((uDoc['puntiEsperienza'] as num?)?.toInt() ?? 100);
+              await db.collection('Utenti').update(
+                where.id(uDoc['_id'] as ObjectId),
+                modify.set('xp', curXp + 25).set('puntiEsperienza', curXp + 25),
+              );
+              break;
+            }
+          }
+        }
+
+        // 3. Aggiorna stato RichiestaVar ed ELIMINA la foto dal DB
+        await db.collection('RichiesteVar').update(
+          selector,
+          modify
+              .set('stato', 'approvata')
+              .set('dataDecisione', now.toIso8601String())
+              .unset('fotoBase64'),
+        );
+
+        // 4. Invia notifica di successo al richiedente
+        await db.collection('Notifiche').insertOne({
+          'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
+          'mittente': giudiceNick,
+          'destinatario': richiesta.richiedente,
+          'titolo': '📺 VAR: Richiesta Approvata! ✅',
+          'messaggio': 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
+          'eventoId': richiesta.eventoId,
+          'varId': varId,
+          'tipo': 'var_esito',
+          'stato': 'approvato',
+          'letto': false,
+          'data': now.toIso8601String(),
+        });
+      } else {
+        // Rigettata
+        final bool doSanzione = sanzionaFalsaTestimonianza && richiesta.tipo == 'malus';
+
+        if (doSanzione) {
+          final penalty = richiesta.penalitaPunti.abs() * -1; // Garantisce numero negativo
+
+          // Applica decurtazione punti al denunciante nel DB Utenti
+          final uDocs = await db.collection('Utenti').find().toList();
+          for (var uDoc in uDocs) {
+            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
+            if (uName == richiesta.richiedente.trim().toLowerCase()) {
+              final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
+              final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
+              final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+              curStorico.add('🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
+
+              await db.collection('Utenti').update(
+                where.id(uDoc['_id'] as ObjectId),
+                modify.set('puntiTotali', curPts + penalty).set('storicoVoti', curStorico),
+              );
+              break;
+            }
+          }
+
+          // Aggiunge la voce di sanzione ai bonus/malus applicati dell'evento
+          final evDoc = await db.collection('Evento').findOne(
+            ObjectId.tryParse(richiesta.eventoId) != null
+                ? where.id(ObjectId.parse(richiesta.eventoId))
+                : where.eq('_id', richiesta.eventoId),
+          );
+          if (evDoc != null) {
+            final List<dynamic> applied = List.from(evDoc['bonusMalusApplicati'] ?? []);
+            applied.add({
+              'id': 'sanzione_var_$ts',
+              'titolo': '🚨 Falsa Testimonianza VAR',
+              'nome': '🚨 Falsa Testimonianza VAR',
+              'descrizione': 'Denuncia infondata per "${richiesta.bonusMalusTitolo}"',
+              'punti': penalty,
+              'categoria': 'VAR',
+              'assegnatoA': [richiesta.richiedente],
+              'propostoDa': giudiceNick,
+              'eventoId': richiesta.eventoId,
+            });
+            await db.collection('Evento').update(
+              where.id(evDoc['_id'] as ObjectId),
+              modify.set('bonusMalusApplicati', applied),
+            );
+          }
+
+          // Notifica rossa al denunciante sanzionato
+          await db.collection('Notifiche').insertOne({
+            'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
+            'mittente': giudiceNick,
+            'destinatario': richiesta.richiedente,
+            'titolo': '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
+            'messaggio': 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
+            'eventoId': richiesta.eventoId,
+            'varId': varId,
+            'tipo': 'var_esito',
+            'stato': 'sanzionato',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        } else {
+          // Rifiutata senza sanzione (es. bonus non confermato)
+          await db.collection('Notifiche').insertOne({
+            'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
+            'mittente': giudiceNick,
+            'destinatario': richiesta.richiedente,
+            'titolo': '📺 VAR: Richiesta Non Convalidata ❌',
+            'messaggio': 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
+            'eventoId': richiesta.eventoId,
+            'varId': varId,
+            'tipo': 'var_esito',
+            'stato': 'rifiutato',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        }
+
+        // Aggiorna stato ed ELIMINA la foto dal DB
+        await db.collection('RichiesteVar').update(
+          selector,
+          modify
+              .set('stato', 'rifiutata')
+              .set('dataDecisione', now.toIso8601String())
+              .set('sanzioneApplicata', doSanzione)
+              .unset('fotoBase64'),
+        );
+      }
+
+      // Aggiorna anche la notifica del giudice su 'decisa'
+      await db.collection('Notifiche').update(
+        where.eq('varId', varId).and(where.eq('destinatario', giudiceNick)),
+        modify.set('stato', approva ? 'approvato' : 'rifiutato').set('letto', true),
+      );
+
+      invalidateCache();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

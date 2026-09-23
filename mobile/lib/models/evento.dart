@@ -15,6 +15,7 @@ class Evento {
   final List<BonusMalus> bonusMalusApplicati;
   final List<Votazione> votazioniAttive;
   final String? copertinaUrl;
+  final int penalitaFalsaTestimonianza;
 
   String get creatore => propostoDa;
   String get categoria => stato;
@@ -34,6 +35,7 @@ class Evento {
     required this.bonusMalusApplicati,
     required this.votazioniAttive,
     this.copertinaUrl,
+    this.penalitaFalsaTestimonianza = -10,
   })  : dataFine = dataFine ?? data.add(const Duration(hours: 4)),
         invitati = invitati ?? [];
 
@@ -82,6 +84,7 @@ class Evento {
               .toList() ??
           [],
       copertinaUrl: json['copertinaUrl'] as String?,
+      penalitaFalsaTestimonianza: (json['penalitaFalsaTestimonianza'] as num?)?.toInt() ?? -10,
     );
   }
 
@@ -103,6 +106,7 @@ class Evento {
           bonusMalusApplicati.map((b) => b.toJson()).toList(),
       'votazioniAttive': votazioniAttive.map((v) => v.toJson()).toList(),
       'copertinaUrl': copertinaUrl,
+      'penalitaFalsaTestimonianza': penalitaFalsaTestimonianza,
     };
   }
 
@@ -120,6 +124,7 @@ class Evento {
     List<BonusMalus>? bonusMalusApplicati,
     List<Votazione>? votazioniAttive,
     String? copertinaUrl,
+    int? penalitaFalsaTestimonianza,
   }) {
     return Evento(
       id: id ?? this.id,
@@ -135,6 +140,7 @@ class Evento {
       bonusMalusApplicati: bonusMalusApplicati ?? this.bonusMalusApplicati,
       votazioniAttive: votazioniAttive ?? this.votazioniAttive,
       copertinaUrl: copertinaUrl ?? this.copertinaUrl,
+      penalitaFalsaTestimonianza: penalitaFalsaTestimonianza ?? this.penalitaFalsaTestimonianza,
     );
   }
 }

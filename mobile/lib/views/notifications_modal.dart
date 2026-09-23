@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
+import 'var_decision_modal.dart';
+import 'var_witness_modal.dart';
 
 class NotificationsModal extends StatefulWidget {
   final VoidCallback onRefreshHome;
@@ -176,9 +178,17 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                 messaggio.contains('ha ricevuto') ||
                                 messaggio.contains('assegnato');
 
+                            // Notifiche del VAR
+                            final String varId = (not['varId'] ?? '').toString();
+                            final bool isVarGiudice = tipo == 'var_richiesta_giudice' && varId.isNotEmpty;
+                            final bool isVarTestimone = tipo == 'var_testimone' && varId.isNotEmpty;
+                            final bool isVarEsito = tipo == 'var_esito';
+                            final bool isVarRelated = isVarGiudice || isVarTestimone || isVarEsito;
+
                             // 4. Proposta attiva per Votazioni Live:
                             // Compare ESCLUSIVAMENTE per le proposte di bonus/malus create dagli utenti in attesa di voto
-                            final bool isProposal = !isAmicizia &&
+                            final bool isProposal = !isVarRelated &&
+                                !isAmicizia &&
                                 !isInvito &&
                                 !isAssegnazioneBonusMalus &&
                                 stato == 'in_attesa' &&
@@ -188,16 +198,18 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                  (tipo == 'bonus_malus' && (titolo.contains('proposta') || messaggio.contains('ha proposto') || titolo.contains('votazione'))));
 
                             // 5. Richiesta in sospeso con opzione ACCETTA / RIFIUTA (inviti evento o richieste amicizia)
-                            final bool isPending = !isAssegnazioneBonusMalus &&
+                            final bool isPending = !isVarRelated &&
+                                !isAssegnazioneBonusMalus &&
                                 (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
                                 stato == 'in_attesa';
 
-                            // 6. Etichetta di stato (solo per richieste o inviti già decisi in precedenza)
-                            final bool showStatusTag = !isProposal &&
+                            // 6. Etichetta di stato (solo per richieste o inviti già decisi in precedenza, o esiti VAR)
+                            final bool showStatusTag = (!isProposal &&
                                 !isAssegnazioneBonusMalus &&
                                 !titolo.contains('accettat') &&
                                 (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
-                                (stato == 'accettato' || stato == 'rifiutato');
+                                (stato == 'accettato' || stato == 'rifiutato')) ||
+                                (isVarRelated && stato != 'in_attesa');
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -231,7 +243,9 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: stato == 'accettato' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                            color: (stato == 'accettato' || stato == 'approvato' || stato == 'confermato')
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFFEF4444),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
@@ -273,6 +287,70 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                         ),
                                         style: ElevatedButton.styleFrom(
                                           backgroundColor: const Color(0xFF6366F1),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                      ),
+                                    ),
+                                  ] else if (isVarGiudice && stato == 'in_attesa') ...[
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {
+                                          showModalBottomSheet(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            backgroundColor: Colors.transparent,
+                                            builder: (_) => VarDecisionModal(
+                                              varId: varId,
+                                              onResolved: () {
+                                                _caricaNotifiche();
+                                                widget.onRefreshHome();
+                                              },
+                                            ),
+                                          );
+                                        },
+                                        icon: const Text('⚖️', style: TextStyle(fontSize: 14)),
+                                        label: Text(
+                                          'ESAMINA AL VAR',
+                                          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF6366F1),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        ),
+                                      ),
+                                    ),
+                                  ] else if (isVarTestimone && stato == 'in_attesa') ...[
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {
+                                          showModalBottomSheet(
+                                            context: context,
+                                            isScrollControlled: true,
+                                            backgroundColor: Colors.transparent,
+                                            builder: (_) => VarWitnessModal(
+                                              varId: varId,
+                                              onVoted: () {
+                                                _caricaNotifiche();
+                                                widget.onRefreshHome();
+                                              },
+                                            ),
+                                          );
+                                        },
+                                        icon: const Text('🗳️', style: TextStyle(fontSize: 14)),
+                                        label: Text(
+                                          'VOTA AL VAR',
+                                          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
+                                        ),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF38BDF8),
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(vertical: 10),
                                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
