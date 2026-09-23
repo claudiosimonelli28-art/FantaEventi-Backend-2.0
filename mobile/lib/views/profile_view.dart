@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/utente.dart';
@@ -22,6 +23,12 @@ class _ProfileViewState extends State<ProfileView> {
   final _codiceAmicoInputController = TextEditingController();
   late Utente _utente;
   File? _fotoLocaleFile;
+
+  ImageProvider get _currentAvatarImage {
+    return _fotoLocaleFile != null && _fotoLocaleFile!.existsSync()
+        ? FileImage(_fotoLocaleFile!)
+        : getAvatarImageProvider(_utente.avatarUrl);
+  }
 
   final List<String> _avatarsPredefiniti = [
     'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
@@ -738,20 +745,92 @@ class _ProfileViewState extends State<ProfileView> {
           top: 24.0,
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 24.0,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Modifica Foto Profilo',
-              style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF475569),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
+              Text(
+                'Foto Profilo',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+
+              // ANTEPRIMA INGRANDITA DELLA FOTO ATTUALE
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFACC15).withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: CircleAvatar(
+                    radius: 65,
+                    backgroundImage: _currentAvatarImage,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  _utente.nickname.isNotEmpty ? '@${_utente.nickname}' : _utente.nome,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFFE2E8F0),
+                  ),
+                ),
+              ),
+              Center(
+                child: Text(
+                  'Foto profilo attuale',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Divider(color: Color(0xFF334155), thickness: 1),
+              const SizedBox(height: 12),
+
+              Text(
+                'Vuoi cambiare la tua foto?',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
 
             // OPZIONE 1: SCATTA UNA FOTO IN QUESTO MOMENTO (Fotocamera Reale)
             ElevatedButton.icon(
@@ -870,6 +949,7 @@ class _ProfileViewState extends State<ProfileView> {
             ),
           ],
         ),
+        ),
       ),
     );
   }
@@ -977,7 +1057,7 @@ class _ProfileViewState extends State<ProfileView> {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Tocca per scattare una foto o dalla galleria',
+                      'Scatta una foto o scegli dalla galleria',
                       style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFACC15), fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 16),
@@ -1041,11 +1121,13 @@ class _ProfileViewState extends State<ProfileView> {
                                 ],
                               ),
                               ElevatedButton.icon(
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                onPressed: () async {
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  await Clipboard.setData(ClipboardData(text: _utente.codiceAmico));
+                                  messenger.showSnackBar(
                                     SnackBar(
                                       backgroundColor: const Color(0xFF10B981),
-                                      content: Text('Codice Amico ${_utente.codiceAmico} copiato! Condividilo su WhatsApp! 📲', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+                                      content: Text('Codice Amico ${_utente.codiceAmico} copiato negli appunti! 📲', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
                                     ),
                                   );
                                 },
@@ -1405,6 +1487,26 @@ class _ProfileViewState extends State<ProfileView> {
                               fillColor: const Color(0xFF0F172A),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.paste_rounded, color: Color(0xFFFACC15), size: 20),
+                                tooltip: 'Incolla dagli appunti',
+                                onPressed: () async {
+                                  final messenger = ScaffoldMessenger.of(context);
+                                  final data = await Clipboard.getData(Clipboard.kTextPlain);
+                                  if (data?.text != null && data!.text!.trim().isNotEmpty) {
+                                    setState(() {
+                                      _codiceAmicoInputController.text = data.text!.trim();
+                                    });
+                                    messenger.showSnackBar(
+                                      const SnackBar(
+                                        backgroundColor: Color(0xFF10B981),
+                                        duration: Duration(seconds: 1),
+                                        content: Text('Codice incollato dagli appunti! 📋', style: TextStyle(color: Colors.white)),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
                             ),
                           ),
                         ),

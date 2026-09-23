@@ -936,7 +936,7 @@ class _LoginViewState extends State<LoginView> {
                             style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
                               labelText: 'Nickname o Email',
-                              hintText: 'Es. Cloud oppure claudio.simonelli28@...',
+                              hintText: 'Es. mario_rossi oppure utente@email.it',
                               hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                               labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
                               prefixIcon: const Icon(Icons.person_outline, color: Color(0xFFFACC15)),
@@ -1130,7 +1130,7 @@ class _LoginViewState extends State<LoginView> {
                             style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
                               labelText: 'Nickname di Gioco',
-                              hintText: 'Es. Cloud, Ziogab, AleM8...',
+                              hintText: 'Es. MarioRossi, Bomber99, SuperFanta...',
                               hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                               labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
                               prefixIcon: const Icon(Icons.stars_rounded, color: Color(0xFF9333EA)),
@@ -1278,7 +1278,7 @@ class _LoginViewState extends State<LoginView> {
                                 child: _isLoading
                                     ? const CircularProgressIndicator(color: Colors.white)
                                     : Text(
-                                        'REGISTRATI SU MONGO DB',
+                                        'REGISTRATI A FANTAEVENTI',
                                         style: GoogleFonts.poppins(
                                           fontSize: 15,
                                           fontWeight: FontWeight.w800,
