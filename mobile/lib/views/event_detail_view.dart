@@ -38,7 +38,7 @@ class _EventDetailViewState extends State<EventDetailView> {
   final ApiService _apiService = ApiService();
   final ImagePicker _picker = ImagePicker();
   late Evento _evento;
-  List<Votazione> _votazioniEvento = [];
+  final List<Votazione> _votazioniEvento = [];
   List<BonusMalus> _allBonusMalus = [];
   List<RichiestaVar> _richiesteVarEvento = [];
   Set<String> _invitatiInSospeso = {};
@@ -50,7 +50,7 @@ class _EventDetailViewState extends State<EventDetailView> {
     super.initState();
     _evento = widget.evento;
     _calcolaCoerenzaInvitiEVotazioni();
-    _liveLeaderboardTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    _liveLeaderboardTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted) {
         _calcolaCoerenzaInvitiEVotazioni();
       }
@@ -63,60 +63,61 @@ class _EventDetailViewState extends State<EventDetailView> {
     super.dispose();
   }
 
+  bool _isSyncing = false;
+
   Future<void> _calcolaCoerenzaInvitiEVotazioni() async {
-    final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
-
-    final List<String> confermati = [creatore];
-    final Set<String> inSospeso = {};
-
-    for (var p in _evento.partecipanti) {
-      if (!confermati.any((c) => c.trim().toLowerCase() == p.trim().toLowerCase())) {
-        confermati.add(p);
-      }
-    }
-
-    for (var inv in _evento.invitati) {
-      if (!confermati.any((c) => c.trim().toLowerCase() == inv.trim().toLowerCase())) {
-        inSospeso.add(inv);
-      }
-    }
-
-    List<Votazione> votiFiltered = [];
-    List<BonusMalus> bmList = [];
+    if (_isSyncing) return;
+    _isSyncing = true;
     try {
-      final allVoti = await _apiService.getVotazioni();
-      votiFiltered = allVoti.where((v) =>
-        v.titolo.toLowerCase().contains(_evento.titolo.toLowerCase()) ||
-        v.descrizione.toLowerCase().contains(_evento.titolo.toLowerCase())
-      ).toList();
-      bmList = await _apiService.getBonusMalusList();
-      for (var bm in bmList) {
-        final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-            bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-        if (isSameEv) {
-          for (var u in bm.assegnatoA) {
-            if (u.trim().isNotEmpty && !confermati.any((c) => c.trim().toLowerCase() == u.trim().toLowerCase())) {
-              confermati.add(u.trim());
+      final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
+
+      final List<String> confermati = [creatore];
+      final Set<String> inSospeso = {};
+
+      for (var p in _evento.partecipanti) {
+        if (!confermati.any((c) => c.trim().toLowerCase() == p.trim().toLowerCase())) {
+          confermati.add(p);
+        }
+      }
+
+      for (var inv in _evento.invitati) {
+        if (!confermati.any((c) => c.trim().toLowerCase() == inv.trim().toLowerCase())) {
+          inSospeso.add(inv);
+        }
+      }
+
+      List<BonusMalus> bmList = [];
+      try {
+        bmList = await _apiService.getBonusMalusList();
+        for (var bm in bmList) {
+          final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+              bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+          if (isSameEv) {
+            for (var u in bm.assegnatoA) {
+              if (u.trim().isNotEmpty && !confermati.any((c) => c.trim().toLowerCase() == u.trim().toLowerCase())) {
+                confermati.add(u.trim());
+              }
             }
           }
         }
-      }
-      _apiService.getUtenti().catchError((_) => <Utente>[]);
-      final varReqs = await _apiService.getRichiesteVarEvento(_evento.id);
+        _apiService.getUtenti().catchError((_) => <Utente>[]);
+        final varReqs = await _apiService.getRichiesteVarEvento(_evento.id);
+        if (mounted) {
+          setState(() {
+            _richiesteVarEvento = varReqs;
+          });
+        }
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
-          _richiesteVarEvento = varReqs;
+          _partecipantiConfermati = confermati;
+          _invitatiInSospeso = inSospeso;
+          _allBonusMalus = bmList;
         });
       }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        _partecipantiConfermati = confermati;
-        _invitatiInSospeso = inSospeso;
-        _votazioniEvento = votiFiltered;
-        _allBonusMalus = bmList;
-      });
+    } finally {
+      _isSyncing = false;
     }
   }
 
@@ -456,267 +457,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 28),
-
-                  // SEZIONE TRACCIAMENTO VOTAZIONI PRO / CONTRO / NON VOTATO (Layout anti-overflow)
-                  Row(
-                    children: [
-                      const Icon(Icons.poll_rounded, color: Color(0xFF9333EA), size: 22),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Votazioni Bonus & Malus in Tempo Reale',
-                          style: GoogleFonts.poppins(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  if (_votazioniEvento.isEmpty)
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF334155)),
-                      ),
-                      child: Text(
-                        'Nessuna votazione attiva per questo evento al momento.',
-                        style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
-                      ),
-                    )
-                  else
-                    Column(
-                      children: _votazioniEvento.map((v) {
-                        final Map<String, String> voti = v.votiUtenti;
-                        final List<String> favList = [];
-                        final List<String> contList = [];
-                        final List<String> pendingList = [];
-
-                        voti.forEach((user, vote) {
-                          if (vote == 'pro' || vote == 'favorevole') {
-                            favList.add(user);
-                          } else if (vote == 'contro' || vote == 'contrario') {
-                            contList.add(user);
-                          }
-                        });
-
-                        for (var user in _partecipantiConfermati) {
-                          if (!voti.containsKey(user) && !favList.contains(user) && !contList.contains(user)) {
-                            pendingList.add(user);
-                          }
-                        }
-
-                        final isApprovato = v.stato == 'approvato' || favList.length >= v.quorum;
-                        final isBocciato = v.stato == 'respinto' || contList.length >= v.quorum || (v.quorum == 2 && contList.length >= 1);
-                        final badgeColor = isApprovato
-                            ? const Color(0xFF10B981)
-                            : isBocciato
-                                ? const Color(0xFFEF4444)
-                                : const Color(0xFFFACC15);
-                        final badgeText = isApprovato
-                            ? '✅ APPROVATO'
-                            : isBocciato
-                                ? '❌ BOCCIATO'
-                                : '⏳ IN VOTAZIONE (${favList.length}/${v.quorum} PRO)';
-
-                        final cleanUser = currentUserNick.trim().toLowerCase();
-                        final propostoDa = (v.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
-                        final isProponente = propostoDa.isNotEmpty && propostoDa == cleanUser ||
-                            v.descrizione.toLowerCase().contains('proposto da $cleanUser');
-
-                        final giaVotatoKey = v.votiUtenti.keys.firstWhere(
-                          (k) => k.trim().toLowerCase() == cleanUser,
-                          orElse: () => '',
-                        );
-                        final haGiaVotato = giaVotatoKey.isNotEmpty;
-                        final votoUtente = haGiaVotato ? v.votiUtenti[giaVotatoKey] : null;
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 14),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1E293B),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: badgeColor.withValues(alpha: 0.5)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      v.titolo,
-                                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: badgeColor.withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: badgeColor),
-                                    ),
-                                    child: Text(
-                                      badgeText,
-                                      style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: badgeColor),
-                                    ),
-                                  ),
-                                  if (isProponente) ...[
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),
-                                      tooltip: 'Elimina Proposta',
-                                      onPressed: () async {
-                                        await _apiService.eliminaBonusMalus(v.id);
-                                        setState(() {
-                                          _evento.votazioniAttive.removeWhere((item) => item.id == v.id);
-                                        });
-                                        widget.onRefresh();
-                                        if (!mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Proposta bonus eliminata con successo! 🗑️')),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                v.descrizione,
-                                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
-                              ),
-                              const SizedBox(height: 14),
-
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF0F172A),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.thumb_up_rounded, size: 14, color: Colors.greenAccent),
-                                        const SizedBox(width: 6),
-                                        Text('PRO (${favList.length}): ', style: GoogleFonts.poppins(fontSize: 12, color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                                        Expanded(child: Text(favList.isNotEmpty ? favList.join(', ') : 'Nessun voto pro', style: GoogleFonts.inter(fontSize: 12, color: Colors.white))),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.thumb_down_rounded, size: 14, color: Colors.redAccent),
-                                        const SizedBox(width: 6),
-                                        Text('CONTRO (${contList.length}): ', style: GoogleFonts.poppins(fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                        Expanded(child: Text(contList.isNotEmpty ? contList.join(', ') : 'Nessun voto contro', style: GoogleFonts.inter(fontSize: 12, color: Colors.white))),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.hourglass_empty_rounded, size: 14, color: Color(0xFFFACC15)),
-                                        const SizedBox(width: 6),
-                                        Text('NON VOTATO: ', style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFFFACC15), fontWeight: FontWeight.bold)),
-                                        Expanded(child: Text(pendingList.isNotEmpty ? pendingList.join(', ') : 'Tutti hanno votato', style: GoogleFonts.inter(fontSize: 12, color: Colors.white))),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-
-                              if (!isApprovato && !isBocciato) ...[
-                                if (isProponente)
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: const Color(0xFF10B981)),
-                                    ),
-                                    child: Text(
-                                      '🟢 Voto PRO registrato (Proposto da te)',
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
-                                    ),
-                                  )
-                                else if (haGiaVotato)
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: votoUtente == 'pro' ? const Color(0xFF10B981).withValues(alpha: 0.15) : const Color(0xFFEF4444).withValues(alpha: 0.15),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: votoUtente == 'pro' ? const Color(0xFF10B981) : const Color(0xFFEF4444)),
-                                    ),
-                                    child: Text(
-                                      votoUtente == 'pro' ? '🟢 Voto inviato: PRO' : '🔴 Voto inviato: CONTRO',
-                                      textAlign: TextAlign.center,
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: votoUtente == 'pro' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: ElevatedButton.icon(
-                                          onPressed: () async {
-                                            await _apiService.vota(v.id, true);
-                                            widget.onRefresh();
-                                          },
-                                          icon: const Icon(Icons.thumb_up_rounded, size: 14, color: Colors.white),
-                                          label: const Text('VOTA PRO'),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFF10B981),
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            padding: const EdgeInsets.symmetric(vertical: 8),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: ElevatedButton.icon(
-                                          onPressed: () async {
-                                            await _apiService.vota(v.id, false);
-                                            widget.onRefresh();
-                                          },
-                                          icon: const Icon(Icons.thumb_down_rounded, size: 14, color: Colors.white),
-                                          label: const Text('VOTA CONTRO'),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: const Color(0xFFEF4444),
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            padding: const EdgeInsets.symmetric(vertical: 8),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                              ],
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    ),
-
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
                   // Bottoni d'Azione
                   Row(

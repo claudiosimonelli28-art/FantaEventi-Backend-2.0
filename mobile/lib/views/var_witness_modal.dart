@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/richiesta_var.dart';
@@ -21,6 +22,7 @@ class VarWitnessModal extends StatefulWidget {
 class _VarWitnessModalState extends State<VarWitnessModal> {
   final ApiService _apiService = ApiService();
   RichiestaVar? _richiesta;
+  Uint8List? _cachedPhotoBytes;
   bool _isLoading = true;
   bool _isVoting = false;
 
@@ -35,44 +37,65 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
       _isLoading = true;
     });
     final req = await _apiService.getRichiestaVar(widget.varId);
+    Uint8List? bytes;
+    if (req?.fotoBase64 != null && req!.fotoBase64!.isNotEmpty) {
+      try {
+        bytes = base64Decode(req.fotoBase64!.split(',').last);
+      } catch (_) {}
+    }
     if (mounted) {
       setState(() {
         _richiesta = req;
+        _cachedPhotoBytes = bytes;
         _isLoading = false;
       });
     }
   }
 
-  void _apriFotoFullScreen(String base64Str) {
+  void _apriFotoFullScreen(Uint8List imageBytes) {
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(12),
-        child: Stack(
-          alignment: Alignment.topRight,
-          children: [
-            InteractiveViewer(
-              panEnabled: true,
-              boundaryMargin: const EdgeInsets.all(20),
-              minScale: 0.5,
-              maxScale: 4.0,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Image.memory(
-                  base64Decode(base64Str.split(',').last),
-                  fit: BoxFit.contain,
+      barrierColor: Colors.black.withValues(alpha: 0.95),
+      barrierDismissible: true,
+      builder: (ctx) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.pop(ctx),
+        child: Material(
+          type: MaterialType.transparency,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Center(
+                child: GestureDetector(
+                  onTap: () {}, // Evita chiusura se si tocca la foto
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    boundaryMargin: const EdgeInsets.all(20),
+                    minScale: 0.8,
+                    maxScale: 4.0,
+                    child: Image.memory(
+                      imageBytes,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            IconButton(
-              icon: const CircleAvatar(
-                backgroundColor: Colors.black87,
-                child: Icon(Icons.close, color: Colors.white),
+              Positioned(
+                top: 40,
+                right: 20,
+                child: SafeArea(
+                  child: IconButton(
+                    icon: const CircleAvatar(
+                      backgroundColor: Colors.black54,
+                      child: Icon(Icons.close, color: Colors.white, size: 22),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ),
               ),
-              onPressed: () => Navigator.pop(ctx),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -297,14 +320,14 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
             const SizedBox(height: 14),
 
             // FOTO ALLEGATA
-            if (req.fotoBase64 != null && req.fotoBase64!.isNotEmpty) ...[
+            if (_cachedPhotoBytes != null) ...[
               Text(
                 '📸 Prova Fotografica (Tocca per ingrandire):',
                 style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
               ),
               const SizedBox(height: 8),
               InkWell(
-                onTap: () => _apriFotoFullScreen(req.fotoBase64!),
+                onTap: () => _apriFotoFullScreen(_cachedPhotoBytes!),
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   height: 160,
@@ -312,7 +335,7 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
                     image: DecorationImage(
-                      image: MemoryImage(base64Decode(req.fotoBase64!.split(',').last)),
+                      image: MemoryImage(_cachedPhotoBytes!),
                       fit: BoxFit.cover,
                     ),
                   ),

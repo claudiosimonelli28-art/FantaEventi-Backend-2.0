@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -80,24 +81,39 @@ class ApiService {
 
 
   Db? _db;
+  Completer<Db?>? _mongoConnectingCompleter;
 
   Future<Db?> _getMongoDb() async {
+    if (_db != null && _db!.isConnected) {
+      return _db;
+    }
+    if (_mongoConnectingCompleter != null && !_mongoConnectingCompleter!.isCompleted) {
+      return _mongoConnectingCompleter!.future;
+    }
+
+    final completer = Completer<Db?>();
+    _mongoConnectingCompleter = completer;
+
     try {
-      if (_db != null && _db!.isConnected) {
-        return _db;
-      }
-      _db = await Db.create(_mongoUri);
-      await _db!.open().timeout(const Duration(seconds: 4));
+      final newDb = await Db.create(_mongoUri);
+      await newDb.open().timeout(const Duration(seconds: 6));
+      _db = newDb;
+      completer.complete(_db);
       return _db;
     } catch (_) {
       try {
-        _db = await Db.create(_mongoUri);
-        await _db!.open();
+        final newDb = await Db.create(_mongoUri);
+        await newDb.open().timeout(const Duration(seconds: 8));
+        _db = newDb;
+        completer.complete(_db);
         return _db;
       } catch (_) {
         _db = null;
+        completer.complete(null);
         return null;
       }
+    } finally {
+      _mongoConnectingCompleter = null;
     }
   }
 
@@ -2712,7 +2728,9 @@ class ApiService {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return [];
 
-      final docs = await db.collection('RichiesteVar').find(where.eq('eventoId', eventoId)).toList();
+      final docs = await db.collection('RichiesteVar').find(
+        where.eq('eventoId', eventoId).excludeFields(['fotoBase64']),
+      ).toList();
       return docs.map((d) => RichiestaVar.fromJson(d)).toList();
     } catch (_) {
       return [];
@@ -2724,7 +2742,9 @@ class ApiService {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return [];
 
-      final docs = await db.collection('RichiesteVar').find(where.eq('stato', 'in_attesa')).toList();
+      final docs = await db.collection('RichiesteVar').find(
+        where.eq('stato', 'in_attesa').excludeFields(['fotoBase64']),
+      ).toList();
 
       final cleanGiudice = giudiceNick.trim().toLowerCase();
       return docs
@@ -2869,9 +2889,48 @@ class ApiService {
                 where.id(uDoc['_id'] as ObjectId),
                 modify.set('puntiTotali', curPts + penalty).set('storicoVoti', curStorico),
               );
+
+              if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == richiesta.richiedente.trim().toLowerCase()) {
+                _currentUser = _currentUser!.copyWith(
+                  puntiTotali: curPts + penalty,
+                  storicoVoti: curStorico,
+                );
+                await _saveSession(_currentUser!);
+              }
               break;
             }
           }
+
+          // Inserisce il Malus formale in BonusMalus così viene conteggiato nella Classifica Live Evento
+          final sanzioneBmId = 'sanzione_var_$ts';
+          await db.collection('BonusMalus').insertOne({
+            'eventoId': richiesta.eventoId,
+            'nome': '🚨 Falsa Testimonianza VAR',
+            'descrizione': 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
+            'punti': penalty,
+            'categoria': 'VAR',
+            'tipo': 'malus',
+            'propostoDa': giudiceNick,
+            'stato': 'approvato',
+            'approvato': true,
+            'assegnatoA': [richiesta.richiedente],
+            'riassegnabileMoltepliciVolte': true,
+          });
+
+          // Inserisce anche in memoria per aggiornamento immediato della classifica
+          _bonusMalusList.add(BonusMalus(
+            id: sanzioneBmId,
+            eventoId: richiesta.eventoId,
+            titolo: '🚨 Falsa Testimonianza VAR',
+            descrizione: 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
+            punti: penalty,
+            categoria: 'VAR',
+            propostoDa: giudiceNick,
+            approvato: true,
+            stato: 'approvato',
+            assegnatoA: [richiesta.richiedente],
+            riassegnabileMoltepliciVolte: true,
+          ));
 
           // Aggiunge la voce di sanzione ai bonus/malus applicati dell'evento
           final evDoc = await db.collection('Evento').findOne(
@@ -2882,7 +2941,7 @@ class ApiService {
           if (evDoc != null) {
             final List<dynamic> applied = List.from(evDoc['bonusMalusApplicati'] ?? []);
             applied.add({
-              'id': 'sanzione_var_$ts',
+              'id': sanzioneBmId,
               'titolo': '🚨 Falsa Testimonianza VAR',
               'nome': '🚨 Falsa Testimonianza VAR',
               'descrizione': 'Denuncia infondata per "${richiesta.bonusMalusTitolo}"',

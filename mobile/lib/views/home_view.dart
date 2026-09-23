@@ -82,46 +82,53 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
 
     _loadData(forceRefresh: true);
-    _liveSyncTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      _loadData(silent: true, forceRefresh: true);
+    _liveSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      _loadData(silent: true, forceRefresh: false);
     });
   }
 
   final Set<String> _readNotificaIds = {};
+  bool _isFetchingData = false;
 
   Future<void> _loadData({bool silent = false, bool forceRefresh = false}) async {
-    if (!silent && mounted) {
+    if (_isFetchingData) return;
+    _isFetchingData = true;
+    try {
+      if (!silent && mounted) {
+        setState(() {
+          _isLoading = true;
+        });
+        await _apiService.syncCurrentUserFromDb();
+      }
+
+      final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
+      final meBonus = await _apiService.getBonusMalusList();
+      final meVoti = await _apiService.getVotazioni();
+
+      final curUser = _apiService.currentUser;
+      final nick = curUser?.nome ?? 'Cloud';
+      final nots = await _apiService.getNotifiche(nick);
+      final unreadNots = nots.where((n) {
+        final nId = (n['id'] ?? '').toString();
+        if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
+        if (n['letto'] == true || n['stato'] == 'letto') return false;
+        return true;
+      }).toList();
+
+      final inAttesa = unreadNots.length;
+
+      if (!mounted) return;
+
       setState(() {
-        _isLoading = true;
+        _eventi = meEventi;
+        _bonusMalusList = meBonus;
+        _votazioniList = meVoti;
+        _numeroNotifiche = inAttesa;
+        if (!silent) _isLoading = false;
       });
-      await _apiService.syncCurrentUserFromDb();
+    } finally {
+      _isFetchingData = false;
     }
-
-    final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
-    final meBonus = await _apiService.getBonusMalusList();
-    final meVoti = await _apiService.getVotazioni();
-
-    final curUser = _apiService.currentUser;
-    final nick = curUser?.nome ?? 'Cloud';
-    final nots = await _apiService.getNotifiche(nick);
-    final unreadNots = nots.where((n) {
-      final nId = (n['id'] ?? '').toString();
-      if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
-      if (n['letto'] == true || n['stato'] == 'letto') return false;
-      return true;
-    }).toList();
-
-    final inAttesa = unreadNots.length;
-
-    if (!mounted) return;
-
-    setState(() {
-      _eventi = meEventi;
-      _bonusMalusList = meBonus;
-      _votazioniList = meVoti;
-      _numeroNotifiche = inAttesa;
-      if (!silent) _isLoading = false;
-    });
   }
 
   void _apriNotifiche() async {
@@ -793,6 +800,27 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   void _apriRichiestaVar(Evento ev, BonusMalus bm) {
+    if (!ev.isInCorso) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF3B82F6),
+          content: Row(
+            children: [
+              const Icon(Icons.info_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '⏳ Il VAR è disponibile solo quando l\'evento è in corso!',
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,

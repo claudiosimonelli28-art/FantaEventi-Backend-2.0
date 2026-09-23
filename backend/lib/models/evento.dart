@@ -12,6 +12,13 @@ class Evento {
   final List<String> partecipanti;
   final List<String> invitati;
   final int penalitaFalsaTestimonianza;
+  String get creatore => propostoDa;
+  bool get isConcluso => DateTime.now().isAfter(dataFine) || stato == 'concluso';
+  bool get isInCorso {
+    final now = DateTime.now();
+    return !isConcluso && (stato == 'in_corso' || (now.isAfter(data) && now.isBefore(dataFine)));
+  }
+  bool get isInProgramma => !isConcluso && !isInCorso;
 
   Evento({
     this.id,

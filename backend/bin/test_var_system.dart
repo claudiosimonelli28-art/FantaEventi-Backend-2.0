@@ -146,13 +146,34 @@ void main() async {
       modify.set('puntiTotali', 70 - 15),
     );
 
+    // Registra Malus formale in BonusMalus per la classifica live dell'evento
+    await db.collection('BonusMalus').insertOne({
+      'eventoId': testEvId,
+      'nome': '🚨 Falsa Testimonianza VAR',
+      'descrizione': 'Sanzione per denuncia infondata',
+      'punti': -15,
+      'categoria': 'VAR',
+      'tipo': 'malus',
+      'propostoDa': testUserB,
+      'stato': 'approvato',
+      'approvato': true,
+      'assegnatoA': [testUserA],
+      'riassegnabileMoltepliciVolte': true,
+    });
+
     final varAfterReject = await db.collection('RichiesteVar').findOne(where.id(varMalusId));
     assert(varAfterReject!['stato'] == 'rifiutata');
     assert(varAfterReject!['sanzioneApplicata'] == true);
     assert(varAfterReject!['fotoBase64'] == null, 'La foto non è stata eliminata!');
     final userAAfterPenalty = await db.collection('Utenti').findOne(where.eq('nome', testUserA));
     assert(userAAfterPenalty!['puntiTotali'] == 55, 'Sanzione non applicata a TestUserA');
-    print('8. Giudice respinge denuncia: sanzione applicata a TestUserA (-15 PT) e FOTO ELIMINATA! 🚨');
+
+    // Verifica presenza del Malus nella collezione BonusMalus per la Classifica Live Evento
+    final sanzioneBmDoc = await db.collection('BonusMalus').findOne(where.eq('eventoId', testEvId).and(where.eq('nome', '🚨 Falsa Testimonianza VAR')));
+    assert(sanzioneBmDoc != null, 'Malus sanzione non trovato in BonusMalus');
+    assert(sanzioneBmDoc!['punti'] == -15, 'Punti sanzione non corrispondenti a -15');
+    assert((sanzioneBmDoc!['assegnatoA'] as List).contains(testUserA), 'Sanzione non assegnata a TestUserA');
+    print('8. Giudice respinge denuncia: sanzione applicata a TestUserA (-15 PT), malus registrato in Classifica Live Evento e FOTO ELIMINATA! 🚨');
 
     // 7. Test Conclusione Evento e Assegnazione Titoli: "Il Giustiziere" a TestUserA
     // TestUserA ha 1 bonus VAR approvato -> deve diventare "Il Giustiziere"!
@@ -195,6 +216,7 @@ void main() async {
   } finally {
     // Pulizia fixture
     await db.collection('Evento').remove(where.eq('id', testEvId));
+    await db.collection('BonusMalus').remove(where.eq('eventoId', testEvId));
     await db.collection('RichiesteVar').remove(where.eq('eventoId', testEvId));
     for (var u in [testUserA, testUserB, testUserC, testUserD]) {
       await db.collection('Utenti').remove(where.eq('nome', u));
