@@ -224,6 +224,40 @@ class ApiService {
     return null;
   }
 
+  // --- GUIDA & REGOLAMENTO ONBOARDING ---
+  Future<bool> haVistoGuidaRegole() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final seenLocal = prefs.getBool('guida_regole_completata_v1') ?? false;
+      if (seenLocal) return true;
+      if (_currentUser != null && _currentUser!.haVistoGuida) {
+        await prefs.setBool('guida_regole_completata_v1', true);
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> segnaGuidaRegoleCompletata() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('guida_regole_completata_v1', true);
+      if (_currentUser != null) {
+        _currentUser = _currentUser!.copyWith(haVistoGuida: true);
+        final db = await _getMongoDb();
+        if (db != null && db.state == State.open) {
+          final uColl = db.collection('Utenti');
+          await uColl.update(
+            where.eq('nome', _currentUser!.nome),
+            modify.set('haVistoGuida', true),
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
   // --- LOGIN RIGOROSO REALE DA MONGODB ATLAS (CON PASSWORD HASHATA) ---
   Future<Utente> login(String identifier, String password, {bool rememberMe = true}) async {
     clearUserSessionCache();
@@ -1142,7 +1176,7 @@ class ApiService {
                 }
               }
 
-              // 3. Assegnazione Titoli Permanenti della Bacheca (Re dei Malus, Giudice Supremo, Fantasma)
+              // 3. Assegnazione Titoli Permanenti della Bacheca (Re dei Malus, L'Avvocato, Fantasma, Lo Sbirro, Il Giustiziere)
               if (d['titoliAssegnati'] != true) {
                 int maxMalus = 0;
                 String? bestMalusUser;
@@ -1200,10 +1234,9 @@ class ApiService {
                     if (r['stato'] == 'approvata') {
                       final tipo = (r['tipo'] ?? '').toString().toLowerCase();
                       final req = (r['richiedente'] ?? '').toString().trim().toLowerCase();
+                      giustizierePerUtente[req] = (giustizierePerUtente[req] ?? 0) + 1;
                       if (tipo == 'malus') {
                         sbirroPerUtente[req] = (sbirroPerUtente[req] ?? 0) + 1;
-                      } else if (tipo == 'bonus') {
-                        giustizierePerUtente[req] = (giustizierePerUtente[req] ?? 0) + 1;
                       }
                     }
                   }
@@ -1239,8 +1272,8 @@ class ApiService {
                     shouldUpdate = true;
                   }
                   if (bestGiudiceUser != null && uName == bestGiudiceUser && maxAtt > 0) {
-                    final cur = (uDoc['countGiudice'] as num?)?.toInt() ?? 0;
-                    mod = mod.set('countGiudice', cur + 1);
+                    final cur = (uDoc['countGiudice'] as num?)?.toInt() ?? (uDoc['countAvvocato'] as num?)?.toInt() ?? 0;
+                    mod = mod.set('countGiudice', cur + 1).set('countAvvocato', cur + 1);
                     shouldUpdate = true;
                   }
                   if (bestFantasmaUser != null && uName == bestFantasmaUser) {

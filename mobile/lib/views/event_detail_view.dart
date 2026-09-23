@@ -832,16 +832,15 @@ class _EventDetailViewState extends State<EventDetailView> {
 
     // 5. Lo Sbirro: chi ha effettuato più denunce malus confermate dal VAR
     final Map<String, int> sbirroCounts = {};
-    // 6. Il Giustiziere: chi ha ottenuto più bonus personali convalidati al VAR
+    // 6. Il Giustiziere: chi ha aperto più chiamate VAR convalidate e approvate
     final Map<String, int> giustiziereCounts = {};
 
     for (var r in _richiesteVarEvento) {
       if (r.isApprovata) {
         final req = r.richiedente.trim().toLowerCase();
+        giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
         if (r.isMalus) {
           sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
-        } else if (r.isBonus) {
-          giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
         }
       }
     }
@@ -921,11 +920,11 @@ class _EventDetailViewState extends State<EventDetailView> {
               winnerNick: reMalusNick,
               accentColor: const Color(0xFFEF4444),
             ),
-          // 3. Giudice Supremo
+          // 3. L'Avvocato
           if (giudiceNick != null && maxAttivita > 0)
             _buildTitleCard(
               icon: '⚖️',
-              title: 'Il Giudice Supremo',
+              title: "L'Avvocato",
               subtitle: 'Più attivo tra voti e proposte ($maxAttivita azioni)',
               winnerNick: giudiceNick,
               accentColor: const Color(0xFF38BDF8),
@@ -951,9 +950,9 @@ class _EventDetailViewState extends State<EventDetailView> {
           // 6. Il Giustiziere
           if (giustiziereNick != null && maxGiustiziereVal > 0)
             _buildTitleCard(
-              icon: '🎯',
+              icon: '⚡',
               title: 'Il Giustiziere',
-              subtitle: 'Più bonus personali convalidati al VAR ($maxGiustiziereVal convalidati)',
+              subtitle: 'Più chiamate VAR convalidate e approvate ($maxGiustiziereVal approvate)',
               winnerNick: giustiziereNick,
               accentColor: const Color(0xFF10B981),
             ),
@@ -1172,6 +1171,41 @@ class _EventDetailViewState extends State<EventDetailView> {
       }
     }
 
+    String? sbirroNick;
+    int maxSbirroVal = 0;
+    String? giustiziereNick;
+    int maxGiustiziereVal = 0;
+    final Map<String, int> sbirroCounts = {};
+    final Map<String, int> giustiziereCounts = {};
+
+    for (var r in _richiesteVarEvento) {
+      if (r.isApprovata) {
+        final req = r.richiedente.trim().toLowerCase();
+        giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
+        if (r.isMalus) {
+          sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
+        }
+      }
+    }
+    sbirroCounts.forEach((nickLower, count) {
+      if (count > maxSbirroVal) {
+        maxSbirroVal = count;
+        sbirroNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+    giustiziereCounts.forEach((nickLower, count) {
+      if (count > maxGiustiziereVal) {
+        maxGiustiziereVal = count;
+        giustiziereNick = _evento.partecipanti.firstWhere(
+          (p) => p.trim().toLowerCase() == nickLower,
+          orElse: () => nickLower,
+        );
+      }
+    });
+
     final buffer = StringBuffer();
     buffer.writeln('🏆 *PODIO FANTAEVENTI* - ${_evento.titolo} 🏆');
     buffer.writeln('');
@@ -1183,8 +1217,10 @@ class _EventDetailViewState extends State<EventDetailView> {
       buffer.writeln('🎖️ *RICONOSCIMENTI SPECIALI*:');
       if (campioneNick != null) buffer.writeln('👑 Il Campione: $campioneNick ($campionePts PT)');
       if (reMalusNick != null && maxMalusVal > 0) buffer.writeln('🤡 Re dei Malus: $reMalusNick (-$maxMalusVal PT)');
-      if (giudiceNick != null && maxAttivita > 0) buffer.writeln('⚖️ Giudice Supremo: $giudiceNick ($maxAttivita azioni)');
+      if (giudiceNick != null && maxAttivita > 0) buffer.writeln("⚖️ L'Avvocato: $giudiceNick ($maxAttivita azioni)");
       if (fantasmaNick != null) buffer.writeln('👻 Il Fantasma: $fantasmaNick ($minAzioni azioni)');
+      if (sbirroNick != null && maxSbirroVal > 0) buffer.writeln('🕵️ Lo Sbirro: $sbirroNick ($maxSbirroVal denunce)');
+      if (giustiziereNick != null && maxGiustiziereVal > 0) buffer.writeln('⚡ Il Giustiziere: $giustiziereNick ($maxGiustiziereVal approvate)');
     }
     buffer.writeln('');
     buffer.writeln('🎉 Complimenti a tutti i partecipanti di FantaEventi!');

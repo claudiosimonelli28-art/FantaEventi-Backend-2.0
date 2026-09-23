@@ -16,6 +16,7 @@ import 'profile_view.dart';
 import 'notifications_modal.dart';
 import 'event_detail_view.dart';
 import 'var_submission_modal.dart';
+import '../widgets/guida_regolamento_modal.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -126,8 +127,26 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         _numeroNotifiche = inAttesa;
         if (!silent) _isLoading = false;
       });
+
+      if (!silent) {
+        _checkMostraGuidaIniziale();
+      }
     } finally {
       _isFetchingData = false;
+    }
+  }
+
+  bool _checkedGuidaIniziale = false;
+
+  Future<void> _checkMostraGuidaIniziale() async {
+    if (_checkedGuidaIniziale) return;
+    _checkedGuidaIniziale = true;
+    final seen = await _apiService.haVistoGuidaRegole();
+    if (!seen && mounted) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) {
+        GuidaRegolamentoModal.mostra(context);
+      }
     }
   }
 
@@ -328,6 +347,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           ],
         ),
         actions: [
+          // Icona Guida & Regolamento (?)
+          IconButton(
+            onPressed: () => GuidaRegolamentoModal.mostra(context),
+            icon: const Icon(Icons.help_outline_rounded, color: Color(0xFFFACC15), size: 24),
+            tooltip: 'Regole & Guida di FantaEventi',
+          ),
           // Icona Campanellino Notifiche
           IconButton(
             onPressed: _apriNotifiche,

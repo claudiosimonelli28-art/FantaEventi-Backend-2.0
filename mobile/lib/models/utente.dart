@@ -18,6 +18,7 @@ class Utente {
   final int countFantasma;
   final int countSbirro;
   final int countGiustiziere;
+  final bool haVistoGuida;
 
   Utente({
     required this.id,
@@ -39,10 +40,12 @@ class Utente {
     this.countFantasma = 0,
     this.countSbirro = 0,
     this.countGiustiziere = 0,
+    this.haVistoGuida = false,
   });
 
   String get nickname => nome;
   String get username => nome;
+  int get countAvvocato => countGiudice;
   int get countCampione => badgeVincitore.length;
 
 
@@ -93,11 +96,12 @@ class Utente {
               ?.map((e) => Map<String, dynamic>.from(e as Map))
               .toList() ??
           [],
-      countGiudice: (json['countGiudice'] as num?)?.toInt() ?? 0,
+      countGiudice: (json['countGiudice'] as num?)?.toInt() ?? (json['countAvvocato'] as num?)?.toInt() ?? 0,
       countReMalus: (json['countReMalus'] as num?)?.toInt() ?? 0,
       countFantasma: (json['countFantasma'] as num?)?.toInt() ?? 0,
       countSbirro: (json['countSbirro'] as num?)?.toInt() ?? 0,
       countGiustiziere: (json['countGiustiziere'] as num?)?.toInt() ?? 0,
+      haVistoGuida: json['haVistoGuida'] == true,
     );
   }
 
@@ -118,10 +122,12 @@ class Utente {
       'richiesteAmicizia': richiesteAmicizia,
       'badgeVincitore': badgeVincitore,
       'countGiudice': countGiudice,
+      'countAvvocato': countGiudice,
       'countReMalus': countReMalus,
       'countFantasma': countFantasma,
       'countSbirro': countSbirro,
       'countGiustiziere': countGiustiziere,
+      'haVistoGuida': haVistoGuida,
     };
   }
 
@@ -145,6 +151,7 @@ class Utente {
     int? countFantasma,
     int? countSbirro,
     int? countGiustiziere,
+    bool? haVistoGuida,
   }) {
     return Utente(
       id: id ?? this.id,
@@ -166,6 +173,7 @@ class Utente {
       countFantasma: countFantasma ?? this.countFantasma,
       countSbirro: countSbirro ?? this.countSbirro,
       countGiustiziere: countGiustiziere ?? this.countGiustiziere,
+      haVistoGuida: haVistoGuida ?? this.haVistoGuida,
     );
   }
 }

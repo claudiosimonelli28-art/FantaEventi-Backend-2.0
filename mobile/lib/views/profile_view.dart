@@ -41,7 +41,7 @@ class _ProfileViewState extends State<ProfileView> {
   int _filtroGiorniStorico = 7;
   int _countCampione = 0;
   int _countReMalus = 0;
-  int _countGiudiceSupremo = 0;
+  int _countAvvocato = 0;
   int _countFantasma = 0;
   int _countSbirro = 0;
   int _countGiustiziere = 0;
@@ -52,7 +52,7 @@ class _ProfileViewState extends State<ProfileView> {
     _utente = _apiService.currentUser ?? _apiService.getCurrentUser();
     _countCampione = _utente.countCampione;
     _countReMalus = _utente.countReMalus;
-    _countGiudiceSupremo = _utente.countGiudice;
+    _countAvvocato = _utente.countAvvocato;
     _countFantasma = _utente.countFantasma;
     _countSbirro = _utente.countSbirro;
     _countGiustiziere = _utente.countGiustiziere;
@@ -98,7 +98,7 @@ class _ProfileViewState extends State<ProfileView> {
           _utente = updatedUser;
           _countCampione = _utente.countCampione;
           _countReMalus = _utente.countReMalus;
-          _countGiudiceSupremo = _utente.countGiudice;
+          _countAvvocato = _utente.countAvvocato;
           _countFantasma = _utente.countFantasma;
           _countSbirro = _utente.countSbirro;
           _countGiustiziere = _utente.countGiustiziere;
@@ -1708,8 +1708,8 @@ class _ProfileViewState extends State<ProfileView> {
                 Expanded(
                   child: _buildBachecaBadge(
                     icon: '⚖️',
-                    label: 'Giudice',
-                    count: _countGiudiceSupremo,
+                    label: 'Avvocato',
+                    count: _countAvvocato,
                     color: const Color(0xFF38BDF8),
                   ),
                 ),
@@ -1738,7 +1738,7 @@ class _ProfileViewState extends State<ProfileView> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _buildBachecaBadge(
-                    icon: '🎯',
+                    icon: '⚡',
                     label: 'Giustiziere',
                     count: _countGiustiziere,
                     color: const Color(0xFF10B981),
