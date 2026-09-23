@@ -2040,7 +2040,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white),
                                   ),
                                 ),
-                                if (isOrganizzatore) ...[
+                                if (isOrganizzatore && bm.categoria != 'VAR' && !bm.titolo.contains('VAR')) ...[
                                   const SizedBox(width: 8),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),

@@ -1630,6 +1630,7 @@ class ApiService {
           'partecipanti': [creatore],
           'invitati': invitati,
           'copertinaUrl': nuovoEvento.copertinaUrl,
+          'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
         });
 
         final insertedEvId = evRes.id?.toHexString() ?? '';
@@ -2187,7 +2188,24 @@ class ApiService {
           );
 
           if (isApprovato) {
-            _bonusMalusList.add(bmObj);
+            final bool isVarSanzione = catBM == 'VAR' || nomeBM.contains('Falsa Testimonianza');
+            if (isVarSanzione) {
+              final existingIdx = _bonusMalusList.indexWhere((b) =>
+                  (b.categoria == 'VAR' || b.titolo.contains('Falsa Testimonianza')) &&
+                  (b.eventoId.trim().toLowerCase() == evId.trim().toLowerCase() ||
+                   (evMatch.titolo.isNotEmpty && b.eventoId.trim().toLowerCase() == evMatch.titolo.trim().toLowerCase())));
+              if (existingIdx != -1) {
+                final mergedAss = List<String>.from(_bonusMalusList[existingIdx].assegnatoA)..addAll(assList);
+                _bonusMalusList[existingIdx] = _bonusMalusList[existingIdx].copyWith(
+                  assegnatoA: mergedAss,
+                  riassegnabileMoltepliciVolte: true,
+                );
+              } else {
+                _bonusMalusList.add(bmObj);
+              }
+            } else {
+              _bonusMalusList.add(bmObj);
+            }
           }
 
           final votazione = Votazione(
@@ -2908,42 +2926,96 @@ class ApiService {
             }
           }
 
-          // Inserisce il Malus formale in BonusMalus così viene conteggiato nella Classifica Live Evento
-          final sanzioneBmDoc = {
-            'eventoId': cleanEvId,
-            'eventoTitolo': richiesta.eventoTitolo.trim(),
-            'nome': '🚨 Falsa Testimonianza VAR',
-            'titolo': '🚨 Falsa Testimonianza VAR',
-            'descrizione': 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
-            'punti': penalty,
-            'categoria': 'VAR',
-            'tipo': 'malus',
-            'propostoDa': giudiceNick,
-            'stato': 'approvato',
-            'approvato': true,
-            'assegnatoA': [cleanRichiedente],
-            'riassegnabileMoltepliciVolte': true,
-          };
-          final insertRes = await db.collection('BonusMalus').insertOne(sanzioneBmDoc);
-          final sanzioneBmId = (sanzioneBmDoc['_id'] as ObjectId?)?.$oid ??
-              (insertRes.id is ObjectId ? (insertRes.id as ObjectId).$oid : insertRes.id?.toString() ?? 'sanzione_var_$ts');
+          // Inserisce o aggiorna il Malus formale unico in BonusMalus così viene conteggiato nella Classifica Live Evento
+          final evTitle = richiesta.eventoTitolo.trim();
+          var existingBmDoc = await db.collection('BonusMalus').findOne(
+            where.eq('eventoId', cleanEvId).and(
+              where.eq('nome', '🚨 Falsa Testimonianza VAR').or(where.eq('titolo', '🚨 Falsa Testimonianza VAR'))
+            ),
+          );
+          if (existingBmDoc == null && evTitle.isNotEmpty) {
+            existingBmDoc = await db.collection('BonusMalus').findOne(
+              where.eq('eventoId', evTitle).and(
+                where.eq('nome', '🚨 Falsa Testimonianza VAR').or(where.eq('titolo', '🚨 Falsa Testimonianza VAR'))
+              ),
+            );
+          }
 
-          // Inserisce anche in memoria per aggiornamento immediato della classifica
-          _bonusMalusList.add(BonusMalus(
-            id: sanzioneBmId,
-            eventoId: cleanEvId,
-            titolo: '🚨 Falsa Testimonianza VAR',
-            descrizione: 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
-            punti: penalty,
-            categoria: 'VAR',
-            propostoDa: giudiceNick,
-            approvato: true,
-            stato: 'approvato',
-            assegnatoA: [cleanRichiedente],
-            riassegnabileMoltepliciVolte: true,
-          ));
+          String sanzioneBmId;
+          if (existingBmDoc != null) {
+            // Aggiorna l'elenco assegnatoA del malus unico già esistente
+            sanzioneBmId = (existingBmDoc['_id'] as ObjectId?)?.oid ?? existingBmDoc['_id'].toString();
+            final List<dynamic> curAss = List.from(existingBmDoc['assegnatoA'] ?? []);
+            curAss.add(cleanRichiedente);
+            await db.collection('BonusMalus').update(
+              where.id(existingBmDoc['_id'] as ObjectId),
+              modify.set('assegnatoA', curAss).set('punti', penalty).set('riassegnabileMoltepliciVolte', true),
+            );
 
-          // Aggiunge la voce di sanzione ai bonus/malus applicati dell'evento nel DB
+            // Aggiorna l'istanza in memoria in _bonusMalusList
+            final memIdx = _bonusMalusList.indexWhere((b) =>
+                (b.id == sanzioneBmId || b.titolo == '🚨 Falsa Testimonianza VAR') &&
+                (b.eventoId.trim().toLowerCase() == cleanEvId.toLowerCase() ||
+                 b.eventoId.trim().toLowerCase() == evTitle.toLowerCase()));
+            if (memIdx != -1) {
+              final updatedAss = List<String>.from(_bonusMalusList[memIdx].assegnatoA)..add(cleanRichiedente);
+              _bonusMalusList[memIdx] = _bonusMalusList[memIdx].copyWith(
+                assegnatoA: updatedAss,
+                punti: penalty,
+                riassegnabileMoltepliciVolte: true,
+              );
+            } else {
+              _bonusMalusList.add(BonusMalus(
+                id: sanzioneBmId,
+                eventoId: cleanEvId,
+                titolo: '🚨 Falsa Testimonianza VAR',
+                descrizione: 'Sanzione per denuncia infondata',
+                punti: penalty,
+                categoria: 'VAR',
+                propostoDa: giudiceNick,
+                approvato: true,
+                stato: 'approvato',
+                assegnatoA: curAss.map((e) => e.toString()).toList(),
+                riassegnabileMoltepliciVolte: true,
+              ));
+            }
+          } else {
+            // Non esiste ancora: crealo una sola volta come malus ufficiale riassegnabile
+            final sanzioneBmDoc = {
+              'eventoId': cleanEvId,
+              'eventoTitolo': evTitle,
+              'nome': '🚨 Falsa Testimonianza VAR',
+              'titolo': '🚨 Falsa Testimonianza VAR',
+              'descrizione': 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
+              'punti': penalty,
+              'categoria': 'VAR',
+              'tipo': 'malus',
+              'propostoDa': giudiceNick,
+              'stato': 'approvato',
+              'approvato': true,
+              'assegnatoA': [cleanRichiedente],
+              'riassegnabileMoltepliciVolte': true,
+            };
+            final insertRes = await db.collection('BonusMalus').insertOne(sanzioneBmDoc);
+            sanzioneBmId = (sanzioneBmDoc['_id'] as ObjectId?)?.oid ??
+                (insertRes.id is ObjectId ? (insertRes.id as ObjectId).oid : insertRes.id?.toString() ?? 'sanzione_var_$ts');
+
+            _bonusMalusList.add(BonusMalus(
+              id: sanzioneBmId,
+              eventoId: cleanEvId,
+              titolo: '🚨 Falsa Testimonianza VAR',
+              descrizione: 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
+              punti: penalty,
+              categoria: 'VAR',
+              propostoDa: giudiceNick,
+              approvato: true,
+              stato: 'approvato',
+              assegnatoA: [cleanRichiedente],
+              riassegnabileMoltepliciVolte: true,
+            ));
+          }
+
+          // Aggiunge o aggiorna la voce di sanzione nei bonus/malus applicati dell'evento nel DB
           ObjectId? evObjId;
           try {
             evObjId = ObjectId.fromHexString(cleanEvId);
@@ -2951,21 +3023,31 @@ class ApiService {
           final evDoc = await db.collection('Evento').findOne(
             evObjId != null
                 ? where.id(evObjId)
-                : where.eq('_id', cleanEvId).or(where.eq('titolo', richiesta.eventoTitolo)),
+                : where.eq('_id', cleanEvId).or(where.eq('titolo', evTitle)),
           );
           if (evDoc != null) {
             final List<dynamic> applied = List.from(evDoc['bonusMalusApplicati'] ?? []);
-            applied.add({
-              'id': sanzioneBmId,
-              'titolo': '🚨 Falsa Testimonianza VAR',
-              'nome': '🚨 Falsa Testimonianza VAR',
-              'descrizione': 'Denuncia infondata per "${richiesta.bonusMalusTitolo}"',
-              'punti': penalty,
-              'categoria': 'VAR',
-              'assegnatoA': [cleanRichiedente],
-              'propostoDa': giudiceNick,
-              'eventoId': cleanEvId,
-            });
+            final existingAppIdx = applied.indexWhere((a) =>
+                (a['id'] == sanzioneBmId || a['titolo'] == '🚨 Falsa Testimonianza VAR' || a['nome'] == '🚨 Falsa Testimonianza VAR'));
+            if (existingAppIdx != -1) {
+              final Map<String, dynamic> appMap = Map<String, dynamic>.from(applied[existingAppIdx]);
+              final List<dynamic> assList = List.from(appMap['assegnatoA'] ?? []);
+              assList.add(cleanRichiedente);
+              appMap['assegnatoA'] = assList;
+              applied[existingAppIdx] = appMap;
+            } else {
+              applied.add({
+                'id': sanzioneBmId,
+                'titolo': '🚨 Falsa Testimonianza VAR',
+                'nome': '🚨 Falsa Testimonianza VAR',
+                'descrizione': 'Denuncia infondata per "${richiesta.bonusMalusTitolo}"',
+                'punti': penalty,
+                'categoria': 'VAR',
+                'assegnatoA': [cleanRichiedente],
+                'propostoDa': giudiceNick,
+                'eventoId': cleanEvId,
+              });
+            }
             await db.collection('Evento').update(
               where.id(evDoc['_id'] as ObjectId),
               modify.set('bonusMalusApplicati', applied),
