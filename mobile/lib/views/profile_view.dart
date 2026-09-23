@@ -838,14 +838,15 @@ class _ProfileViewState extends State<ProfileView> {
                 Navigator.pop(ctx);
                 _scattaFotoConFotocamera();
               },
-              icon: const Icon(Icons.camera_alt_rounded, color: Color(0xFF0F172A)),
+              icon: const Icon(Icons.camera_alt_rounded, color: Color(0xFF0F172A), size: 20),
               label: Text(
-                '📸 SCATTA UNA FOTO IN QUESTO MOMENTO',
+                'Scatta una foto adesso',
+                textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: const Color(0xFF0F172A), fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFACC15),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
@@ -857,14 +858,15 @@ class _ProfileViewState extends State<ProfileView> {
                 Navigator.pop(ctx);
                 _scegliFotoDaGalleria();
               },
-              icon: const Icon(Icons.photo_library_rounded, color: Colors.white),
+              icon: const Icon(Icons.photo_library_rounded, color: Colors.white, size: 20),
               label: Text(
-                '🖼️ CARICA DALLA TUA GALLERIA',
+                'Carica dalla galleria',
+                textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
               ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF9333EA),
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),

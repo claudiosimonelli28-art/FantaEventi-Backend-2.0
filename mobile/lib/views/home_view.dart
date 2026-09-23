@@ -308,11 +308,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
+        titleSpacing: 12,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               padding: const EdgeInsets.all(2),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
@@ -324,7 +326,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF9333EA).withValues(alpha: 0.4),
-                    blurRadius: 8,
+                    blurRadius: 6,
                   ),
                 ],
               ),
@@ -335,13 +337,16 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            const SizedBox(width: 10),
-            Text(
-              'FantaEventi',
-              style: GoogleFonts.poppins(
-                fontWeight: FontWeight.bold,
-                fontSize: 20,
-                color: Colors.white,
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'FantaEventi',
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Colors.white,
+                ),
               ),
             ),
           ],
@@ -350,36 +355,42 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           // Icona Guida & Regolamento (?)
           IconButton(
             onPressed: () => GuidaRegolamentoModal.mostra(context),
-            icon: const Icon(Icons.help_outline_rounded, color: Color(0xFFFACC15), size: 24),
+            icon: const Icon(Icons.help_outline_rounded, color: Color(0xFFFACC15), size: 22),
             tooltip: 'Regole & Guida di FantaEventi',
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            visualDensity: VisualDensity.compact,
           ),
           // Icona Campanellino Notifiche
           IconButton(
             onPressed: _apriNotifiche,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            visualDensity: VisualDensity.compact,
             icon: Stack(
               clipBehavior: Clip.none,
               children: [
-                const Icon(Icons.notifications_outlined, color: Colors.white, size: 26),
+                const Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
                 if (_numeroNotifiche > 0)
                   Positioned(
                     right: -2,
                     top: -2,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(3.5),
                       decoration: const BoxDecoration(
                         color: Color(0xFFEF4444),
                         shape: BoxShape.circle,
                       ),
                       child: Text(
                         '$_numeroNotifiche',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
 
           // Profile User Chip (Foto Profilo reale + Livello)
           InkWell(
@@ -392,31 +403,32 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             },
             borderRadius: BorderRadius.circular(20),
             child: Container(
-              margin: const EdgeInsets.only(right: 14),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.6)),
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   CircleAvatar(
-                    radius: 13,
+                    radius: 12,
                     backgroundImage: _getStableAvatarProvider(curUser?.avatarUrl),
                     backgroundColor: const Color(0xFF334155),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                     decoration: BoxDecoration(
                       color: const Color(0xFF9333EA),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       'Lvl ${curUser?.livello ?? 1}',
                       style: GoogleFonts.poppins(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
