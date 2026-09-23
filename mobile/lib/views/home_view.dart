@@ -747,9 +747,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                         : Column(
                             children: approvedForEvent.map((bm) {
                               final isMine = bm.propostoDa.trim().toLowerCase() == cleanUser;
+                              final isVarSanction = bm.categoria == 'VAR' || bm.titolo.contains('VAR');
                               return BonusMalusCard(
                                 bonusMalus: bm,
-                                onElimina: isMine
+                                onElimina: (isMine && !isVarSanction)
                                     ? () async {
                                         await _apiService.eliminaBonusMalus(bm.id);
                                         if (!mounted) return;
@@ -759,10 +760,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                                         _loadData();
                                       }
                                     : null,
-                                onAssegna: isOrganizzatore
+                                onAssegna: (isOrganizzatore && !isVarSanction)
                                     ? () => _apriSelettoreAssegnazione(ev, bm)
                                     : null,
-                                onRichiediVar: (isPartecipante || isOrganizzatore)
+                                onRichiediVar: ((isPartecipante || isOrganizzatore) && !isVarSanction)
                                     ? () => _apriRichiestaVar(ev, bm)
                                     : null,
                               );

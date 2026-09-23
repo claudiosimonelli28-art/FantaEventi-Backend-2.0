@@ -2133,9 +2133,14 @@ class ApiService {
             if (vote == 'contro') cont++;
           });
 
+          final bool giaApprovatoDaDb = bm['approvato'] == true ||
+              bm['stato'] == 'approvato' ||
+              bm['stato'] == 'confermato';
+          final bool giaRespintoDaDb = bm['approvato'] == false && bm['stato'] == 'respinto';
+
           final totalVotiEspressi = fav + cont;
-          bool isApprovato = (fav >= quorumCalcolato);
-          bool isRespinto = (cont >= quorumCalcolato);
+          bool isApprovato = giaApprovatoDaDb || (fav >= quorumCalcolato);
+          bool isRespinto = (!giaApprovatoDaDb && (giaRespintoDaDb || (cont >= quorumCalcolato)));
 
           bool paritaDecisaDaOrganizzatore = false;
           final nomeOrganizzatore = evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa;
@@ -2873,13 +2878,15 @@ class ApiService {
         final bool doSanzione = sanzionaFalsaTestimonianza && richiesta.tipo == 'malus';
 
         if (doSanzione) {
-          final penalty = richiesta.penalitaPunti.abs() * -1; // Garantisce numero negativo
+          final penalty = (richiesta.penalitaPunti != 0 ? richiesta.penalitaPunti.abs() : 10) * -1; // Garantisce numero negativo
 
           // Applica decurtazione punti al denunciante nel DB Utenti
+          final cleanRichiedente = richiesta.richiedente.trim();
+          final cleanEvId = richiesta.eventoId.trim();
           final uDocs = await db.collection('Utenti').find().toList();
           for (var uDoc in uDocs) {
             final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == richiesta.richiedente.trim().toLowerCase()) {
+            if (uName == cleanRichiedente.toLowerCase()) {
               final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
               final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
               final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -2890,7 +2897,7 @@ class ApiService {
                 modify.set('puntiTotali', curPts + penalty).set('storicoVoti', curStorico),
               );
 
-              if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == richiesta.richiedente.trim().toLowerCase()) {
+              if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanRichiedente.toLowerCase()) {
                 _currentUser = _currentUser!.copyWith(
                   puntiTotali: curPts + penalty,
                   storicoVoti: curStorico,
@@ -2902,10 +2909,11 @@ class ApiService {
           }
 
           // Inserisce il Malus formale in BonusMalus così viene conteggiato nella Classifica Live Evento
-          final sanzioneBmId = 'sanzione_var_$ts';
-          await db.collection('BonusMalus').insertOne({
-            'eventoId': richiesta.eventoId,
+          final sanzioneBmDoc = {
+            'eventoId': cleanEvId,
+            'eventoTitolo': richiesta.eventoTitolo.trim(),
             'nome': '🚨 Falsa Testimonianza VAR',
+            'titolo': '🚨 Falsa Testimonianza VAR',
             'descrizione': 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
             'punti': penalty,
             'categoria': 'VAR',
@@ -2913,14 +2921,17 @@ class ApiService {
             'propostoDa': giudiceNick,
             'stato': 'approvato',
             'approvato': true,
-            'assegnatoA': [richiesta.richiedente],
+            'assegnatoA': [cleanRichiedente],
             'riassegnabileMoltepliciVolte': true,
-          });
+          };
+          final insertRes = await db.collection('BonusMalus').insertOne(sanzioneBmDoc);
+          final sanzioneBmId = (sanzioneBmDoc['_id'] as ObjectId?)?.$oid ??
+              (insertRes.id is ObjectId ? (insertRes.id as ObjectId).$oid : insertRes.id?.toString() ?? 'sanzione_var_$ts');
 
           // Inserisce anche in memoria per aggiornamento immediato della classifica
           _bonusMalusList.add(BonusMalus(
             id: sanzioneBmId,
-            eventoId: richiesta.eventoId,
+            eventoId: cleanEvId,
             titolo: '🚨 Falsa Testimonianza VAR',
             descrizione: 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
             punti: penalty,
@@ -2928,15 +2939,19 @@ class ApiService {
             propostoDa: giudiceNick,
             approvato: true,
             stato: 'approvato',
-            assegnatoA: [richiesta.richiedente],
+            assegnatoA: [cleanRichiedente],
             riassegnabileMoltepliciVolte: true,
           ));
 
-          // Aggiunge la voce di sanzione ai bonus/malus applicati dell'evento
+          // Aggiunge la voce di sanzione ai bonus/malus applicati dell'evento nel DB
+          ObjectId? evObjId;
+          try {
+            evObjId = ObjectId.fromHexString(cleanEvId);
+          } catch (_) {}
           final evDoc = await db.collection('Evento').findOne(
-            ObjectId.tryParse(richiesta.eventoId) != null
-                ? where.id(ObjectId.parse(richiesta.eventoId))
-                : where.eq('_id', richiesta.eventoId),
+            evObjId != null
+                ? where.id(evObjId)
+                : where.eq('_id', cleanEvId).or(where.eq('titolo', richiesta.eventoTitolo)),
           );
           if (evDoc != null) {
             final List<dynamic> applied = List.from(evDoc['bonusMalusApplicati'] ?? []);
@@ -2947,13 +2962,27 @@ class ApiService {
               'descrizione': 'Denuncia infondata per "${richiesta.bonusMalusTitolo}"',
               'punti': penalty,
               'categoria': 'VAR',
-              'assegnatoA': [richiesta.richiedente],
+              'assegnatoA': [cleanRichiedente],
               'propostoDa': giudiceNick,
-              'eventoId': richiesta.eventoId,
+              'eventoId': cleanEvId,
             });
             await db.collection('Evento').update(
               where.id(evDoc['_id'] as ObjectId),
               modify.set('bonusMalusApplicati', applied),
+            );
+          }
+
+          // Aggiorna anche l'evento in memoria
+          final evIdx = _eventi.indexWhere((e) =>
+              e.id.toLowerCase() == cleanEvId.toLowerCase() ||
+              e.titolo.toLowerCase() == richiesta.eventoTitolo.trim().toLowerCase());
+          if (evIdx != -1) {
+            final updatedPartecipanti = List<String>.from(_eventi[evIdx].partecipanti);
+            if (!updatedPartecipanti.any((p) => p.trim().toLowerCase() == cleanRichiedente.toLowerCase())) {
+              updatedPartecipanti.add(cleanRichiedente);
+            }
+            _eventi[evIdx] = _eventi[evIdx].copyWith(
+              partecipanti: updatedPartecipanti,
             );
           }
 
