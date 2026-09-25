@@ -16,6 +16,7 @@ class Evento {
   final List<Votazione> votazioniAttive;
   final String? copertinaUrl;
   final int penalitaFalsaTestimonianza;
+  final Map<String, dynamic>? titoliVincitori;
 
   String get creatore => propostoDa;
   String get categoria => stato;
@@ -41,6 +42,7 @@ class Evento {
     required this.votazioniAttive,
     this.copertinaUrl,
     this.penalitaFalsaTestimonianza = -10,
+    this.titoliVincitori,
   })  : dataFine = dataFine ?? data.add(const Duration(hours: 4)),
         invitati = invitati ?? [];
 
@@ -90,6 +92,9 @@ class Evento {
           [],
       copertinaUrl: json['copertinaUrl'] as String?,
       penalitaFalsaTestimonianza: (json['penalitaFalsaTestimonianza'] as num?)?.toInt() ?? -10,
+      titoliVincitori: json['titoliVincitori'] != null
+          ? Map<String, dynamic>.from(json['titoliVincitori'] as Map)
+          : null,
     );
   }
 
@@ -112,6 +117,7 @@ class Evento {
       'votazioniAttive': votazioniAttive.map((v) => v.toJson()).toList(),
       'copertinaUrl': copertinaUrl,
       'penalitaFalsaTestimonianza': penalitaFalsaTestimonianza,
+      if (titoliVincitori != null) 'titoliVincitori': titoliVincitori,
     };
   }
 
@@ -130,6 +136,7 @@ class Evento {
     List<Votazione>? votazioniAttive,
     String? copertinaUrl,
     int? penalitaFalsaTestimonianza,
+    Map<String, dynamic>? titoliVincitori,
   }) {
     return Evento(
       id: id ?? this.id,
@@ -146,6 +153,7 @@ class Evento {
       votazioniAttive: votazioniAttive ?? this.votazioniAttive,
       copertinaUrl: copertinaUrl ?? this.copertinaUrl,
       penalitaFalsaTestimonianza: penalitaFalsaTestimonianza ?? this.penalitaFalsaTestimonianza,
+      titoliVincitori: titoliVincitori ?? this.titoliVincitori,
     );
   }
 }

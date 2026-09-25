@@ -1091,9 +1091,20 @@ class ApiService {
               final Map<String, int> attivitaPerUtente = {for (var p in partecipanti) p.trim().toLowerCase(): 0};
               final Map<String, int> azioniTotaliPerUtente = {for (var p in partecipanti) p.trim().toLowerCase(): 0};
 
+              final Set<String> bmIds = {};
               for (var bm in bmList) {
+                final bmIdStr = (bm['_id'] is ObjectId ? (bm['_id'] as ObjectId).toHexString() : bm['_id']?.toString() ?? bm['id']?.toString() ?? '').toLowerCase();
+                if (bmIdStr.isNotEmpty) bmIds.add(bmIdStr);
+                final nomeBm = (bm['nome'] ?? bm['titolo'] ?? '').toString().toLowerCase();
+                if (nomeBm.isNotEmpty) bmIds.add(nomeBm);
+
+                // Solo proposte genuine della community (escludendo sanzioni d'ufficio del VAR)
+                final bool isVarSanzione = (bm['categoria'] ?? '').toString().toUpperCase() == 'VAR' ||
+                    nomeBm.contains('falsa testimonianza') ||
+                    (bm['descrizione'] ?? '').toString().toLowerCase().contains('sanzione per denuncia');
+
                 final prop = (bm['propostoDa'] ?? '').toString().trim().toLowerCase();
-                if (attivitaPerUtente.containsKey(prop)) {
+                if (!isVarSanzione && prop.isNotEmpty && attivitaPerUtente.containsKey(prop)) {
                   attivitaPerUtente[prop] = (attivitaPerUtente[prop] ?? 0) + 1;
                   azioniTotaliPerUtente[prop] = (azioniTotaliPerUtente[prop] ?? 0) + 1;
                 }
@@ -1117,16 +1128,30 @@ class ApiService {
               }
 
               for (var v in allVotazioni) {
-                final vEvId = (v['bonusMalus']?['eventoId'] ?? v['eventoId'] ?? '').toString().trim().toLowerCase();
-                final isSameEv = vEvId == idStr.toLowerCase() || vEvId == evTitolo.toLowerCase();
-                if (!isSameEv && allVotazioni.length > 1) continue;
+                final vEvId = (v['eventoId'] ?? v['bonusMalus']?['eventoId'] ?? '').toString().trim().toLowerCase();
+                final vBonusId = (v['bonusId'] ?? v['votazioneId'] ?? '').toString().trim().toLowerCase();
+                final vBonusTit = (v['bonusTitolo'] ?? '').toString().trim().toLowerCase();
 
-                final votiMap = v['votiUtenti'] as Map<String, dynamic>? ?? {};
-                for (var voter in votiMap.keys) {
-                  final voterNorm = voter.trim().toLowerCase();
+                final bool isForThisEvent = (vEvId.isNotEmpty && (vEvId == idStr.toLowerCase() || vEvId == evTitolo.toLowerCase())) ||
+                    (vBonusId.isNotEmpty && bmIds.contains(vBonusId)) ||
+                    (vBonusTit.isNotEmpty && bmIds.contains(vBonusTit));
+
+                if (!isForThisEvent) continue;
+
+                if (v['utente'] != null) {
+                  final voterNorm = v['utente'].toString().trim().toLowerCase();
                   if (attivitaPerUtente.containsKey(voterNorm)) {
                     attivitaPerUtente[voterNorm] = (attivitaPerUtente[voterNorm] ?? 0) + 1;
                     azioniTotaliPerUtente[voterNorm] = (azioniTotaliPerUtente[voterNorm] ?? 0) + 1;
+                  }
+                } else if (v['votiUtenti'] is Map) {
+                  final votiMap = v['votiUtenti'] as Map<String, dynamic>;
+                  for (var voter in votiMap.keys) {
+                    final voterNorm = voter.trim().toLowerCase();
+                    if (attivitaPerUtente.containsKey(voterNorm)) {
+                      attivitaPerUtente[voterNorm] = (attivitaPerUtente[voterNorm] ?? 0) + 1;
+                      azioniTotaliPerUtente[voterNorm] = (azioniTotaliPerUtente[voterNorm] ?? 0) + 1;
+                    }
                   }
                 }
               }
@@ -1197,13 +1222,15 @@ class ApiService {
                 });
 
                 String? bestFantasmaUser;
+                int minAzioni = 0;
                 if (partecipanti.length > 1) {
-                  int minAzioni = 999999;
+                  int lowestAz = 999999;
                   for (var p in partecipanti) {
                     final pNorm = p.trim().toLowerCase();
                     if (vincitoreNick != null && vincitoreNick.trim().toLowerCase() == pNorm) continue;
                     final az = azioniTotaliPerUtente[pNorm] ?? 0;
-                    if (az < minAzioni) {
+                    if (az < lowestAz) {
+                      lowestAz = az;
                       minAzioni = az;
                       bestFantasmaUser = pNorm;
                     }
@@ -1231,13 +1258,14 @@ class ApiService {
                 try {
                   final varDocs = await db.collection('RichiesteVar').find(where.eq('eventoId', evIdStr)).toList();
                   for (var r in varDocs) {
+                    final tipo = (r['tipo'] ?? '').toString().toLowerCase();
+                    final req = (r['richiedente'] ?? '').toString().trim().toLowerCase();
                     if (r['stato'] == 'approvata') {
-                      final tipo = (r['tipo'] ?? '').toString().toLowerCase();
-                      final req = (r['richiedente'] ?? '').toString().trim().toLowerCase();
                       giustizierePerUtente[req] = (giustizierePerUtente[req] ?? 0) + 1;
-                      if (tipo == 'malus') {
-                        sbirroPerUtente[req] = (sbirroPerUtente[req] ?? 0) + 1;
-                      }
+                    }
+                    if (tipo == 'malus') {
+                      // Lo Sbirro premia chi fa più denunce/segnalazioni malus in assoluto
+                      sbirroPerUtente[req] = (sbirroPerUtente[req] ?? 0) + 1;
                     }
                   }
                 } catch (_) {}
@@ -1296,17 +1324,43 @@ class ApiService {
                     await db.collection('Utenti').update(where.id(uId), mod);
                   }
                 }
-              }
 
-              // Segna che badge vincitore, partecipazione e titoli per questo evento sono stati assegnati
-              if (d['_id'] is ObjectId) {
-                await db.collection('Evento').update(
-                  where.id(d['_id'] as ObjectId),
-                  modify
-                    .set('badgeVincitoreAssegnato', true)
-                    .set('titoliAssegnati', true)
-                    .set('stato', 'concluso'),
-                );
+                // Salva i vincitori ufficiali dei titoli direttamente nell'Evento
+                final Map<String, dynamic> titoliMap = {
+                  'campione': vincitoreNick,
+                  'campionePunti': (punteggi[vincitoreNick] ?? 0),
+                  if (bestMalusUser != null && maxMalus > 0) ...{
+                    'reMalus': bestMalusUser,
+                    'reMalusPunti': maxMalus,
+                  },
+                  if (bestGiudiceUser != null && maxAtt > 0) ...{
+                    'avvocato': bestGiudiceUser,
+                    'avvocatoAzioni': maxAtt,
+                  },
+                  if (bestFantasmaUser != null) ...{
+                    'fantasma': bestFantasmaUser,
+                    'fantasmaAzioni': minAzioni,
+                  },
+                  if (bestSbirroUser != null && maxSbirro > 0) ...{
+                    'sbirro': bestSbirroUser,
+                    'sbirroDenunce': maxSbirro,
+                  },
+                  if (bestGiustiziereUser != null && maxGiustiziere > 0) ...{
+                    'giustiziere': bestGiustiziereUser,
+                    'giustiziereApprovate': maxGiustiziere,
+                  },
+                };
+
+                if (d['_id'] is ObjectId) {
+                  await db.collection('Evento').update(
+                    where.id(d['_id'] as ObjectId),
+                    modify
+                      .set('badgeVincitoreAssegnato', true)
+                      .set('titoliAssegnati', true)
+                      .set('titoliVincitori', titoliMap)
+                      .set('stato', 'concluso'),
+                  );
+                }
               }
             } catch (_) {}
           }
@@ -1343,6 +1397,7 @@ class ApiService {
             'copertinaUrl': d['copertinaUrl']?.toString(),
             'bonusMalusApplicati': [],
             'votazioniAttive': [],
+            if (d['titoliVincitori'] != null) 'titoliVincitori': d['titoliVincitori'],
           };
           list.add(Evento.fromJson(jsonMap));
         }
@@ -2113,7 +2168,7 @@ class ApiService {
           final descBM = bm['descrizione']?.toString() ?? '';
           final puntiBM = (bm['punti'] as num?)?.toInt() ?? 0;
           final tipoBM = bm['tipo']?.toString() ?? (puntiBM >= 0 ? 'bonus' : 'malus');
-          final propDa = bm['propostoDa']?.toString() ?? 'Ugnom';
+          final propDa = (bm['propostoDa'] ?? '').toString().trim();
           final List<String> assList = (bm['assegnatoA'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
@@ -2122,7 +2177,7 @@ class ApiService {
           // Conversione sicura in oggetto BonusMalus
 
           final Map<String, String> votiUtenti = {
-            propDa: 'pro',
+            if (propDa.isNotEmpty) propDa: 'pro',
           };
 
           for (var vDoc in votiDocs) {
@@ -2383,10 +2438,14 @@ class ApiService {
       if (db != null && db.isConnected) {
         final targetBmId = v.bonusMalus?.id ?? v.id;
         final targetBmTitle = v.bonusMalus?.titolo ?? v.titolo;
+        final targetEvId = (v.bonusMalus?.eventoId != null && v.bonusMalus!.eventoId.isNotEmpty)
+            ? v.bonusMalus!.eventoId
+            : idOrEventoId;
 
         await db.collection('Votazioni').insertOne({
           'votazioneId': targetBmId,
           'bonusId': targetBmId,
+          'eventoId': targetEvId,
           'bonusTitolo': targetBmTitle,
           'utente': userNick,
           'voto': aFavore ? 'pro' : 'contro',

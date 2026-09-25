@@ -738,136 +738,165 @@ class _EventDetailViewState extends State<EventDetailView> {
   Widget _buildSpecialTitlesSection(List<MapEntry<String, int>> sortedEntries) {
     if (sortedEntries.isEmpty) return const SizedBox.shrink();
 
-    // 1. Campione: primo con punteggio maggiore (se >= 0)
-    final campioneEntry = sortedEntries.first;
-    final String campioneNick = campioneEntry.key;
-    final int campionePts = campioneEntry.value;
+    final savedTitoli = _evento.titoliVincitori;
 
-    // 2. Re dei Malus: chi ha accumulato il maggior totale di punti malus negativi
-    final Map<String, int> malusPunti = {};
-    // 3. Giudice Supremo: chi ha proposto o votato più volte
-    final Map<String, int> attivitaUtenti = {};
-    // 4. Per il Fantasma: totale azioni (ricevute + proposte + voti)
-    final Map<String, int> azioniTotali = {};
-
-    for (var p in _evento.partecipanti) {
-      final pNorm = p.trim().toLowerCase();
-      malusPunti[pNorm] = 0;
-      attivitaUtenti[pNorm] = 0;
-      azioniTotali[pNorm] = 0;
-    }
-
-    for (var bm in _allBonusMalus) {
-      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-      if (!isSameEv && _allBonusMalus.length > 1) continue;
-
-      // Proposte da
-      final prop = bm.propostoDa.trim().toLowerCase();
-      if (attivitaUtenti.containsKey(prop)) {
-        attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
-        azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
-      }
-
-      // Assegnato a
-      for (var u in bm.assegnatoA) {
-        final uNorm = u.trim().toLowerCase();
-        azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-        if (bm.punti < 0) {
-          malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
-        }
-      }
-    }
-
-    for (var v in _votazioniEvento) {
-      for (var u in v.votiUtenti.keys) {
-        final uNorm = u.trim().toLowerCase();
-        if (attivitaUtenti.containsKey(uNorm)) {
-          attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
-          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-        }
-      }
-    }
-
-    // Re dei Malus
+    String? campioneNick = sortedEntries.isNotEmpty ? sortedEntries.first.key : null;
+    int campionePts = sortedEntries.isNotEmpty ? sortedEntries.first.value : 0;
     String? reMalusNick;
     int maxMalusVal = 0;
-    malusPunti.forEach((nickLower, tot) {
-      if (tot > maxMalusVal) {
-        maxMalusVal = tot;
-        reMalusNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
-
-    // Giudice Supremo
     String? giudiceNick;
     int maxAttivita = 0;
-    attivitaUtenti.forEach((nickLower, count) {
-      if (count > maxAttivita) {
-        maxAttivita = count;
-        giudiceNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
-
-    // Fantasma: chi ha fatto meno azioni in assoluto (escluso chi ha vinto come campione)
     String? fantasmaNick;
-    int minAzioni = 999999;
-    if (_evento.partecipanti.length > 1) {
+    int minAzioni = 0;
+    String? sbirroNick;
+    int maxSbirroVal = 0;
+    String? giustiziereNick;
+    int maxGiustiziereVal = 0;
+
+    if (savedTitoli != null && savedTitoli.isNotEmpty) {
+      if (savedTitoli['campione'] != null) {
+        campioneNick = savedTitoli['campione'].toString();
+        campionePts = (savedTitoli['campionePunti'] as num?)?.toInt() ?? campionePts;
+      }
+      reMalusNick = savedTitoli['reMalus']?.toString();
+      maxMalusVal = (savedTitoli['reMalusPunti'] as num?)?.toInt() ?? 0;
+      giudiceNick = savedTitoli['avvocato']?.toString();
+      maxAttivita = (savedTitoli['avvocatoAzioni'] as num?)?.toInt() ?? 0;
+      fantasmaNick = savedTitoli['fantasma']?.toString();
+      minAzioni = (savedTitoli['fantasmaAzioni'] as num?)?.toInt() ?? 0;
+      sbirroNick = savedTitoli['sbirro']?.toString();
+      maxSbirroVal = (savedTitoli['sbirroDenunce'] as num?)?.toInt() ?? 0;
+      giustiziereNick = savedTitoli['giustiziere']?.toString();
+      maxGiustiziereVal = (savedTitoli['giustiziereApprovate'] as num?)?.toInt() ?? 0;
+    } else {
+      // 1. Campione: primo con punteggio maggiore (se >= 0)
+      final campioneEntry = sortedEntries.first;
+      campioneNick = campioneEntry.key;
+      campionePts = campioneEntry.value;
+
+      // 2. Re dei Malus: chi ha accumulato il maggior totale di punti malus negativi
+      final Map<String, int> malusPunti = {};
+      // 3. L'Avvocato: chi ha proposto o votato più volte
+      final Map<String, int> attivitaUtenti = {};
+      // 4. Per il Fantasma: totale azioni (ricevute + proposte + voti)
+      final Map<String, int> azioniTotali = {};
+
       for (var p in _evento.partecipanti) {
-        final pLower = p.trim().toLowerCase();
-        if (pLower == campioneNick.trim().toLowerCase()) continue;
-        final azioni = azioniTotali[pLower] ?? 0;
-        if (azioni < minAzioni) {
-          minAzioni = azioni;
-          fantasmaNick = p;
+        final pNorm = p.trim().toLowerCase();
+        malusPunti[pNorm] = 0;
+        attivitaUtenti[pNorm] = 0;
+        azioniTotali[pNorm] = 0;
+      }
+
+      for (var bm in _allBonusMalus) {
+        final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+            bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+        if (!isSameEv && _allBonusMalus.length > 1) continue;
+
+        // Escludi sanzioni d'ufficio del VAR dalle proposte community
+        final bool isVarSanzione = bm.categoria.toUpperCase() == 'VAR' ||
+            bm.titolo.contains('Falsa Testimonianza') ||
+            bm.descrizione.toLowerCase().contains('sanzione per denuncia');
+
+        // Proposte da
+        final prop = bm.propostoDa.trim().toLowerCase();
+        if (!isVarSanzione && prop.isNotEmpty && attivitaUtenti.containsKey(prop)) {
+          attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
+          azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
+        }
+
+        // Assegnato a
+        for (var u in bm.assegnatoA) {
+          final uNorm = u.trim().toLowerCase();
+          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+          if (bm.punti < 0) {
+            malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
+          }
         }
       }
-    }
 
-    // 5. Lo Sbirro: chi ha effettuato più denunce malus confermate dal VAR
-    final Map<String, int> sbirroCounts = {};
-    // 6. Il Giustiziere: chi ha aperto più chiamate VAR convalidate e approvate
-    final Map<String, int> giustiziereCounts = {};
+      for (var v in _votazioniEvento) {
+        for (var u in v.votiUtenti.keys) {
+          final uNorm = u.trim().toLowerCase();
+          if (attivitaUtenti.containsKey(uNorm)) {
+            attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
+            azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+          }
+        }
+      }
 
-    for (var r in _richiesteVarEvento) {
-      if (r.isApprovata) {
+      // Re dei Malus
+      malusPunti.forEach((nickLower, tot) {
+        if (tot > maxMalusVal) {
+          maxMalusVal = tot;
+          reMalusNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
+
+      // L'Avvocato
+      attivitaUtenti.forEach((nickLower, count) {
+        if (count > maxAttivita) {
+          maxAttivita = count;
+          giudiceNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
+
+      // Fantasma: chi ha fatto meno azioni in assoluto (escluso chi ha vinto come campione)
+      minAzioni = 999999;
+      if (_evento.partecipanti.length > 1) {
+        for (var p in _evento.partecipanti) {
+          final pLower = p.trim().toLowerCase();
+          if (pLower == campioneNick.trim().toLowerCase()) continue;
+          final azioni = azioniTotali[pLower] ?? 0;
+          if (azioni < minAzioni) {
+            minAzioni = azioni;
+            fantasmaNick = p;
+          }
+        }
+      }
+
+      // 5. Lo Sbirro: chi ha effettuato più denunce malus al VAR
+      final Map<String, int> sbirroCounts = {};
+      // 6. Il Giustiziere: chi ha aperto più chiamate VAR convalidate e approvate
+      final Map<String, int> giustiziereCounts = {};
+
+      for (var r in _richiesteVarEvento) {
         final req = r.richiedente.trim().toLowerCase();
-        giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
+        if (r.isApprovata) {
+          giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
+        }
         if (r.isMalus) {
+          // Lo Sbirro conta tutte le denunce inviate per fare la spia
           sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
         }
       }
+
+      sbirroCounts.forEach((nickLower, count) {
+        if (count > maxSbirroVal) {
+          maxSbirroVal = count;
+          sbirroNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
+
+      giustiziereCounts.forEach((nickLower, count) {
+        if (count > maxGiustiziereVal) {
+          maxGiustiziereVal = count;
+          giustiziereNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
     }
-
-    String? sbirroNick;
-    int maxSbirroVal = 0;
-    sbirroCounts.forEach((nickLower, count) {
-      if (count > maxSbirroVal) {
-        maxSbirroVal = count;
-        sbirroNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
-
-    String? giustiziereNick;
-    int maxGiustiziereVal = 0;
-    giustiziereCounts.forEach((nickLower, count) {
-      if (count > maxGiustiziereVal) {
-        maxGiustiziereVal = count;
-        giustiziereNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1089,129 +1118,154 @@ class _EventDetailViewState extends State<EventDetailView> {
     final secondo = sortedEntries.length > 1 ? sortedEntries[1] : null;
     final terzo = sortedEntries.length > 2 ? sortedEntries[2] : null;
 
-    final String? campioneNick = primo?.key;
-    final int campionePts = primo?.value ?? 0;
+    final savedTitoli = _evento.titoliVincitori;
 
-    final Map<String, int> malusPunti = {};
-    final Map<String, int> attivitaUtenti = {};
-    final Map<String, int> azioniTotali = {};
-
-    for (var p in _evento.partecipanti) {
-      final pNorm = p.trim().toLowerCase();
-      malusPunti[pNorm] = 0;
-      attivitaUtenti[pNorm] = 0;
-      azioniTotali[pNorm] = 0;
-    }
-
-    for (var bm in _allBonusMalus) {
-      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-      if (!isSameEv && _allBonusMalus.length > 1) continue;
-
-      final prop = bm.propostoDa.trim().toLowerCase();
-      if (attivitaUtenti.containsKey(prop)) {
-        attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
-        azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
-      }
-
-      for (var u in bm.assegnatoA) {
-        final uNorm = u.trim().toLowerCase();
-        azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-        if (bm.punti < 0) {
-          malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
-        }
-      }
-    }
-
-    for (var v in _votazioniEvento) {
-      for (var u in v.votiUtenti.keys) {
-        final uNorm = u.trim().toLowerCase();
-        if (attivitaUtenti.containsKey(uNorm)) {
-          attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
-          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-        }
-      }
-    }
-
+    String? campioneNick = primo?.key;
+    int campionePts = primo?.value ?? 0;
     String? reMalusNick;
     int maxMalusVal = 0;
-    malusPunti.forEach((nickLower, tot) {
-      if (tot > maxMalusVal) {
-        maxMalusVal = tot;
-        reMalusNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
-
     String? giudiceNick;
     int maxAttivita = 0;
-    attivitaUtenti.forEach((nickLower, count) {
-      if (count > maxAttivita) {
-        maxAttivita = count;
-        giudiceNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
-
     String? fantasmaNick;
-    int minAzioni = 999999;
-    if (_evento.partecipanti.length > 1 && campioneNick != null) {
-      for (var p in _evento.partecipanti) {
-        final pLower = p.trim().toLowerCase();
-        if (pLower == campioneNick.trim().toLowerCase()) continue;
-        final azioni = azioniTotali[pLower] ?? 0;
-        if (azioni < minAzioni) {
-          minAzioni = azioni;
-          fantasmaNick = p;
-        }
-      }
-    }
-
+    int minAzioni = 0;
     String? sbirroNick;
     int maxSbirroVal = 0;
     String? giustiziereNick;
     int maxGiustiziereVal = 0;
-    final Map<String, int> sbirroCounts = {};
-    final Map<String, int> giustiziereCounts = {};
 
-    for (var r in _richiesteVarEvento) {
-      if (r.isApprovata) {
+    if (savedTitoli != null && savedTitoli.isNotEmpty) {
+      if (savedTitoli['campione'] != null) {
+        campioneNick = savedTitoli['campione'].toString();
+        campionePts = (savedTitoli['campionePunti'] as num?)?.toInt() ?? campionePts;
+      }
+      reMalusNick = savedTitoli['reMalus']?.toString();
+      maxMalusVal = (savedTitoli['reMalusPunti'] as num?)?.toInt() ?? 0;
+      giudiceNick = savedTitoli['avvocato']?.toString();
+      maxAttivita = (savedTitoli['avvocatoAzioni'] as num?)?.toInt() ?? 0;
+      fantasmaNick = savedTitoli['fantasma']?.toString();
+      minAzioni = (savedTitoli['fantasmaAzioni'] as num?)?.toInt() ?? 0;
+      sbirroNick = savedTitoli['sbirro']?.toString();
+      maxSbirroVal = (savedTitoli['sbirroDenunce'] as num?)?.toInt() ?? 0;
+      giustiziereNick = savedTitoli['giustiziere']?.toString();
+      maxGiustiziereVal = (savedTitoli['giustiziereApprovate'] as num?)?.toInt() ?? 0;
+    } else {
+      final Map<String, int> malusPunti = {};
+      final Map<String, int> attivitaUtenti = {};
+      final Map<String, int> azioniTotali = {};
+
+      for (var p in _evento.partecipanti) {
+        final pNorm = p.trim().toLowerCase();
+        malusPunti[pNorm] = 0;
+        attivitaUtenti[pNorm] = 0;
+        azioniTotali[pNorm] = 0;
+      }
+
+      for (var bm in _allBonusMalus) {
+        final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
+            bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
+        if (!isSameEv && _allBonusMalus.length > 1) continue;
+
+        // Escludi sanzioni d'ufficio del VAR
+        final bool isVarSanzione = bm.categoria.toUpperCase() == 'VAR' ||
+            bm.titolo.contains('Falsa Testimonianza') ||
+            bm.descrizione.toLowerCase().contains('sanzione per denuncia');
+
+        final prop = bm.propostoDa.trim().toLowerCase();
+        if (!isVarSanzione && prop.isNotEmpty && attivitaUtenti.containsKey(prop)) {
+          attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
+          azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
+        }
+
+        for (var u in bm.assegnatoA) {
+          final uNorm = u.trim().toLowerCase();
+          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+          if (bm.punti < 0) {
+            malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
+          }
+        }
+      }
+
+      for (var v in _votazioniEvento) {
+        for (var u in v.votiUtenti.keys) {
+          final uNorm = u.trim().toLowerCase();
+          if (attivitaUtenti.containsKey(uNorm)) {
+            attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
+            azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
+          }
+        }
+      }
+
+      malusPunti.forEach((nickLower, tot) {
+        if (tot > maxMalusVal) {
+          maxMalusVal = tot;
+          reMalusNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
+
+      attivitaUtenti.forEach((nickLower, count) {
+        if (count > maxAttivita) {
+          maxAttivita = count;
+          giudiceNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
+
+      minAzioni = 999999;
+      if (_evento.partecipanti.length > 1 && campioneNick != null) {
+        for (var p in _evento.partecipanti) {
+          final pLower = p.trim().toLowerCase();
+          if (pLower == campioneNick.trim().toLowerCase()) continue;
+          final azioni = azioniTotali[pLower] ?? 0;
+          if (azioni < minAzioni) {
+            minAzioni = azioni;
+            fantasmaNick = p;
+          }
+        }
+      }
+
+      final Map<String, int> sbirroCounts = {};
+      final Map<String, int> giustiziereCounts = {};
+
+      for (var r in _richiesteVarEvento) {
         final req = r.richiedente.trim().toLowerCase();
-        giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
+        if (r.isApprovata) {
+          giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
+        }
         if (r.isMalus) {
           sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
         }
       }
+      sbirroCounts.forEach((nickLower, count) {
+        if (count > maxSbirroVal) {
+          maxSbirroVal = count;
+          sbirroNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
+      giustiziereCounts.forEach((nickLower, count) {
+        if (count > maxGiustiziereVal) {
+          maxGiustiziereVal = count;
+          giustiziereNick = _evento.partecipanti.firstWhere(
+            (p) => p.trim().toLowerCase() == nickLower,
+            orElse: () => nickLower,
+          );
+        }
+      });
     }
-    sbirroCounts.forEach((nickLower, count) {
-      if (count > maxSbirroVal) {
-        maxSbirroVal = count;
-        sbirroNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
-    giustiziereCounts.forEach((nickLower, count) {
-      if (count > maxGiustiziereVal) {
-        maxGiustiziereVal = count;
-        giustiziereNick = _evento.partecipanti.firstWhere(
-          (p) => p.trim().toLowerCase() == nickLower,
-          orElse: () => nickLower,
-        );
-      }
-    });
 
     final buffer = StringBuffer();
     buffer.writeln('🏆 *PODIO FANTAEVENTI* - ${_evento.titolo} 🏆');
     buffer.writeln('');
-    if (primo != null) buffer.writeln('🥇 1°: ${primo.key} (+${primo.value} PT)');
-    if (secondo != null) buffer.writeln('🥈 2°: ${secondo.key} (+${secondo.value} PT)');
-    if (terzo != null) buffer.writeln('🥉 3°: ${terzo.key} (+${terzo.value} PT)');
+    if (primo != null) buffer.writeln('🥇 1°: ${primo.key} (${primo.value > 0 ? '+${primo.value}' : '${primo.value}'} PT)');
+    if (secondo != null) buffer.writeln('🥈 2°: ${secondo.key} (${secondo.value > 0 ? '+${secondo.value}' : '${secondo.value}'} PT)');
+    if (terzo != null) buffer.writeln('🥉 3°: ${terzo.key} (${terzo.value > 0 ? '+${terzo.value}' : '${terzo.value}'} PT)');
     if (campioneNick != null || reMalusNick != null || giudiceNick != null || fantasmaNick != null) {
       buffer.writeln('');
       buffer.writeln('🎖️ *RICONOSCIMENTI SPECIALI*:');
@@ -1475,7 +1529,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     ),
                                   ),
                                   Text(
-                                    '+${primo.value} PT',
+                                    '${primo.value > 0 ? "+${primo.value}" : "${primo.value}"} PT',
                                     style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
                                   ),
                                 ],
@@ -1508,7 +1562,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     ),
                                   ),
                                   Text(
-                                    '+${secondo.value} PT',
+                                    '${secondo.value > 0 ? "+${secondo.value}" : "${secondo.value}"} PT',
                                     style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF94A3B8)),
                                   ),
                                 ],
@@ -1541,7 +1595,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     ),
                                   ),
                                   Text(
-                                    '+${terzo.value} PT',
+                                    '${terzo.value > 0 ? "+${terzo.value}" : "${terzo.value}"} PT',
                                     style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFB45309)),
                                   ),
                                 ],
@@ -1551,7 +1605,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                           ],
 
                           // Titoli speciali se presenti
-                          if (campioneNick != null || reMalusNick != null || giudiceNick != null || fantasmaNick != null) ...[
+                          if (campioneNick != null || reMalusNick != null || giudiceNick != null || fantasmaNick != null || (sbirroNick != null && maxSbirroVal > 0) || (giustiziereNick != null && maxGiustiziereVal > 0)) ...[
                             Container(
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1570,9 +1624,13 @@ class _EventDetailViewState extends State<EventDetailView> {
                                   if (reMalusNick != null && maxMalusVal > 0)
                                     _buildCompactChip('🤡 Re Malus', reMalusNick!),
                                   if (giudiceNick != null && maxAttivita > 0)
-                                    _buildCompactChip('⚖️ Giudice', giudiceNick!),
+                                    _buildCompactChip("⚖️ L'Avvocato", giudiceNick!),
                                   if (fantasmaNick != null)
                                     _buildCompactChip('👻 Fantasma', fantasmaNick),
+                                  if (sbirroNick != null && maxSbirroVal > 0)
+                                    _buildCompactChip('🕵️ Lo Sbirro', sbirroNick!),
+                                  if (giustiziereNick != null && maxGiustiziereVal > 0)
+                                    _buildCompactChip('⚡ Giustiziere', giustiziereNick!),
                                 ],
                               ),
                             ),
