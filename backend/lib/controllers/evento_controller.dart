@@ -153,12 +153,27 @@ class EventoController {
       final doc = await DbService.instance.eventiCollection.findOne(selector);
 
       if (doc != null) {
+        final stato = (doc['stato'] ?? 'in_programma').toString().toLowerCase();
+        final dateStr = doc['data']?.toString() ?? '';
+        final dtStart = DateTime.tryParse(dateStr);
+        final now = DateTime.now();
+
+        if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
+          return Response.badRequest(
+            body: jsonEncode({'error': 'Le iscrizioni per questo evento sono chiuse (evento già in corso o concluso)'}),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+
         final List<dynamic> partecipanti = List.from(doc['partecipanti'] ?? []);
+        final List<dynamic> invitati = List.from(doc['invitati'] ?? []);
+        invitati.removeWhere((i) => i.toString().trim().toLowerCase() == utenteName.trim().toLowerCase());
+
         if (!partecipanti.contains(utenteName)) {
           partecipanti.add(utenteName);
           await DbService.instance.eventiCollection.update(
             selector,
-            modify.set('partecipanti', partecipanti),
+            modify.set('partecipanti', partecipanti).set('invitati', invitati),
           );
           print('✅ Utente "$utenteName" aggiunto con successo ai partecipanti dell\'evento su MongoDB!');
         }

@@ -1440,19 +1440,143 @@ class ApiService {
     return List.unmodifiable(_eventi);
   }
 
-  // --- PARTECIPA AD UN EVENTO REALE SU MONGODB ATLAS ---
+  // --- PARTECIPA AD UN EVENTO REALE SU MONGODB ATLAS (CON VERIFICA EVENTO IN PROGRAMMA) ---
   Future<void> partecipaAdEvento(String eventoId, String nicknameOrId) async {
-    for (String url in baseUrls) {
-      try {
-        await http.post(
-          Uri.parse('$url/eventi/partecipa'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'eventoId': eventoId,
-            'utente': nicknameOrId,
-          }),
-        ).timeout(const Duration(seconds: 10));
-      } catch (_) {}
+    invalidateCache();
+    bool directSuccess = false;
+
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? objId;
+        try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
+        final evSelector = objId != null ? where.id(objId) : where.eq('_id', eventoId);
+        final evDoc = await db.collection('Evento').findOne(evSelector);
+
+        if (evDoc != null) {
+          final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
+          final dateStr = evDoc['data']?.toString() ?? '';
+          final dtStart = DateTime.tryParse(dateStr);
+          final now = DateTime.now();
+
+          // Regola: quando l'evento è in corso o concluso non è più possibile iscriversi!
+          if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
+            throw Exception('Le iscrizioni per questo evento sono chiuse (evento già in corso o concluso)!');
+          }
+
+          final List<dynamic> part = List.from(evDoc['partecipanti'] ?? []);
+          final List<dynamic> inv = List.from(evDoc['invitati'] ?? []);
+          inv.removeWhere((i) => i.toString().trim().toLowerCase() == nicknameOrId.trim().toLowerCase());
+          if (!part.any((p) => p.toString().trim().toLowerCase() == nicknameOrId.trim().toLowerCase())) {
+            part.add(nicknameOrId);
+          }
+
+          await db.collection('Evento').update(
+            evSelector,
+            modify.set('partecipanti', part).set('invitati', inv),
+          );
+
+          // Se c'era una notifica di invito per questo utente, segnalala come accettata
+          try {
+            await db.collection('Notifiche').update(
+              where.eq('eventoId', eventoId).and(where.eq('destinatario', nicknameOrId)).and(where.eq('tipo', 'invito')),
+              modify.set('stato', 'accettata'),
+              multiUpdate: true,
+            );
+          } catch (_) {}
+
+          directSuccess = true;
+        }
+      }
+    } catch (e) {
+      if (e is Exception && e.toString().contains('iscrizioni per questo evento sono chiuse')) {
+        rethrow;
+      }
+    }
+
+    if (!directSuccess) {
+      for (String url in baseUrls) {
+        try {
+          await http.post(
+            Uri.parse('$url/eventi/partecipa'),
+            headers: defaultHeaders,
+            body: jsonEncode({
+              'eventoId': eventoId,
+              'utente': nicknameOrId,
+            }),
+          ).timeout(const Duration(seconds: 10));
+        } catch (_) {}
+      }
+    }
+  }
+
+  // --- INVITA ULTERIORI AMICI AD UN EVENTO IN PROGRAMMA (SOLO ORGANIZZATORE) ---
+  Future<void> invitaAmiciAdEvento(String eventoId, List<String> nuoviInvitati) async {
+    if (nuoviInvitati.isEmpty) return;
+    invalidateCache();
+
+    final db = await _getMongoDb();
+    if (db == null || !db.isConnected) {
+      throw Exception('Impossibile connettersi al database per inviare gli inviti.');
+    }
+
+    ObjectId? objId;
+    try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
+    final evSelector = objId != null ? where.id(objId) : where.eq('_id', eventoId);
+    final evDoc = await db.collection('Evento').findOne(evSelector);
+
+    if (evDoc == null) {
+      throw Exception('Evento non trovato nel database.');
+    }
+
+    // Controllo sicurezza temporale e di stato: solo eventi IN PROGRAMMA
+    final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
+    final dateStr = evDoc['data']?.toString() ?? '';
+    final dtStart = DateTime.tryParse(dateStr);
+    final now = DateTime.now();
+
+    if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
+      throw Exception('Non è più possibile invitare amici: l\'evento è già in corso o concluso!');
+    }
+
+    final creatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? _currentUser?.nome ?? 'Cloud').toString();
+    final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
+
+    final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
+    final List<dynamic> currentPartecipanti = List.from(evDoc['partecipanti'] ?? []);
+
+    final List<String> aggiuntiEffettivi = [];
+    for (var amico in nuoviInvitati) {
+      final aNorm = amico.trim().toLowerCase();
+      final giaPart = currentPartecipanti.any((p) => p.toString().trim().toLowerCase() == aNorm);
+      final giaInv = currentInvitati.any((i) => i.toString().trim().toLowerCase() == aNorm);
+
+      if (!giaPart && !giaInv) {
+        currentInvitati.add(amico);
+        aggiuntiEffettivi.add(amico);
+      }
+    }
+
+    if (aggiuntiEffettivi.isEmpty) return;
+
+    // Aggiorna l'elenco invitati nell'Evento su MongoDB
+    await db.collection('Evento').update(
+      evSelector,
+      modify.set('invitati', currentInvitati),
+    );
+
+    // Invia notifiche individuali per ciascun nuovo amico invitato
+    for (var amico in aggiuntiEffettivi) {
+      await db.collection('Notifiche').insertOne({
+        'mittente': creatore,
+        'destinatario': amico,
+        'titolo': 'Invito ad Evento: $evTitolo',
+        'messaggio': '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
+        'eventoId': eventoId,
+        'tipo': 'invito',
+        'stato': 'in_attesa',
+        'data': DateTime.now().toIso8601String(),
+      });
     }
   }
 

@@ -393,7 +393,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                   _buildLeaderboardSection(),
                   const SizedBox(height: 28),
 
-                  // SEZIONE TRACCIAMENTO STATO INVITI PARTECEPATI (Coerenza Rigorosa)
+                  // SEZIONE TRACCIAMENTO STATO INVITI PARTECIPANTI (Coerenza Rigorosa)
                   Row(
                     children: [
                       const Icon(Icons.how_to_reg_rounded, color: Color(0xFFFACC15), size: 22),
@@ -408,6 +408,34 @@ class _EventDetailViewState extends State<EventDetailView> {
                           ),
                         ),
                       ),
+                      if (isCreatore && _evento.isInProgramma)
+                        InkWell(
+                          onTap: _mostraModalInvitaAmici,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFFACC15), width: 1.2),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.person_add_alt_1_rounded, size: 14, color: Color(0xFFFACC15)),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'INVITA AMICI',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFFACC15),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -442,18 +470,44 @@ class _EventDetailViewState extends State<EventDetailView> {
                         Text('⏳ Inviti in Sospeso (${_invitatiInSospeso.length}):',
                             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15))),
                         const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _invitatiInSospeso.map((p) {
-                            return Chip(
-                              avatar: const Icon(Icons.hourglass_top_rounded, size: 14, color: Color(0xFFFACC15)),
-                              label: Text(p, style: GoogleFonts.poppins(color: Colors.white, fontSize: 11)),
-                              backgroundColor: const Color(0xFFFACC15).withValues(alpha: 0.15),
-                              side: const BorderSide(color: Color(0xFFFACC15)),
-                            );
-                          }).toList(),
-                        ),
+                        if (_invitatiInSospeso.isEmpty)
+                          Text(
+                            'Nessun invito in sospeso al momento.',
+                            style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                          )
+                        else
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _invitatiInSospeso.map((p) {
+                              return Chip(
+                                avatar: const Icon(Icons.hourglass_top_rounded, size: 14, color: Color(0xFFFACC15)),
+                                label: Text(p, style: GoogleFonts.poppins(color: Colors.white, fontSize: 11)),
+                                backgroundColor: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                                side: const BorderSide(color: Color(0xFFFACC15)),
+                              );
+                            }).toList(),
+                          ),
+
+                        if (isCreatore && _evento.isInProgramma) ...[
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _mostraModalInvitaAmici,
+                              icon: const Icon(Icons.group_add_rounded, size: 16, color: Color(0xFFFACC15)),
+                              label: Text(
+                                'Aggiungi altri amici all\'evento',
+                                style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: const Color(0xFFFACC15).withValues(alpha: 0.6), width: 1.2),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -465,25 +519,58 @@ class _EventDetailViewState extends State<EventDetailView> {
                       if (!giaPartecipa)
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () async {
-                              await _apiService.partecipaAdEvento(_evento.id, currentUserNick);
-                              setState(() {
-                                if (!_partecipantiConfermati.contains(currentUserNick)) {
-                                  _partecipantiConfermati.add(currentUserNick);
-                                }
-                                _invitatiInSospeso.remove(currentUserNick);
-                              });
-                              widget.onRefresh();
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Ti sei iscritto all\'evento! 🎉')),
-                              );
-                            },
-                            icon: const Icon(Icons.person_add, color: Color(0xFF0F172A)),
-                            label: const Text('PARTECIPA'),
+                            onPressed: (_evento.isConcluso || _evento.isInCorso)
+                                ? null
+                                : () async {
+                                    try {
+                                      await _apiService.partecipaAdEvento(_evento.id, currentUserNick);
+                                      setState(() {
+                                        if (!_partecipantiConfermati.contains(currentUserNick)) {
+                                          _partecipantiConfermati.add(currentUserNick);
+                                        }
+                                        _invitatiInSospeso.remove(currentUserNick);
+                                      });
+                                      widget.onRefresh();
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('Ti sei iscritto all\'evento! 🎉')),
+                                      );
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          backgroundColor: const Color(0xFFEF4444),
+                                          content: Text(e.toString().replaceAll('Exception: ', '')),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            icon: Icon(
+                              _evento.isConcluso
+                                  ? Icons.flag_rounded
+                                  : _evento.isInCorso
+                                      ? Icons.lock_clock_rounded
+                                      : Icons.person_add,
+                              color: (_evento.isConcluso || _evento.isInCorso)
+                                  ? const Color(0xFF64748B)
+                                  : const Color(0xFF0F172A),
+                            ),
+                            label: Text(
+                              _evento.isConcluso
+                                  ? 'EVENTO CONCLUSO'
+                                  : _evento.isInCorso
+                                      ? 'ISCRIZIONI CHIUSE'
+                                      : 'PARTECIPA',
+                            ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFFACC15),
-                              foregroundColor: const Color(0xFF0F172A),
+                              backgroundColor: (_evento.isConcluso || _evento.isInCorso)
+                                  ? const Color(0xFF334155)
+                                  : const Color(0xFFFACC15),
+                              foregroundColor: (_evento.isConcluso || _evento.isInCorso)
+                                  ? const Color(0xFF64748B)
+                                  : const Color(0xFF0F172A),
+                              disabledBackgroundColor: const Color(0xFF334155),
+                              disabledForegroundColor: const Color(0xFF64748B),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                             ),
@@ -2177,6 +2264,387 @@ class _EventDetailViewState extends State<EventDetailView> {
                         },
                       ),
                     ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _mostraModalInvitaAmici() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFFFACC15)),
+      ),
+    );
+
+    List<Utente> amici;
+    try {
+      amici = await _apiService.getGiocatoriInvitabili();
+    } catch (_) {
+      amici = [];
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (amici.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFEAB308),
+          content: Text(
+            'Non hai ancora aggiunto amici sul tuo profilo!',
+            style: GoogleFonts.poppins(color: const Color(0xFF0F172A), fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final Set<String> amiciSelezionati = {};
+    String searchQuery = '';
+    bool isInvioInCorso = false;
+
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final cleanQuery = searchQuery.trim().toLowerCase();
+            final amiciFiltrati = amici.where((u) {
+              if (cleanQuery.isEmpty) return true;
+              final nick = u.nome.toLowerCase();
+              final email = u.email.toLowerCase();
+              return nick.contains(cleanQuery) || email.contains(cleanQuery);
+            }).toList();
+
+            final invitabiliCount = amici.where((amico) {
+              final aNorm = amico.nome.trim().toLowerCase();
+              final isGiaPart = _partecipantiConfermati.any((p) => p.trim().toLowerCase() == aNorm) ||
+                  _evento.propostoDa.trim().toLowerCase() == aNorm;
+              final isGiaInv = _invitatiInSospeso.any((i) => i.trim().toLowerCase() == aNorm) ||
+                  _evento.invitati.any((i) => i.trim().toLowerCase() == aNorm);
+              return !isGiaPart && !isGiaInv;
+            }).length;
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.82,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border.all(color: const Color(0xFF334155), width: 1.5),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF64748B),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFFACC15)),
+                        ),
+                        child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFFFACC15), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Invita Amici all\'Evento',
+                              style: GoogleFonts.poppins(
+                                fontSize: 17,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              invitabiliCount > 0
+                                  ? '$invitabiliCount amici disponibili per l\'invito'
+                                  : 'Tutti i tuoi amici sono già stati invitati!',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: invitabiliCount > 0 ? const Color(0xFF94A3B8) : const Color(0xFF10B981),
+                                fontWeight: invitabiliCount > 0 ? FontWeight.normal : FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  TextField(
+                    onChanged: (val) {
+                      setModalState(() {
+                        searchQuery = val;
+                      });
+                    },
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Cerca per nickname o email...',
+                      hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                      prefixIcon: const Icon(Icons.search, color: Color(0xFFFACC15), size: 20),
+                      filled: true,
+                      fillColor: const Color(0xFF1E293B),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFF334155)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFF334155)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: Color(0xFFFACC15), width: 1.5),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  Expanded(
+                    child: amiciFiltrati.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Nessun amico trovato con questo nome.',
+                              style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
+                            ),
+                          )
+                        : ListView.separated(
+                            itemCount: amiciFiltrati.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 8),
+                            itemBuilder: (context, idx) {
+                              final amico = amiciFiltrati[idx];
+                              final aNorm = amico.nome.trim().toLowerCase();
+
+                              final bool isGiaPartecipante = _partecipantiConfermati.any((p) => p.trim().toLowerCase() == aNorm) ||
+                                  _evento.propostoDa.trim().toLowerCase() == aNorm;
+                              final bool isGiaInvitato = _invitatiInSospeso.any((i) => i.trim().toLowerCase() == aNorm) ||
+                                  _evento.invitati.any((i) => i.trim().toLowerCase() == aNorm);
+                              final bool isInvitabile = !isGiaPartecipante && !isGiaInvitato;
+                              final bool isSelected = amiciSelezionati.contains(amico.nome);
+
+                              return InkWell(
+                                onTap: isInvitabile
+                                    ? () {
+                                        setModalState(() {
+                                          if (isSelected) {
+                                            amiciSelezionati.remove(amico.nome);
+                                          } else {
+                                            amiciSelezionati.add(amico.nome);
+                                          }
+                                        });
+                                      }
+                                    : null,
+                                borderRadius: BorderRadius.circular(14),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0xFFFACC15).withValues(alpha: 0.12)
+                                        : const Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: isSelected
+                                          ? const Color(0xFFFACC15)
+                                          : isGiaPartecipante
+                                              ? const Color(0xFF10B981).withValues(alpha: 0.3)
+                                              : isGiaInvitato
+                                                  ? const Color(0xFFEAB308).withValues(alpha: 0.3)
+                                                  : const Color(0xFF334155),
+                                      width: isSelected ? 1.5 : 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      CircleAvatar(
+                                        radius: 20,
+                                        backgroundColor: const Color(0xFF334155),
+                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl),
+                                      ),
+                                      const SizedBox(width: 12),
+
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              amico.nome,
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            if (isGiaPartecipante)
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF10B981)),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Già partecipante confermato',
+                                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF10B981), fontWeight: FontWeight.w600),
+                                                  ),
+                                                ],
+                                              )
+                                            else if (isGiaInvitato)
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.hourglass_top_rounded, size: 13, color: Color(0xFFFACC15)),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Invito già inviato (in sospeso)',
+                                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFACC15), fontWeight: FontWeight.w600),
+                                                  ),
+                                                ],
+                                              )
+                                            else
+                                              Text(
+                                                amico.email.isNotEmpty ? amico.email : 'Amico disponibile per l\'invito',
+                                                style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      if (isGiaPartecipante)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFF10B981)),
+                                          ),
+                                          child: Text(
+                                            'PARTECIPA',
+                                            style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
+                                          ),
+                                        )
+                                      else if (isGiaInvitato)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFFFACC15)),
+                                          ),
+                                          child: Text(
+                                            'IN SOSPESO',
+                                            style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                                          ),
+                                        )
+                                      else
+                                        Icon(
+                                          isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                          color: isSelected ? const Color(0xFFFACC15) : const Color(0xFF64748B),
+                                          size: 24,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: (amiciSelezionati.isEmpty || isInvioInCorso)
+                          ? null
+                          : () async {
+                              setModalState(() => isInvioInCorso = true);
+                              try {
+                                final daInvitare = amiciSelezionati.toList();
+                                await _apiService.invitaAmiciAdEvento(_evento.id, daInvitare);
+
+                                if (mounted) {
+                                  setState(() {
+                                    _invitatiInSospeso.addAll(daInvitare);
+                                  });
+                                  widget.onRefresh();
+                                }
+
+                                if (context.mounted) {
+                                  Navigator.pop(ctx);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      backgroundColor: const Color(0xFF10B981),
+                                      content: Text(
+                                        'Inviti inviati con successo a ${daInvitare.length} ${daInvitare.length == 1 ? 'amico' : 'amici'}! ✉️🎉',
+                                        style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                setModalState(() => isInvioInCorso = false);
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      backgroundColor: const Color(0xFFEF4444),
+                                      content: Text(
+                                        e.toString().replaceAll('Exception: ', ''),
+                                        style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFACC15),
+                        foregroundColor: const Color(0xFF0F172A),
+                        disabledBackgroundColor: const Color(0xFF334155),
+                        disabledForegroundColor: const Color(0xFF64748B),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 4,
+                      ),
+                      child: isInvioInCorso
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: Color(0xFF0F172A)),
+                            )
+                          : Text(
+                              amiciSelezionati.isEmpty
+                                  ? 'SELEZIONA GLI AMICI DA INVITARE'
+                                  : 'INVIA INVITI (${amiciSelezionati.length}) 🚀',
+                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                    ),
+                  ),
                 ],
               ),
             );

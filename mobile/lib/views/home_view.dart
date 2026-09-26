@@ -249,6 +249,22 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     final curUser = _apiService.currentUser;
     final nick = curUser?.nome ?? 'Cloud';
 
+    if (evento.isConcluso || evento.isInCorso) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFEF4444),
+          content: Text(
+            evento.isConcluso
+                ? 'Questo evento è già concluso!'
+                : 'Le iscrizioni sono chiuse: l\'evento è già in corso!',
+            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+      return;
+    }
+
     try {
       await _apiService.partecipaAdEvento(evento.id, nick);
       if (!mounted) return;

@@ -28,7 +28,8 @@ class EventCard extends StatelessWidget {
     final isPartecipante = isCreatore || evento.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
     final isInvitato = evento.invitati.any((i) => i.trim().toLowerCase() == cleanUser);
     final isConcluso = evento.isConcluso;
-    final isInCorso = evento.stato == 'in_corso';
+    final isInCorso = evento.isInCorso;
+    final bool isIscrizioniChiuse = isConcluso || (isInCorso && !isPartecipante);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -163,32 +164,36 @@ class EventCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: isConcluso ? null : onPartecipa,
+                  onPressed: isIscrizioniChiuse ? null : onPartecipa,
                   icon: Icon(
                     isConcluso
                         ? Icons.flag_rounded
-                        : isPartecipante
-                            ? Icons.check_circle_rounded
-                            : isInvitato
-                                ? Icons.pending_actions_rounded
-                                : Icons.person_add_alt_1_rounded,
+                        : (isInCorso && !isPartecipante)
+                            ? Icons.lock_clock_rounded
+                            : isPartecipante
+                                ? Icons.check_circle_rounded
+                                : isInvitato
+                                    ? Icons.pending_actions_rounded
+                                    : Icons.person_add_alt_1_rounded,
                     size: 18,
                   ),
                   label: Text(
                     isConcluso
                         ? 'EVENTO CONCLUSO'
-                        : isPartecipante
-                            ? 'GIÀ PARTECIPANTE'
-                            : isInvitato
-                                ? 'INVITO IN SOSPESO (RISPONDI)'
-                                : 'PARTECIPA ALL\'EVENTO',
+                        : (isInCorso && !isPartecipante)
+                            ? 'ISCRIZIONI CHIUSE (IN CORSO)'
+                            : isPartecipante
+                                ? 'GIÀ PARTECIPANTE'
+                                : isInvitato
+                                    ? 'INVITO IN SOSPESO (RISPONDI)'
+                                    : 'PARTECIPA ALL\'EVENTO',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isConcluso
+                    backgroundColor: isIscrizioniChiuse
                         ? const Color(0xFF334155)
                         : isPartecipante
                             ? const Color(0xFF10B981)
