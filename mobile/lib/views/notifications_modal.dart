@@ -17,6 +17,8 @@ class _NotificationsModalState extends State<NotificationsModal> {
   final ApiService _apiService = ApiService();
   List<Map<String, dynamic>> _notifiche = [];
   bool _isLoading = true;
+  String? _respondingNotificaId;
+  String? _respondingAction;
 
   @override
   void initState() {
@@ -42,32 +44,57 @@ class _NotificationsModalState extends State<NotificationsModal> {
   }
 
   Future<void> _rispondi(String notificaId, String azione, {String? mittente, String? tipo}) async {
+    if (_respondingNotificaId != null) return;
+
+    setState(() {
+      _respondingNotificaId = notificaId;
+      _respondingAction = azione;
+    });
+
     final curUser = _apiService.currentUser;
     final nick = curUser?.nome ?? 'Cloud';
 
-    if (tipo == 'richiesta_amicizia' && mittente != null) {
-      await _apiService.rispondiRichiestaAmicizia(notificaId, mittente, azione == 'accetta');
-    } else {
-      await _apiService.rispondiNotifica(notificaId, azione, nick);
-    }
+    try {
+      if (tipo == 'richiesta_amicizia' && mittente != null) {
+        await _apiService.rispondiRichiestaAmicizia(notificaId, mittente, azione == 'accetta');
+      } else {
+        await _apiService.rispondiNotifica(notificaId, azione, nick);
+      }
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: azione == 'accetta' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-          content: Text(
-            tipo == 'richiesta_amicizia'
-                ? (azione == 'accetta' ? 'Richiesta di amicizia accettata! 👥' : 'Richiesta di amicizia rifiutata.')
-                : (azione == 'accetta' ? 'Invito accettato con successo! 🎉' : 'Invito rifiutato.'),
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: azione == 'accetta' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+            content: Text(
+              tipo == 'richiesta_amicizia'
+                  ? (azione == 'accetta' ? 'Richiesta di amicizia accettata! 👥' : 'Richiesta di amicizia rifiutata.')
+                  : (azione == 'accetta' ? 'Invito accettato con successo! 🎉' : 'Invito rifiutato.'),
+              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
           ),
-        ),
-      );
-    }
+        );
+      }
 
-    widget.onRefreshHome();
-    if (mounted) {
-      Navigator.pop(context);
+      widget.onRefreshHome();
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _respondingNotificaId = null;
+          _respondingAction = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFEF4444),
+            content: Text(
+              'Errore: ${e.toString().replaceAll("Exception: ", "")}',
+              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -153,6 +180,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                           itemCount: _notifiche.length,
                           itemBuilder: (ctx, idx) {
                             final not = _notifiche[idx];
+                            final notId = (not['id'] ?? not['notificaId'] ?? '').toString();
                             final tipo = (not['tipo'] ?? '').toString().toLowerCase().trim();
                             final titolo = (not['titolo'] ?? '').toString().toLowerCase();
                             final messaggio = (not['messaggio'] ?? '').toString().toLowerCase();
@@ -359,35 +387,87 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                     ),
                                   ] else if (isPending) ...[
                                     const SizedBox(height: 12),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: ElevatedButton.icon(
-                                            onPressed: () => _rispondi(not['id'], 'accetta', mittente: not['mittente'], tipo: not['tipo']),
-                                            icon: const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
-                                            label: const Text('ACCETTA'),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFF10B981),
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                            ),
+                                    if (_respondingNotificaId == notId) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                                        decoration: BoxDecoration(
+                                          color: _respondingAction == 'accetta'
+                                              ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                              : const Color(0xFFEF4444).withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: _respondingAction == 'accetta'
+                                                ? const Color(0xFF10B981)
+                                                : const Color(0xFFEF4444),
+                                            width: 1.5,
                                           ),
                                         ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: ElevatedButton.icon(
-                                            onPressed: () => _rispondi(not['id'], 'rifiuta', mittente: not['mittente'], tipo: not['tipo']),
-                                            icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.white),
-                                            label: const Text('RIFIUTA'),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: const Color(0xFFEF4444),
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor: AlwaysStoppedAnimation<Color>(
+                                                  _respondingAction == 'accetta'
+                                                      ? const Color(0xFF10B981)
+                                                      : const Color(0xFFEF4444),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              _respondingAction == 'accetta'
+                                                  ? '⏳ Accettazione in corso...'
+                                                  : '⏳ Rifiuto in corso...',
+                                              style: GoogleFonts.poppins(
+                                                color: _respondingAction == 'accetta'
+                                                    ? const Color(0xFF10B981)
+                                                    : const Color(0xFFEF4444),
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ] else ...[
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: ElevatedButton.icon(
+                                              onPressed: _respondingNotificaId != null
+                                                  ? null
+                                                  : () => _rispondi(notId, 'accetta', mittente: not['mittente'], tipo: not['tipo']),
+                                              icon: const Icon(Icons.check_circle_rounded, size: 16, color: Colors.white),
+                                              label: const Text('ACCETTA'),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFF10B981),
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      ],
-                                    ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: ElevatedButton.icon(
+                                              onPressed: _respondingNotificaId != null
+                                                  ? null
+                                                  : () => _rispondi(notId, 'rifiuta', mittente: not['mittente'], tipo: not['tipo']),
+                                              icon: const Icon(Icons.cancel_rounded, size: 16, color: Colors.white),
+                                              label: const Text('RIFIUTA'),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFEF4444),
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                 ],
                               ),

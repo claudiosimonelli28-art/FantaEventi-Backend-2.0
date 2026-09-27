@@ -1740,6 +1740,8 @@ class ApiService {
     final nuovoStato = isPro ? 'accettato' : 'rifiutato';
     final votoEspresso = isPro ? 'pro' : 'contro';
 
+    bool directSuccess = false;
+
     // Aggiornamento DIRETTO su MongoDB Atlas
     try {
       final db = await _getMongoDb();
@@ -1784,6 +1786,7 @@ class ApiService {
             }
           }
         }
+        directSuccess = true;
       }
     } catch (e) {
       if (e is Exception && e.toString().contains('Questo evento è già iniziato')) {
@@ -1791,19 +1794,21 @@ class ApiService {
       }
     }
 
-    // Fallback su Render
-    for (String url in baseUrls) {
-      try {
-        await http.post(
-          Uri.parse('$url/notifiche/rispondi'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'notificaId': notificaId,
-            'azione': azione,
-            'utente': utente,
-          }),
-        ).timeout(const Duration(seconds: 2));
-      } catch (_) {}
+    // Fallback su Render (solo se l'aggiornamento diretto non è riuscito)
+    if (!directSuccess) {
+      for (String url in baseUrls) {
+        try {
+          await http.post(
+            Uri.parse('$url/notifiche/rispondi'),
+            headers: defaultHeaders,
+            body: jsonEncode({
+              'notificaId': notificaId,
+              'azione': azione,
+              'utente': utente,
+            }),
+          ).timeout(const Duration(seconds: 2));
+        } catch (_) {}
+      }
     }
   }
 
