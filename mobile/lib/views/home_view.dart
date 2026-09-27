@@ -888,6 +888,29 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   void _apriSelettoreAssegnazione(Evento ev, BonusMalus bm) {
+    if (!ev.isInCorso) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF3B82F6),
+          content: Row(
+            children: [
+              const Icon(Icons.info_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  ev.isConcluso
+                      ? 'Questo evento è concluso: le assegnazioni sono chiuse!'
+                      : '⏳ L\'assegnazione dei punti è disponibile solo quando l\'evento è in corso!',
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
     final partecipanti = ev.partecipanti.isNotEmpty ? ev.partecipanti : ['Cloud', 'Ugnom'];
 
     showModalBottomSheet(

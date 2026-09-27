@@ -2121,6 +2121,36 @@ class ApiService {
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     final logText = '🏆 Ricevuto ${punti >= 0 ? "Bonus" : "Malus"} "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo" ($timeStr)';
 
+    // 0. Controllo di sicurezza: l'assegnazione è permessa ESCLUSIVAMENTE quando l'evento è in corso
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? evObjId;
+        try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
+        final evSelector = evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId);
+        final evDoc = await db.collection('Evento').findOne(evSelector);
+        if (evDoc != null) {
+          final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
+          final dataStr = evDoc['data']?.toString() ?? '';
+          final dataFineStr = evDoc['dataFine']?.toString() ?? '';
+          final dtStart = DateTime.tryParse(dataStr);
+          final dtEnd = DateTime.tryParse(dataFineStr);
+          final checkNow = DateTime.now();
+          final bool isConcluso = stato == 'concluso' || (dtEnd != null && checkNow.isAfter(dtEnd));
+          final bool isInCorso = !isConcluso && (stato == 'in_corso' || (dtStart != null && checkNow.isAfter(dtStart) && (dtEnd == null || checkNow.isBefore(dtEnd))));
+          if (!isInCorso) {
+            throw Exception(isConcluso
+                ? 'Questo evento è concluso: le assegnazioni dei punti sono chiuse!'
+                : 'L\'assegnazione dei punti è disponibile solo quando l\'evento è in corso!');
+          }
+        }
+      }
+    } catch (e) {
+      if (e is Exception && (e.toString().contains('disponibile solo') || e.toString().contains('è concluso'))) {
+        rethrow;
+      }
+    }
+
     // 1. Aggiorna la memoria in-memory del BonusMalus inserendo utenteDestinatario in assegnatoA
     for (int i = 0; i < _bonusMalusList.length; i++) {
       if (_bonusMalusList[i].id == bonusId || _bonusMalusList[i].titolo.toLowerCase() == bonusTitolo.toLowerCase()) {
