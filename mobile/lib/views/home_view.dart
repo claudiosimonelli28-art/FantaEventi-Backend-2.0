@@ -195,30 +195,98 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   Future<void> _confermaEliminazioneEvento(Evento evento) async {
     final curUser = _apiService.currentUser;
     final nick = curUser?.nome ?? 'Cloud';
+    bool isDeleting = false;
 
     final confermato = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
-        title: Text(
-          'Eliminare l\'evento?',
-          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        content: Text(
-          'Sei sicuro di voler eliminare permanentemente l\'evento "${evento.titolo}" da MongoDB Atlas?',
-          style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('ANNULLA', style: TextStyle(color: Colors.white70)),
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Eliminare l\'evento?',
+            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
-            child: const Text('ELIMINA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          content: Text(
+            'Sei sicuro di voler eliminare permanentemente l\'evento "${evento.titolo}"?',
+            style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
           ),
-        ],
+          actions: isDeleting
+              ? [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFEF4444), width: 1.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFEF4444)),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '⏳ Eliminazione in corso...',
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFFEF4444),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ]
+              : [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('ANNULLA', style: TextStyle(color: Colors.white70)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      setDialogState(() {
+                        isDeleting = true;
+                      });
+
+                      final evId = evento.id;
+                      try {
+                        await _apiService.eliminaEvento(evId, nick);
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx, true);
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          setDialogState(() {
+                            isDeleting = false;
+                          });
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFFEF4444),
+                              content: Text(
+                                e.toString().replaceAll('Exception: ', ''),
+                                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          );
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+                    child: const Text('ELIMINA', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+        ),
       ),
     );
 
@@ -227,18 +295,15 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       setState(() {
         _eventi.removeWhere((e) => e.id == evId);
       });
-
-      try {
-        await _apiService.eliminaEvento(evId, nick);
-        _loadData(forceRefresh: true, silent: true);
-      } catch (e) {
-        if (!mounted) return;
-        _loadData(forceRefresh: true, silent: true);
+      _loadData(forceRefresh: true, silent: true);
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            backgroundColor: const Color(0xFFEF4444),
-            content: Text(e.toString().replaceAll('Exception: ', ''),
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+            backgroundColor: const Color(0xFF10B981),
+            content: Text(
+              'Evento "${evento.titolo}" eliminato con successo. 🗑️',
+              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
           ),
         );
       }

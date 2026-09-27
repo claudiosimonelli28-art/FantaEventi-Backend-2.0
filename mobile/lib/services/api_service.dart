@@ -1585,6 +1585,8 @@ class ApiService {
     invalidateCache();
     final cleanUser = utente.trim().toLowerCase();
 
+    bool directSuccess = false;
+
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
@@ -1642,6 +1644,7 @@ class ApiService {
             _currentUser = _currentUser!.copyWith(storicoVoti: newStorico);
           }
         }
+        directSuccess = true;
       }
     } catch (e) {
       if (e is Exception && e.toString().contains('Solo il creatore')) rethrow;
@@ -1651,17 +1654,20 @@ class ApiService {
     _bonusMalusList.removeWhere((b) => b.id == eventoId);
     _votazioniList.removeWhere((v) => v.id == eventoId);
 
-    for (String url in baseUrls) {
-      try {
-        await http.post(
-          Uri.parse('$url/eventi/elimina'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'eventoId': eventoId,
-            'utente': utente,
-          }),
-        ).timeout(const Duration(seconds: 2));
-      } catch (_) {}
+    // Fallback su Render (solo se l'eliminazione diretta su MongoDB non è riuscita)
+    if (!directSuccess) {
+      for (String url in baseUrls) {
+        try {
+          await http.post(
+            Uri.parse('$url/eventi/elimina'),
+            headers: defaultHeaders,
+            body: jsonEncode({
+              'eventoId': eventoId,
+              'utente': utente,
+            }),
+          ).timeout(const Duration(seconds: 2));
+        } catch (_) {}
+      }
     }
   }
 
