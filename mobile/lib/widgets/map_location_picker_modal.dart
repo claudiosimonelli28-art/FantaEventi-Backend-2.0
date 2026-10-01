@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -61,6 +63,9 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
 
   bool _isSearching = false;
   bool _isReverseGeocoding = false;
+  bool _isLocating = false;
+  Timer? _debounceTimer;
+
   List<Map<String, dynamic>> _searchResults = [];
 
   String _currentPlaceName = 'Caricamento posizione...';
@@ -89,14 +94,16 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _mapController.dispose();
     super.dispose();
   }
 
-  Future<void> _cercaLuogo(String query) async {
-    final cleanQuery = query.trim();
-    if (cleanQuery.isEmpty) {
+  void _onSearchChanged(String val) {
+    _debounceTimer?.cancel();
+    final clean = val.trim();
+    if (clean.length < 3) {
       setState(() {
         _searchResults = [];
         _isSearching = false;
@@ -104,41 +111,115 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
       return;
     }
 
+    // Debounce di 380ms per evitare flood di richieste al server
+    _debounceTimer = Timer(const Duration(milliseconds: 380), () {
+      _eseguiRicerca(clean);
+    });
+  }
+
+  Future<void> _eseguiRicerca(String query) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return;
+
     setState(() {
       _isSearching = true;
     });
 
+    List<Map<String, dynamic>> risultati = [];
+
+    // 1. Tenta prima con Photon API (Komoot OpenStreetMap index: rapidissimo, senza rate limit 429)
     try {
-      final uri = Uri.parse(
-        'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(cleanQuery)}&format=json&addressdetails=1&limit=6&accept-language=it',
+      final photonUri = Uri.parse(
+        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(cleanQuery)}&lang=it&limit=8',
       );
-      final response = await http.get(uri, headers: {
-        'User-Agent': 'FantaEventiApp/2.0 (mobile-app)',
-      }).timeout(const Duration(seconds: 6));
+      final response = await http.get(photonUri).timeout(const Duration(seconds: 4));
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        if (mounted) {
-          setState(() {
-            _searchResults = data.cast<Map<String, dynamic>>();
-            _isSearching = false;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _searchResults = [];
-            _isSearching = false;
-          });
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        final List<dynamic> features = data['features'] ?? [];
+
+        for (var f in features) {
+          final props = f['properties'] as Map<String, dynamic>? ?? {};
+          final geom = f['geometry'] as Map<String, dynamic>? ?? {};
+          final coords = geom['coordinates'] as List<dynamic>? ?? [];
+
+          if (coords.length >= 2) {
+            final double lon = (coords[0] as num).toDouble();
+            final double lat = (coords[1] as num).toDouble();
+
+            final String name = (props['name'] ?? props['street'] ?? '').toString();
+            final String street = (props['street'] ?? '').toString();
+            final String housenumber = (props['housenumber'] ?? '').toString();
+            final String city = (props['city'] ?? props['town'] ?? props['village'] ?? props['county'] ?? '').toString();
+            final String state = (props['state'] ?? '').toString();
+            final String postcode = (props['postcode'] ?? '').toString();
+
+            final List<String> addressParts = [];
+            if (street.isNotEmpty) {
+              addressParts.add(housenumber.isNotEmpty ? '$street $housenumber' : street);
+            } else if (name.isNotEmpty) {
+              addressParts.add(name);
+            }
+            if (postcode.isNotEmpty && city.isNotEmpty) {
+              addressParts.add('$postcode $city');
+            } else if (city.isNotEmpty) {
+              addressParts.add(city);
+            }
+            if (state.isNotEmpty && state != city) {
+              addressParts.add(state);
+            }
+            addressParts.add('Italia');
+
+            final fullAddress = addressParts.join(', ');
+            final title = name.isNotEmpty ? name : (street.isNotEmpty ? street : city);
+
+            risultati.add({
+              'lat': lat,
+              'lon': lon,
+              'title': title.isNotEmpty ? title : fullAddress,
+              'display_name': fullAddress,
+            });
+          }
         }
       }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _searchResults = [];
-          _isSearching = false;
-        });
-      }
+    } catch (_) {}
+
+    // 2. Se Photon non ha trovato nulla o ha fallito, prova Nominatim con fallback
+    if (risultati.isEmpty) {
+      try {
+        final nominatimUri = Uri.parse(
+          'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(cleanQuery)}&format=json&addressdetails=1&limit=6&accept-language=it',
+        );
+        final response = await http.get(nominatimUri, headers: {
+          'User-Agent': 'FantaEventiApp/2.0 (mobile-app)',
+        }).timeout(const Duration(seconds: 4));
+
+        if (response.statusCode == 200) {
+          final List<dynamic> data = jsonDecode(response.body);
+          for (var item in data) {
+            final lat = double.tryParse(item['lat']?.toString() ?? '');
+            final lon = double.tryParse(item['lon']?.toString() ?? '');
+            if (lat != null && lon != null) {
+              final disp = (item['display_name'] ?? '').toString();
+              final name = (item['name'] ?? '').toString();
+              final title = name.isNotEmpty ? name : disp.split(',').first.trim();
+              risultati.add({
+                'lat': lat,
+                'lon': lon,
+                'title': title,
+                'display_name': disp,
+              });
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (mounted) {
+      setState(() {
+        _searchResults = risultati;
+        _isSearching = false;
+      });
     }
   }
 
@@ -204,24 +285,126 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
     }
   }
 
+  Future<void> _vaiAllaMiaPosizione() async {
+    setState(() {
+      _isLocating = true;
+    });
+
+    try {
+      // 1. Controllo se i servizi di localizzazione sono attivi
+      final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFFDC2626),
+              content: Text(
+                'Attiva il GPS del telefono per rilevare la tua posizione 📍',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() => _isLocating = false);
+        return;
+      }
+
+      // 2. Controllo e richiesta permessi
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                backgroundColor: const Color(0xFFDC2626),
+                content: Text(
+                  'Permesso di localizzazione negato.',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
+                ),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          setState(() => _isLocating = false);
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFFDC2626),
+              content: Text(
+                'Permesso GPS negato permanentemente. Abilitalo dalle impostazioni.',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        setState(() => _isLocating = false);
+        return;
+      }
+
+      // 3. Rileva la posizione GPS ad alta precisione
+      final Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+
+      final userLatLng = LatLng(position.latitude, position.longitude);
+
+      if (mounted) {
+        setState(() {
+          _selectedLocation = userLatLng;
+          _searchResults = [];
+          _searchController.clear();
+        });
+        _mapController.move(userLatLng, 16.5);
+        await _reverseGeocode(userLatLng);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFFDC2626),
+            content: Text(
+              'Impossibile rilevare la posizione GPS in questo momento.',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLocating = false);
+      }
+    }
+  }
+
   void _selezionaRisultato(Map<String, dynamic> item) {
     final lat = double.tryParse(item['lat']?.toString() ?? '') ?? _selectedLocation.latitude;
     final lon = double.tryParse(item['lon']?.toString() ?? '') ?? _selectedLocation.longitude;
     final newPos = LatLng(lat, lon);
 
     final displayName = item['display_name']?.toString() ?? '';
-    final name = item['name']?.toString() ?? '';
-    final shortName = name.isNotEmpty ? name : (displayName.split(',').firstOrNull?.trim() ?? 'Luogo Selezionato');
+    final title = item['title']?.toString() ?? displayName.split(',').first.trim();
 
     setState(() {
       _selectedLocation = newPos;
-      _currentPlaceName = shortName;
+      _currentPlaceName = title;
       _currentAddress = displayName;
       _searchResults = [];
-      _searchController.text = shortName;
+      _searchController.text = title;
     });
 
-    _mapController.move(newPos, 15.5);
+    _mapController.move(newPos, 16.0);
     FocusScope.of(context).unfocus();
   }
 
@@ -247,7 +430,7 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    final height = mediaQuery.size.height * 0.88;
+    final height = mediaQuery.size.height * 0.90;
 
     return Container(
       height: height,
@@ -320,18 +503,21 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
               child: TextField(
                 controller: _searchController,
                 style: GoogleFonts.inter(color: Colors.white, fontSize: 14),
-                onSubmitted: _cercaLuogo,
-                onChanged: (val) {
-                  if (val.length >= 3) {
-                    _cercaLuogo(val);
-                  } else if (val.isEmpty) {
-                    setState(() => _searchResults = []);
-                  }
+                onSubmitted: (val) {
+                  _debounceTimer?.cancel();
+                  _eseguiRicerca(val);
                 },
+                onChanged: _onSearchChanged,
                 decoration: InputDecoration(
                   hintText: 'Cerca via, piazza, locale, pub o città...',
                   hintStyle: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 13),
-                  prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFFFACC15)),
+                  prefixIcon: IconButton(
+                    icon: const Icon(Icons.search_rounded, color: Color(0xFFFACC15)),
+                    onPressed: () {
+                      _debounceTimer?.cancel();
+                      _eseguiRicerca(_searchController.text);
+                    },
+                  ),
                   suffixIcon: _isSearching
                       ? const Padding(
                           padding: EdgeInsets.all(12.0),
@@ -345,6 +531,7 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
                           ? IconButton(
                               icon: const Icon(Icons.clear_rounded, color: Color(0xFF94A3B8), size: 18),
                               onPressed: () {
+                                _debounceTimer?.cancel();
                                 _searchController.clear();
                                 setState(() => _searchResults = []);
                               },
@@ -416,7 +603,7 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
                         borderRadius: BorderRadius.circular(14),
                         color: const Color(0xFF1E293B),
                         child: Container(
-                          constraints: const BoxConstraints(maxHeight: 240),
+                          constraints: const BoxConstraints(maxHeight: 250),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1E293B),
                             borderRadius: BorderRadius.circular(14),
@@ -429,9 +616,7 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
                             separatorBuilder: (_, i) => const Divider(color: Color(0xFF334155), height: 1),
                             itemBuilder: (ctx, i) {
                               final item = _searchResults[i];
-                              final title = item['name']?.toString().isNotEmpty == true
-                                  ? item['name'].toString()
-                                  : (item['display_name'] ?? '').toString().split(',').first;
+                              final title = (item['title'] ?? '').toString();
                               final sub = (item['display_name'] ?? '').toString();
 
                               return ListTile(
@@ -457,13 +642,29 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
                       ),
                     ),
 
-                  // Pulsante Zoom In / Zoom Out fluttuanti
+                  // Pulsanti Fluttuanti: GPS Posizione Live + Zoom
                   Positioned(
                     right: 14,
                     bottom: 14,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Pulsante GPS: La mia posizione in tempo reale
+                        FloatingActionButton.small(
+                          heroTag: 'my_gps_location_btn',
+                          backgroundColor: const Color(0xFF0F172A).withValues(alpha: 0.95),
+                          foregroundColor: const Color(0xFFFACC15),
+                          tooltip: 'La mia posizione GPS',
+                          onPressed: _isLocating ? null : _vaiAllaMiaPosizione,
+                          child: _isLocating
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFFACC15)),
+                                )
+                              : const Icon(Icons.my_location_rounded, size: 20),
+                        ),
+                        const SizedBox(height: 10),
                         FloatingActionButton.small(
                           heroTag: 'zoom_in_map',
                           backgroundColor: const Color(0xFF0F172A).withValues(alpha: 0.85),
