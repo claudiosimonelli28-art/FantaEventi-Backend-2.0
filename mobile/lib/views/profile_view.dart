@@ -9,6 +9,8 @@ import '../services/api_service.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/founder_badge.dart';
 import 'login_view.dart';
+import '../services/tutorial_controller.dart';
+import '../widgets/tutorial_spotlight_overlay.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -107,6 +109,123 @@ class _ProfileViewState extends State<ProfileView> {
       await _apiService.getUtenti();
       if (mounted) setState(() {});
     } catch (_) {}
+  }
+
+  void _concludiTutorial() async {
+    final int userLevel = _utente.livello;
+    final String badgeAwarded = userLevel >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
+
+    await _apiService.segnaGuidaRegoleCompletata();
+    TutorialController.instance.completeTutorial(context);
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: Color(0xFFFACC15), width: 2),
+        ),
+        title: Column(
+          children: [
+            const Text('🏆', style: TextStyle(fontSize: 44)),
+            const SizedBox(height: 8),
+            Text(
+              'TUTORIAL COMPLETATO!',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                color: const Color(0xFFFACC15),
+                fontWeight: FontWeight.w900,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Fantastico! Ora conosci tutte le meccaniche di FantaEventi:',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(color: const Color(0xFFCBD5E1), fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF9333EA)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                      const SizedBox(width: 8),
+                      Text('Creazione Eventi & Regole', style: GoogleFonts.inter(fontSize: 12, color: Colors.white)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                      const SizedBox(width: 8),
+                      Text('Votazioni Live & Quorum', style: GoogleFonts.inter(fontSize: 12, color: Colors.white)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                      const SizedBox(width: 8),
+                      Text('Centro Notifiche & Inviti', style: GoogleFonts.inter(fontSize: 12, color: Colors.white)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF10B981), size: 16),
+                      const SizedBox(width: 8),
+                      Text('Foto Selfie & Codice Amico', style: GoogleFonts.inter(fontSize: 12, color: Colors.white)),
+                    ],
+                  ),
+                  const Divider(color: Color(0xFF334155), height: 16),
+                  Text('BADGE SPECIALE SBLOCCATO:', style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF94A3B8), fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 2),
+                  Text(badgeAwarded, style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFFFACC15), fontWeight: FontWeight.bold)),
+                  Text('+100 Punti XP Aggiunti al tuo Profilo! 🚀', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF38BDF8))),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                setState(() {});
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFACC15),
+                foregroundColor: const Color(0xFF0F172A),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: Text(
+                'INIZIA A GIOCARE! 🚀',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // MODALE CON LA LISTA COMPLETA DEGLI AMICI
@@ -1001,6 +1120,36 @@ class _ProfileViewState extends State<ProfileView> {
           padding: const EdgeInsets.all(20.0),
           child: Column(
             children: [
+              if (TutorialController.instance.stage == TutorialStage.step10_in_profile) ...[
+                TutorialStepBanner(
+                  stepTag: 'Tappa 4 di 4 • Profilo & Codice Amico',
+                  title: 'Personalizza il tuo Profilo & Connettiti!',
+                  description: '1) FOTO: Tocca la fotocamera qui sotto per scattare un selfie reale con la fotocamera, caricare dalla galleria o scegliere un avatar!\n2) CODICE AMICO: È il tuo codice personale univoco. Copialo per inviarlo agli amici su WhatsApp, e incolla il loro codice per aggiungerli!',
+                  onSkip: () {
+                    TutorialController.instance.skipTutorial();
+                    setState(() {});
+                  },
+                ),
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  child: ElevatedButton.icon(
+                    onPressed: _concludiTutorial,
+                    icon: const Text('🏆', style: TextStyle(fontSize: 22)),
+                    label: Text(
+                      'COMPLETA IL TUTORIAL E RITIRA +100 XP',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFACC15),
+                      foregroundColor: const Color(0xFF0F172A),
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 6,
+                    ),
+                  ),
+                ),
+              ],
               // Avatar & Basic Info Card
               Container(
                 width: double.infinity,

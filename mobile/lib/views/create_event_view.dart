@@ -6,6 +6,8 @@ import '../services/api_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
 import '../widgets/avatar_helper.dart';
+import '../services/tutorial_controller.dart';
+import '../widgets/tutorial_spotlight_overlay.dart';
 
 class CreateEventView extends StatefulWidget {
   const CreateEventView({super.key});
@@ -158,6 +160,11 @@ class _CreateEventViewState extends State<CreateEventView> {
       final nick = curUser.nome.isNotEmpty ? curUser.nome : 'Cloud';
       _partecipantiSelezionati.add(nick);
     }
+    if (TutorialController.instance.stage == TutorialStage.step3_in_create_event) {
+      _titoloController.text = 'Festa di Benvenuto 🎉';
+      _descrizioneController.text = 'Il mio primo evento su FantaEventi!';
+      _luogoController.text = 'Casa mia';
+    }
     _caricaUtentiMongoDB();
   }
 
@@ -217,19 +224,16 @@ class _CreateEventViewState extends State<CreateEventView> {
 
   Future<void> _submitForm() async {
     if (_formKey.currentState?.validate() ?? false) {
+      final curUser = _apiService.currentUser;
+      final creatore = curUser?.nome ?? 'Cloud';
+
       if (_partecipantiSelezionati.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Seleziona almeno un partecipante per l\'evento')),
-        );
-        return;
+        _partecipantiSelezionati.add(creatore);
       }
 
       setState(() {
         _isLoading = true;
       });
-
-      final curUser = _apiService.currentUser;
-      final creatore = curUser?.nome ?? 'Cloud';
 
       final nuovoEvento = Evento(
         id: 'e_${DateTime.now().millisecondsSinceEpoch}',
@@ -248,6 +252,10 @@ class _CreateEventViewState extends State<CreateEventView> {
       );
 
       await _apiService.creaEvento(nuovoEvento);
+
+      if (TutorialController.instance.stage == TutorialStage.step3_in_create_event) {
+        TutorialController.instance.setStage(TutorialStage.step4_tap_event_card);
+      }
 
       if (!mounted) return;
 
@@ -275,6 +283,16 @@ class _CreateEventViewState extends State<CreateEventView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (TutorialController.instance.stage == TutorialStage.step3_in_create_event)
+                  TutorialStepBanner(
+                    stepTag: 'Tappa 1 di 4 • Creazione Evento',
+                    title: 'Questo è il tuo primo Evento di Prova!',
+                    description: 'Al momento sei da solo perché non hai ancora collegato i tuoi amici, ma in futuro potrai invitarli tutti qui col tuo Codice Amico. Tocca "Crea Evento" in fondo alla pagina per confermare!',
+                    onSkip: () {
+                      TutorialController.instance.skipTutorial();
+                      setState(() {});
+                    },
+                  ),
                 Text(
                   'Crea una nuova esperienza',
                   style: GoogleFonts.poppins(

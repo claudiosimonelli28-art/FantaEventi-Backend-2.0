@@ -64,16 +64,16 @@ class BonusMalusController {
           );
         }
 
-        final eventoNome = (evDoc?['nome'] ?? evDoc?['titolo'] ?? eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento').toString();
+        final eventoNome = (evDoc['nome'] ?? evDoc['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
 
         final Set<String> destinatariSet = {'Cloud', 'cloud'};
-        final creatore = (evDoc?['propostoDa'] ?? evDoc?['creatore'] ?? '').toString().trim();
+        final creatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '').toString().trim();
         if (creatore.isNotEmpty) destinatariSet.add(creatore);
 
-        final rawPart = (evDoc?['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final rawPart = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
         destinatariSet.addAll(rawPart);
 
-        final rawInv = (evDoc?['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final rawInv = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
         destinatariSet.addAll(rawInv);
 
         destinatariSet.removeWhere((d) => d.trim().toLowerCase() == propostoDaUtente.trim().toLowerCase() || d.trim().isEmpty);

@@ -19,6 +19,8 @@ import '../models/bonus_malus.dart';
 import '../models/richiesta_var.dart';
 import '../services/api_service.dart';
 import 'add_bonus_malus_view.dart';
+import '../services/tutorial_controller.dart';
+import '../widgets/tutorial_spotlight_overlay.dart';
 
 class EventDetailView extends StatefulWidget {
   final Evento evento;
@@ -226,6 +228,16 @@ class _EventDetailViewState extends State<EventDetailView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (TutorialController.instance.stage == TutorialStage.step5_in_event_detail)
+                    TutorialStepBanner(
+                      stepTag: 'Tappa 2 di 4 • Dettaglio Evento',
+                      title: 'Proponi la prima Regola di Gioco!',
+                      description: 'Scorri fino in fondo a questa pagina e tocca "PROPONI BONUS" per proporre una regola per questa serata!',
+                      onSkip: () {
+                        TutorialController.instance.skipTutorial();
+                        setState(() {});
+                      },
+                    ),
                   // Info Organizzatore e Stato
                   Row(
                     children: [
@@ -581,11 +593,18 @@ class _EventDetailViewState extends State<EventDetailView> {
                       if (_evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
                         Expanded(
                           child: ElevatedButton.icon(
+                            key: TutorialController.instance.keyProponiBonus,
                             onPressed: () async {
+                              if (TutorialController.instance.stage == TutorialStage.step5_in_event_detail) {
+                                TutorialController.instance.setStage(TutorialStage.step6_in_add_bonus);
+                              }
                               await Navigator.of(context).push(
                                 MaterialPageRoute(builder: (_) => AddBonusMalusView(evento: _evento)),
                               );
                               widget.onRefresh();
+                              if (TutorialController.instance.stage == TutorialStage.step7_view_votazioni && mounted) {
+                                Navigator.pop(context);
+                              }
                             },
                             icon: const Icon(Icons.stars, color: Colors.white),
                             label: const Text('PROPONI BONUS'),

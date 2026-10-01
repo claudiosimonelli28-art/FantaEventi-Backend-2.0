@@ -3,15 +3,16 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 
 class GuidaRegolamentoModal extends StatefulWidget {
-  const GuidaRegolamentoModal({super.key});
+  final bool isFirstAccess;
+  const GuidaRegolamentoModal({super.key, this.isFirstAccess = false});
 
-  static Future<void> mostra(BuildContext context) async {
-    await showModalBottomSheet(
+  static Future<bool?> mostra(BuildContext context, {bool isFirstAccess = false}) async {
+    return await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black87,
-      builder: (ctx) => const GuidaRegolamentoModal(),
+      builder: (ctx) => GuidaRegolamentoModal(isFirstAccess: isFirstAccess),
     );
   }
 
@@ -30,10 +31,12 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
     super.dispose();
   }
 
-  void _chiudiGuida() {
-    _apiService.segnaGuidaRegoleCompletata();
+  void _chiudiGuida({bool startTutorial = false}) {
+    if (!startTutorial) {
+      _apiService.segnaGuidaRegoleCompletata();
+    }
     if (mounted) {
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(startTutorial);
     }
   }
 
@@ -44,7 +47,7 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
         curve: Curves.easeInOutCubic,
       );
     } else {
-      _chiudiGuida();
+      _chiudiGuida(startTutorial: widget.isFirstAccess);
     }
   }
 
@@ -114,13 +117,15 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
 
                 // Tasto Salta / Chiudi
                 TextButton(
-                  onPressed: _chiudiGuida,
+                  onPressed: () => _chiudiGuida(startTutorial: false),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     visualDensity: VisualDensity.compact,
                   ),
                   child: Text(
-                    _currentPage == 4 ? 'Chiudi' : 'Salta',
+                    _currentPage == 4
+                        ? (widget.isFirstAccess ? 'Salta' : 'Chiudi')
+                        : 'Salta',
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -168,7 +173,7 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton(
-                      onPressed: _chiudiGuida,
+                      onPressed: () => _chiudiGuida(startTutorial: widget.isFirstAccess),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFACC15),
                         foregroundColor: const Color(0xFF0F172A),
@@ -181,15 +186,17 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            'HO CAPITO, ANDIAMO A GIOCARE!',
+                            widget.isFirstAccess
+                                ? '🎮 INIZIA TUTORIAL GUIDATO (+100 XP)'
+                                : 'HO CAPITO, ANDIAMO A GIOCARE!',
                             style: GoogleFonts.poppins(
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 0.3,
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Text('🚀', style: TextStyle(fontSize: 18)),
+                          Text(widget.isFirstAccess ? '✨' : '🚀', style: const TextStyle(fontSize: 18)),
                         ],
                       ),
                     ),

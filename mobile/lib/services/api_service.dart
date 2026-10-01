@@ -228,13 +228,8 @@ class ApiService {
   Future<bool> haVistoGuidaRegole() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final seenLocal = prefs.getBool('guida_regole_completata_v1') ?? false;
-      if (seenLocal) return true;
-      if (_currentUser != null && _currentUser!.haVistoGuida) {
-        await prefs.setBool('guida_regole_completata_v1', true);
-        return true;
-      }
-      return false;
+      final seenLocal = prefs.getBool('tutorial_spotlight_v2_completato') ?? false;
+      return seenLocal;
     } catch (_) {
       return false;
     }
@@ -243,7 +238,7 @@ class ApiService {
   Future<void> segnaGuidaRegoleCompletata() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('guida_regole_completata_v1', true);
+      await prefs.setBool('tutorial_spotlight_v2_completato', true);
       if (_currentUser != null) {
         _currentUser = _currentUser!.copyWith(haVistoGuida: true);
         final db = await _getMongoDb();
@@ -251,8 +246,32 @@ class ApiService {
           final uColl = db.collection('Utenti');
           await uColl.update(
             where.eq('nome', _currentUser!.nome),
-            modify.set('haVistoGuida', true),
+            modify.set('haVistoGuida', true).set('tutorialV2Completato', true),
           );
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> assicuraNotificaBenvenuto(String nickname) async {
+    try {
+      final nots = await getNotifiche(nickname);
+      final hasWelcome = nots.any((n) => 
+        (n['titolo'] ?? '').toString().contains('Benvenuto') || 
+        (n['mittente'] ?? '').toString().contains('Redazione'));
+      if (!hasWelcome) {
+        final db = await _getMongoDb();
+        if (db != null && db.isConnected) {
+          await db.collection('Notifiche').insertOne({
+            'mittente': 'Redazione FantaEventi 👑',
+            'destinatario': nickname,
+            'titolo': 'Benvenuto in FantaEventi! 🎉',
+            'messaggio': 'Ciao $nickname! Benvenuto nella community ufficiale di FantaEventi. Da qui riceverai tutti gli inviti ad eventi dei tuoi amici, le notifiche del VAR e gli aggiornamenti di classifica. Puoi eliminare qualsiasi notifica toccando la \'X\' in alto a destra nella card!',
+            'tipo': 'benvenuto',
+            'stato': 'letto',
+            'letto': false,
+            'data': DateTime.now().toIso8601String(),
+          });
         }
       }
     } catch (_) {}

@@ -17,6 +17,8 @@ import 'notifications_modal.dart';
 import 'event_detail_view.dart';
 import 'var_submission_modal.dart';
 import '../widgets/guida_regolamento_modal.dart';
+import '../widgets/tutorial_spotlight_overlay.dart';
+import '../services/tutorial_controller.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -46,6 +48,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    TutorialController.instance.addListener(_onTutorialChanged);
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging && _isFabMenuOpen) {
@@ -145,9 +148,27 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     if (!seen && mounted) {
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) {
-        GuidaRegolamentoModal.mostra(context);
+        final startTutorial = await GuidaRegolamentoModal.mostra(context, isFirstAccess: true);
+        if (startTutorial == true && mounted) {
+          _avviaTutorialGuidato();
+        }
       }
     }
+  }
+
+  void _onTutorialChanged() {
+    if (mounted) {
+      if (TutorialController.instance.stage == TutorialStage.step7_view_votazioni) {
+        if (_tabController.index != 2) {
+          _tabController.animateTo(2);
+        }
+      }
+      setState(() {});
+    }
+  }
+
+  void _avviaTutorialGuidato() {
+    TutorialController.instance.startTutorial();
   }
 
   void _apriNotifiche() async {
@@ -353,6 +374,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    TutorialController.instance.removeListener(_onTutorialChanged);
     _liveSyncTimer?.cancel();
     _tabController.dispose();
     _fabAnimationController.dispose();
@@ -364,6 +386,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       _isFabMenuOpen = !_isFabMenuOpen;
       if (_isFabMenuOpen) {
         _fabAnimationController.forward();
+        if (TutorialController.instance.stage == TutorialStage.step1_tap_plus) {
+          TutorialController.instance.setStage(TutorialStage.step2_tap_crea_evento);
+        }
       } else {
         _fabAnimationController.reverse();
       }
@@ -375,6 +400,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       setState(() {
         _isFabMenuOpen = false;
         _fabAnimationController.reverse();
+        if (TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
+          TutorialController.instance.setStage(TutorialStage.step1_tap_plus);
+        }
       });
     }
   }
@@ -384,7 +412,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     final curUser = _apiService.currentUser;
     final userNick = curUser?.nome ?? 'Cloud';
 
-    return Scaffold(
+    final Widget mainScaffold = Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
@@ -444,7 +472,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           ),
           // Icona Campanellino Notifiche
           IconButton(
-            onPressed: _apriNotifiche,
+            key: TutorialController.instance.keyNotifiche,
+            onPressed: () {
+              if (TutorialController.instance.stage == TutorialStage.step8_tap_notification) {
+                TutorialController.instance.setStage(TutorialStage.step9_tap_profile);
+              }
+              _apriNotifiche();
+            },
             padding: const EdgeInsets.all(8),
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             visualDensity: VisualDensity.compact,
@@ -452,7 +486,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               clipBehavior: Clip.none,
               children: [
                 const Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
-                if (_numeroNotifiche > 0)
+                if (_numeroNotifiche > 0 || TutorialController.instance.stage == TutorialStage.step8_tap_notification)
                   Positioned(
                     right: -2,
                     top: -2,
@@ -463,7 +497,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                         shape: BoxShape.circle,
                       ),
                       child: Text(
-                        '$_numeroNotifiche',
+                        '${_numeroNotifiche > 0 ? _numeroNotifiche : 1}',
                         style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -475,7 +509,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
           // Profile User Chip (Foto Profilo reale + Livello)
           InkWell(
+            key: TutorialController.instance.keyProfilo,
             onTap: () async {
+              if (TutorialController.instance.stage == TutorialStage.step9_tap_profile) {
+                TutorialController.instance.setStage(TutorialStage.step10_in_profile);
+              }
               await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ProfileView()),
               );
@@ -588,11 +626,15 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       _buildSpeedDialItem(
+                        key: TutorialController.instance.keyCreaEventoItem,
                         label: 'Crea Evento',
                         icon: Icons.calendar_today_rounded,
                         color: const Color(0xFF6366F1),
                         onTap: () async {
                           _closeFabMenu();
+                          if (TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
+                            TutorialController.instance.setStage(TutorialStage.step3_in_create_event);
+                          }
                           await Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const CreateEventView()),
                           );
@@ -620,6 +662,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             ),
           // FAB rotondo (+ animato a X)
           FloatingActionButton(
+            key: TutorialController.instance.keyFabPlus,
             heroTag: 'fab_speed_dial',
             onPressed: _toggleFabMenu,
             backgroundColor: const Color(0xFF9333EA),
@@ -633,67 +676,282 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         ],
       ),
     );
+
+    final overlay = _buildInteractiveTutorialOverlay();
+
+    return Stack(
+      children: [
+        mainScaffold,
+        ?overlay,
+      ],
+    );
+  }
+
+  Widget? _buildInteractiveTutorialOverlay() {
+    final tutorial = TutorialController.instance;
+    if (!tutorial.isActive) return null;
+
+    switch (tutorial.stage) {
+      case TutorialStage.step1_tap_plus:
+        return InteractiveSpotlightOverlay(
+          targetKey: tutorial.keyFabPlus,
+          isTargetRound: true,
+          padding: 8,
+          stepTag: 'Tappa 1 di 4 • Hub Azioni',
+          title: 'Tocca il pulsante ➕ in basso',
+          description: 'Questo è l\'hub rapido delle azioni di gioco. Da qui puoi creare nuovi Eventi o proporre nuove regole Bonus & Malus.',
+          onSkip: () => tutorial.skipTutorial(),
+        );
+
+      case TutorialStage.step2_tap_crea_evento:
+        return InteractiveSpotlightOverlay(
+          targetKey: tutorial.keyCreaEventoItem,
+          isTargetRound: false,
+          padding: 6,
+          stepTag: 'Tappa 1 di 4 • Crea Evento',
+          title: 'Tocca "Crea Evento"',
+          description: 'Apri la schermata per impostare il tuo primo evento di gioco e scoprire come invitare i tuoi compagni.',
+          onSkip: () => tutorial.skipTutorial(),
+        );
+
+      case TutorialStage.step4_tap_event_card:
+        return InteractiveSpotlightOverlay(
+          targetKey: tutorial.keyFirstEventCard,
+          isTargetRound: false,
+          padding: 4,
+          stepTag: 'Tappa 2 di 4 • Entra nell\'Evento',
+          title: 'Tocca la Scheda dell\'Evento!',
+          description: 'Ottimo lavoro! Il tuo evento è ora nel feed. Toccalo per aprire i dettagli, visualizzare la classifica e proporre la prima regola.',
+          onSkip: () => tutorial.skipTutorial(),
+        );
+
+      case TutorialStage.step7_view_votazioni:
+        return _buildVotazioniLiveGuideOverlay();
+
+      case TutorialStage.step8_tap_notification:
+        return InteractiveSpotlightOverlay(
+          targetKey: tutorial.keyNotifiche,
+          isTargetRound: true,
+          padding: 8,
+          stepTag: 'Tappa 3 di 4 • Centro Notifiche',
+          title: 'Tocca il Campanellino 🔔',
+          description: 'Hai 1 notifica ufficiale! Tocca il campanellino per leggere il messaggio di benvenuto della Redazione e scoprire come gestire gli avvisi.',
+          onSkip: () => tutorial.skipTutorial(),
+        );
+
+      case TutorialStage.step9_tap_profile:
+        return InteractiveSpotlightOverlay(
+          targetKey: tutorial.keyProfilo,
+          isTargetRound: false,
+          padding: 6,
+          stepTag: 'Tappa 4 di 4 • Profilo Giocatore',
+          title: 'Tocca il tuo Profilo 📸',
+          description: 'Ci siamo quasi! Tocca il tuo profilo in alto a destra per scoprire il tuo Codice Amico, impostare la tua foto e riscuotere la ricompensa (+100 XP)!',
+          onSkip: () => tutorial.skipTutorial(),
+        );
+
+      default:
+        return null;
+    }
+  }
+
+  Widget _buildVotazioniLiveGuideOverlay() {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: () {},
+            behavior: HitTestBehavior.opaque,
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.65),
+            ),
+          ),
+        ),
+        Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24),
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFFACC15), width: 1.8),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFACC15).withValues(alpha: 0.3),
+                  blurRadius: 25,
+                  spreadRadius: 3,
+                ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.7),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFFACC15)),
+                      ),
+                      child: Text(
+                        'TAPPA 2 DI 4 • VOTAZIONE LIVE',
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFFFACC15),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    const Text('🗳️ DEMOCRAZIA', style: TextStyle(fontSize: 12, color: Color(0xFFC084FC), fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Ecco la tua proposta tra i Voti Live! 🎉',
+                  style: GoogleFonts.poppins(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Come vedi, la proposta è apparsa qui in tempo reale. Visto che l\'hai proposta tu, il tuo voto è già calcolato a favore.\n\nQuando giocherai con i tuoi amici, la votazione sarà democratica e servirà il raggiungimento del Quorum per approvarla ufficialmente!',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: const Color(0xFFE2E8F0),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          TutorialController.instance.setStage(TutorialStage.step8_tap_notification);
+                        },
+                        icon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 18),
+                        label: Text(
+                          'AVANTI: VEDI NOTIFICHE 🔔',
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFACC15),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 6,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Center(
+                  child: TextButton(
+                    onPressed: () => TutorialController.instance.skipTutorial(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF94A3B8),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    child: Text(
+                      'Salta Tutorial',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildSpeedDialItem({
+    Key? key,
     required String label,
     required IconData icon,
     required Color color,
     required VoidCallback onTap,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 4.0),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withValues(alpha: 0.6), width: 1.2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
+    return Container(
+      key: key,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 4.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: color.withValues(alpha: 0.6), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
                   ),
-                ],
-              ),
-              child: Text(
-                label,
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
                 ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [color, color.withValues(alpha: 0.8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: color.withValues(alpha: 0.5),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+              const SizedBox(width: 12),
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [color, color.withValues(alpha: 0.8)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
+                  boxShadow: [
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.5),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
               ),
-              child: Icon(icon, color: Colors.white, size: 24),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -733,17 +991,24 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemCount: _eventi.length,
         itemBuilder: (ctx, idx) {
           final ev = _eventi[idx];
-          return EventCard(
-            evento: ev,
-            currentUserNickname: userNick,
-            onTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
-              );
-              _loadData(forceRefresh: true);
-            },
-            onPartecipa: () => _partecipaEvento(ev),
-            onElimina: () => _confermaEliminazioneEvento(ev),
+          final isFirstCard = idx == 0;
+          return Container(
+            key: isFirstCard ? TutorialController.instance.keyFirstEventCard : null,
+            child: EventCard(
+              evento: ev,
+              currentUserNickname: userNick,
+              onTap: () async {
+                if (isFirstCard && TutorialController.instance.stage == TutorialStage.step4_tap_event_card) {
+                  TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
+                }
+                await Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
+                );
+                _loadData(forceRefresh: true);
+              },
+              onPartecipa: () => _partecipaEvento(ev),
+              onElimina: () => _confermaEliminazioneEvento(ev),
+            ),
           );
         },
       );

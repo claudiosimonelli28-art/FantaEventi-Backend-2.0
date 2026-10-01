@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import 'var_decision_modal.dart';
 import 'var_witness_modal.dart';
+import '../services/tutorial_controller.dart';
+import '../widgets/tutorial_spotlight_overlay.dart';
 
 class NotificationsModal extends StatefulWidget {
   final VoidCallback onRefreshHome;
@@ -24,6 +26,14 @@ class _NotificationsModalState extends State<NotificationsModal> {
   void initState() {
     super.initState();
     _caricaNotifiche();
+  }
+
+  @override
+  void dispose() {
+    if (TutorialController.instance.stage == TutorialStage.step8_tap_notification) {
+      TutorialController.instance.setStage(TutorialStage.step9_tap_profile);
+    }
+    super.dispose();
   }
 
   Future<void> _caricaNotifiche() async {
@@ -149,6 +159,16 @@ class _NotificationsModalState extends State<NotificationsModal> {
             ],
           ),
           const SizedBox(height: 16),
+          if (TutorialController.instance.stage == TutorialStage.step8_tap_notification)
+            TutorialStepBanner(
+              stepTag: 'Tappa 3 di 4 • Centro Notifiche',
+              title: 'Ecco la tua prima Notifica!',
+              description: 'La Redazione ti dà il benvenuto! Da qui gestirai gli inviti agli eventi e le chiamate al VAR. Puoi eliminare le notifiche vecchie toccando la "X" sulla card. Chiudi questo pannello con la "X" in alto per proseguire verso il tuo Profilo!',
+              onSkip: () {
+                TutorialController.instance.skipTutorial();
+                setState(() {});
+              },
+            ),
           _isLoading
               ? const Center(
                   child: Padding(

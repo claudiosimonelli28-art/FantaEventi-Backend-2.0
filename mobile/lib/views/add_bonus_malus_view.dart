@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../models/bonus_malus.dart';
 import '../models/evento.dart';
+import '../services/tutorial_controller.dart';
+import '../widgets/tutorial_spotlight_overlay.dart';
 
 class AddBonusMalusView extends StatefulWidget {
   final Evento? evento;
@@ -40,6 +42,11 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
     super.initState();
     if (widget.evento != null && !widget.evento!.isConcluso) {
       _eventoSelezionato = widget.evento;
+    }
+    if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus) {
+      _titoloController.text = 'Bicchierata alla goccia 🍺';
+      _descrizioneController.text = 'Bere un bicchiere tutto d\'un fiato senza posarlo';
+      _puntiController.text = '15';
     }
   }
 
@@ -99,6 +106,10 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
 
       await _apiService.proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus);
 
+      if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus) {
+        TutorialController.instance.setStage(TutorialStage.step7_view_votazioni);
+      }
+
       if (!mounted) return;
 
       Navigator.pop(context);
@@ -125,6 +136,16 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus)
+                  TutorialStepBanner(
+                    stepTag: 'Tappa 2 di 4 • Proposta Regola',
+                    title: 'Proponi una Regola Goliardica!',
+                    description: 'Siccome questa regola la stai proponendo tu, il tuo voto è già automaticamente a favore (PRO)! Quando giocherai con i tuoi amici, la proposta apparirà a tutti loro nelle Votazioni Live per essere convalidata.',
+                    onSkip: () {
+                      TutorialController.instance.skipTutorial();
+                      setState(() {});
+                    },
+                  ),
                 // Event Banner
                 if (_eventoSelezionato != null)
                   Container(
