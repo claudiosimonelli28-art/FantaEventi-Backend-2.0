@@ -33,7 +33,7 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
 
   void _chiudiGuida({bool startTutorial = false}) {
     if (!startTutorial) {
-      _apiService.segnaGuidaRegoleCompletata();
+      _apiService.segnaGuidaRegoleCompletata(awardXp: false);
     }
     if (mounted) {
       Navigator.of(context).pop(startTutorial);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class InteractiveSpotlightOverlay extends StatefulWidget {
@@ -83,241 +84,344 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
       return const SizedBox.shrink();
     }
 
-    final isTargetAtBottom = targetRect.center.dy > screenSize.height / 2;
+    final isTargetRound = widget.isTargetRound || (targetRect.width - targetRect.height).abs() < 12;
+    final double holeRadius = (targetRect.width > targetRect.height ? targetRect.width : targetRect.height) / 2;
+    final Offset center = targetRect.center;
+    final Rect holeRect = isTargetRound
+        ? Rect.fromCircle(center: center, radius: holeRadius)
+        : targetRect;
 
-    return Stack(
-      children: [
-        // 1. I 4 BOX OSCURANTI ATTUATORI (Lasciano il target scoperto al 100% per i tap!)
-        // Box Superiore
-        Positioned(
-          left: 0,
-          top: 0,
-          width: screenSize.width,
-          height: targetRect.top.clamp(0.0, screenSize.height),
-          child: _buildBackdropBlock(),
-        ),
-        // Box Inferiore
-        Positioned(
-          left: 0,
-          top: targetRect.bottom.clamp(0.0, screenSize.height),
-          width: screenSize.width,
-          height: (screenSize.height - targetRect.bottom).clamp(0.0, screenSize.height),
-          child: _buildBackdropBlock(),
-        ),
-        // Box Sinistro
-        Positioned(
-          left: 0,
-          top: targetRect.top.clamp(0.0, screenSize.height),
-          width: targetRect.left.clamp(0.0, screenSize.width),
-          height: targetRect.height,
-          child: _buildBackdropBlock(),
-        ),
-        // Box Destro
-        Positioned(
-          left: targetRect.right.clamp(0.0, screenSize.width),
-          top: targetRect.top.clamp(0.0, screenSize.height),
-          width: (screenSize.width - targetRect.right).clamp(0.0, screenSize.width),
-          height: targetRect.height,
-          child: _buildBackdropBlock(),
-        ),
+    final isTargetAtBottom = holeRect.center.dy > screenSize.height / 2;
 
-        // 2. CORNICE NEON PULSANTE SUL TARGET (Visiva, lascia passare il tocco al pulsante)
-        Positioned(
-          left: targetRect.left,
-          top: targetRect.top,
-          width: targetRect.width,
-          height: targetRect.height,
-          child: IgnorePointer(
-            child: ScaleTransition(
-              scale: _pulseAnimation,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(
-                    widget.isTargetRound || targetRect.width == targetRect.height ? 100 : 16,
+    return SpotlightHitTestBlocker(
+      targetRect: holeRect,
+      isRound: isTargetRound,
+      child: Stack(
+        children: [
+          // 1. MASCHERA SCURA CON RITAGLIO CIRCOLARE / RTONDO PERFETTO (Senza fori quadrati!)
+          Positioned.fill(
+            child: CustomPaint(
+              painter: SpotlightHolePainter(
+                targetRect: holeRect,
+                isRound: isTargetRound,
+                backdropColor: Colors.black.withValues(alpha: 0.82),
+              ),
+            ),
+          ),
+
+          // 2. CORNICE NEON PULSANTE SUL TARGET (Visiva, identica al ritaglio)
+          Positioned(
+            left: isTargetRound ? (center.dx - holeRadius) : targetRect.left,
+            top: isTargetRound ? (center.dy - holeRadius) : targetRect.top,
+            width: isTargetRound ? (holeRadius * 2) : targetRect.width,
+            height: isTargetRound ? (holeRadius * 2) : targetRect.height,
+            child: IgnorePointer(
+              child: ScaleTransition(
+                scale: _pulseAnimation,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: isTargetRound ? BoxShape.circle : BoxShape.rectangle,
+                    borderRadius: isTargetRound ? null : BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFFACC15), width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFACC15).withValues(alpha: 0.65),
+                        blurRadius: 18,
+                        spreadRadius: 3,
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFF9333EA).withValues(alpha: 0.5),
+                        blurRadius: 26,
+                        spreadRadius: 4,
+                      ),
+                    ],
                   ),
-                  border: Border.all(color: const Color(0xFFFACC15), width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFACC15).withValues(alpha: 0.6),
-                      blurRadius: 16,
-                      spreadRadius: 3,
-                    ),
-                    BoxShadow(
-                      color: const Color(0xFF9333EA).withValues(alpha: 0.5),
-                      blurRadius: 24,
-                      spreadRadius: 4,
-                    ),
-                  ],
                 ),
               ),
             ),
           ),
-        ),
 
-        // 3. FRECCIA ANIMATA DI PUNTAMENTO VERSO IL TARGET
-        Positioned(
-          left: (targetRect.center.dx - 20).clamp(16.0, screenSize.width - 56.0),
-          top: isTargetAtBottom
-              ? (targetRect.top - 46).clamp(0.0, screenSize.height)
-              : (targetRect.bottom + 6).clamp(0.0, screenSize.height),
-          child: IgnorePointer(
-            child: AnimatedBuilder(
-              animation: _bounceAnimation,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, isTargetAtBottom ? -_bounceAnimation.value : _bounceAnimation.value),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFACC15),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFFACC15).withValues(alpha: 0.7),
-                          blurRadius: 10,
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      isTargetAtBottom ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
-                      color: const Color(0xFF0F172A),
-                      size: 22,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-
-        // 4. FLOATING GUIDE CARD ELEGANTE (Posizionata in modo opposto al target)
-        Positioned(
-          left: 16,
-          right: 16,
-          top: isTargetAtBottom ? MediaQuery.of(context).padding.top + 20 : null,
-          bottom: !isTargetAtBottom ? MediaQuery.of(context).padding.bottom + 24 : null,
-          child: Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  blurRadius: 25,
-                  spreadRadius: 4,
-                ),
-                BoxShadow(
-                  color: const Color(0xFF9333EA).withValues(alpha: 0.35),
-                  blurRadius: 18,
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Tag fase
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          // 3. FRECCIA ANIMATA DI PUNTAMENTO VERSO IL TARGET
+          Positioned(
+            left: (holeRect.center.dx - 20).clamp(16.0, screenSize.width - 56.0),
+            top: isTargetAtBottom
+                ? (holeRect.top - 48).clamp(0.0, screenSize.height)
+                : (holeRect.bottom + 8).clamp(0.0, screenSize.height),
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _bounceAnimation,
+                builder: (context, child) {
+                  return Transform.translate(
+                    offset: Offset(0, isTargetAtBottom ? -_bounceAnimation.value : _bounceAnimation.value),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFACC15).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFFACC15)),
+                        color: const Color(0xFFFACC15),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFACC15).withValues(alpha: 0.7),
+                            blurRadius: 10,
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        widget.stepTag.toUpperCase(),
-                        style: GoogleFonts.poppins(
-                          color: const Color(0xFFFACC15),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                          letterSpacing: 0.5,
-                        ),
+                      child: Icon(
+                        isTargetAtBottom ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                        color: const Color(0xFF0F172A),
+                        size: 22,
                       ),
                     ),
-                    const Text('🎮 GUIDA ATTIVA', style: TextStyle(fontSize: 12, color: Color(0xFFC084FC), fontWeight: FontWeight.bold)),
-                  ],
+                  );
+                },
+              ),
+            ),
+          ),
+
+          // 4. FLOATING GUIDE CARD ELEGANTE (Posizionata in modo opposto al target)
+          Positioned(
+            left: 16,
+            right: 16,
+            top: isTargetAtBottom ? MediaQuery.of(context).padding.top + 20 : null,
+            bottom: !isTargetAtBottom ? MediaQuery.of(context).padding.bottom + 24 : null,
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  widget.title,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    blurRadius: 25,
+                    spreadRadius: 4,
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.description,
-                  style: GoogleFonts.inter(
-                    color: const Color(0xFFCBD5E1),
-                    fontSize: 13,
-                    height: 1.45,
+                  BoxShadow(
+                    color: const Color(0xFF9333EA).withValues(alpha: 0.35),
+                    blurRadius: 18,
                   ),
-                ),
-                const SizedBox(height: 16),
-                // Azione o Salta
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.touch_app_rounded, color: Color(0xFFFACC15), size: 18),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Tocca l\'icona evidenziata!',
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4)),
+                        ),
+                        child: Text(
+                          widget.stepTag.toUpperCase(),
                           style: GoogleFonts.poppins(
                             color: const Color(0xFFFACC15),
                             fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (widget.onSkip != null)
-                      TextButton(
-                        onPressed: widget.onSkip,
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF94A3B8),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        child: Text(
-                          'Salta Tutorial',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
+                            fontSize: 11,
+                            letterSpacing: 0.8,
                           ),
                         ),
                       ),
-                  ],
-                ),
-              ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF9333EA).withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            const Text('✨', style: TextStyle(fontSize: 12)),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Guida',
+                              style: GoogleFonts.poppins(
+                                color: const Color(0xFFC084FC),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.title,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 18,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    widget.description,
+                    style: GoogleFonts.inter(
+                      color: const Color(0xFFCBD5E1),
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.touch_app_rounded, color: Color(0xFFFACC15), size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Tocca l\'icona evidenziata!',
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFFFACC15),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (widget.onSkip != null)
+                        TextButton(
+                          onPressed: widget.onSkip,
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF94A3B8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          child: Text(
+                            'Salta Tutorial',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Disegna la maschera scura ritagliando perfettamente la forma del target (senza spigoli quadrati)
+class SpotlightHolePainter extends CustomPainter {
+  final Rect targetRect;
+  final bool isRound;
+  final Color backdropColor;
+
+  SpotlightHolePainter({
+    required this.targetRect,
+    required this.isRound,
+    required this.backdropColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final screenPath = Path()..addRect(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    final Path holePath = Path();
+    if (isRound) {
+      holePath.addOval(targetRect);
+    } else {
+      holePath.addRRect(RRect.fromRectAndRadius(targetRect, const Radius.circular(16)));
+    }
+
+    final combinedPath = Path.combine(PathOperation.difference, screenPath, holePath);
+    final paint = Paint()
+      ..color = backdropColor
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(combinedPath, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant SpotlightHolePainter oldDelegate) {
+    return oldDelegate.targetRect != targetRect ||
+        oldDelegate.isRound != isRound ||
+        oldDelegate.backdropColor != backdropColor;
+  }
+}
+
+/// Blocco hit-test che assorbe i tap fuori dal foro dello spotlight, ma lascia passare
+/// liberamente i tap che colpiscono esattamente l'elemento evidenziato!
+class SpotlightHitTestBlocker extends SingleChildRenderObjectWidget {
+  final Rect targetRect;
+  final bool isRound;
+
+  const SpotlightHitTestBlocker({
+    super.key,
+    required this.targetRect,
+    required this.isRound,
+    super.child,
+  });
+
+  @override
+  RenderSpotlightHitTestBlocker createRenderObject(BuildContext context) {
+    return RenderSpotlightHitTestBlocker(
+      targetRect: targetRect,
+      isRound: isRound,
     );
   }
 
-  Widget _buildBackdropBlock() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {},
-      child: Container(
-        color: Colors.black.withValues(alpha: 0.82),
-      ),
-    );
+  @override
+  void updateRenderObject(BuildContext context, RenderSpotlightHitTestBlocker renderObject) {
+    renderObject
+      ..targetRect = targetRect
+      ..isRound = isRound;
+  }
+}
+
+class RenderSpotlightHitTestBlocker extends RenderProxyBox {
+  Rect targetRect;
+  bool isRound;
+
+  RenderSpotlightHitTestBlocker({
+    required this.targetRect,
+    required this.isRound,
+  });
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    // 1. Prima testiamo i figli interattivi (es. la card con il tasto 'Salta Tutorial')
+    if (super.hitTestChildren(result, position: position)) {
+      return true;
+    }
+
+    // 2. Verifichiamo se il punto del tocco cade dentro l'apertura dello spotlight
+    bool isInsideHole;
+    if (isRound) {
+      final center = targetRect.center;
+      final radius = (targetRect.width > targetRect.height ? targetRect.width : targetRect.height) / 2;
+      final distance = (position - center).distance;
+      isInsideHole = distance <= radius;
+    } else {
+      isInsideHole = targetRect.contains(position);
+    }
+
+    if (isInsideHole) {
+      // Il tocco è dentro lo spotlight: ritorniamo false in modo che Flutter
+      // continui il test degli strati sottostanti (il FAB +, il campanellino, o il pulsante)!
+      return false;
+    }
+
+    // 3. Tocco fuori dallo spotlight: assorbiamo il tocco per proteggere il gioco
+    result.add(BoxHitTestEntry(this, position));
+    return true;
   }
 }
 

@@ -51,13 +51,11 @@ class TutorialController extends ChangeNotifier {
 
   void skipTutorial() {
     _stage = TutorialStage.idle;
-    ApiService().segnaGuidaRegoleCompletata();
     notifyListeners();
   }
 
   void completeTutorial(BuildContext context) {
     _stage = TutorialStage.idle;
-    ApiService().segnaGuidaRegoleCompletata();
     notifyListeners();
   }
 }

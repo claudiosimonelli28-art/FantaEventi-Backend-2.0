@@ -235,24 +235,58 @@ class ApiService {
     }
   }
 
+  bool? _cachedTutorialPremioRiscattato;
+
+  bool get hasRedeemedTutorialLocally {
+    if (_cachedTutorialPremioRiscattato == true) return true;
+    final cur = _currentUser;
+    if (cur != null && cur.haVistoGuida) return true;
+    return _cachedTutorialPremioRiscattato ?? false;
+  }
+
   Future<bool> haGiaRiscattatoPremioTutorial() async {
     try {
+      if (_cachedTutorialPremioRiscattato == true) return true;
       final curUser = _currentUser;
       final prefs = await SharedPreferences.getInstance();
       if (curUser != null) {
-        final localVal = prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome}');
-        if (localVal == true) return true;
+        final localVal = prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome}') ??
+            prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}');
+        if (localVal == true) {
+          _cachedTutorialPremioRiscattato = true;
+          return true;
+        }
       }
       final globalLocal = prefs.getBool('tutorial_premio_riscattato_v3') ?? false;
-      if (globalLocal) return true;
+      if (globalLocal) {
+        _cachedTutorialPremioRiscattato = true;
+        return true;
+      }
+      final v3Done = prefs.getBool('tutorial_interactive_v3_completato') ?? false;
+      if (v3Done) {
+        _cachedTutorialPremioRiscattato = true;
+        return true;
+      }
 
       if (curUser != null) {
         final db = await _getMongoDb();
         if (db != null && db.isConnected) {
-          final uDoc = await db.collection('Utenti').findOne(where.eq('nome', curUser.nome));
+          ObjectId? uObjId;
+          try {
+            if (curUser.id.isNotEmpty && curUser.id.length == 24) {
+              uObjId = ObjectId.fromHexString(curUser.id);
+            }
+          } catch (_) {}
+
+          final selector = uObjId != null ? where.id(uObjId) : where.eq('nome', curUser.nome);
+          final uDoc = await db.collection('Utenti').findOne(selector);
           if (uDoc != null) {
-            if (uDoc['tutorialPremioRiscattato'] == true || uDoc['tutorialV3Completato'] == true) {
+            if (uDoc['tutorialPremioRiscattato'] == true ||
+                uDoc['tutorialV3Completato'] == true ||
+                uDoc['haVistoGuida'] == true) {
+              _cachedTutorialPremioRiscattato = true;
               await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome}', true);
+              await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}', true);
               return true;
             }
           }
@@ -271,7 +305,13 @@ class ApiService {
       
       final curUser = _currentUser;
       if (curUser != null) {
+        // Prevenzione totale farming: se ha già riscattato, non incrementare MAI più XP
+        final bool alreadyRedeemed = await haGiaRiscattatoPremioTutorial();
+        final bool shouldActuallyAward = awardXp && !alreadyRedeemed;
+
+        _cachedTutorialPremioRiscattato = true;
         await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome}', true);
+        await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}', true);
         await prefs.setBool('tutorial_premio_riscattato_v3', true);
 
         final badge = curUser.livello >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
@@ -280,7 +320,7 @@ class ApiService {
           newBadges.add(badge);
         }
         
-        final newXp = awardXp ? (curUser.xp + 100) : curUser.xp;
+        final newXp = shouldActuallyAward ? (curUser.xp + 100) : curUser.xp;
         _currentUser = curUser.copyWith(
           haVistoGuida: true,
           xp: newXp,
@@ -296,14 +336,19 @@ class ApiService {
             .set('tutorialPremioRiscattato', true)
             .addToSet('badgeList', badge);
 
-          if (awardXp) {
+          if (shouldActuallyAward) {
             mod = mod.inc('xp', 100);
           }
 
-          await uColl.update(
-            where.eq('nome', curUser.nome),
-            mod,
-          );
+          ObjectId? uObjId;
+          try {
+            if (curUser.id.isNotEmpty && curUser.id.length == 24) {
+              uObjId = ObjectId.fromHexString(curUser.id);
+            }
+          } catch (_) {}
+
+          final selector = uObjId != null ? where.id(uObjId) : where.eq('nome', curUser.nome);
+          await uColl.update(selector, mod);
         }
       }
     } catch (_) {}

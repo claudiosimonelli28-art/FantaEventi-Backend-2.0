@@ -53,6 +53,7 @@ class _ProfileViewState extends State<ProfileView> {
   void initState() {
     super.initState();
     _utente = _apiService.currentUser ?? _apiService.getCurrentUser();
+    _haGiaRiscattatoPremio = _apiService.hasRedeemedTutorialLocally;
     _countCampione = _utente.countCampione;
     _countReMalus = _utente.countReMalus;
     _countAvvocato = _utente.countAvvocato;
@@ -108,7 +109,7 @@ class _ProfileViewState extends State<ProfileView> {
             _countSbirro = _utente.countSbirro;
             _countGiustiziere = _utente.countGiustiziere;
           }
-          _haGiaRiscattatoPremio = giaRiscattato;
+          _haGiaRiscattatoPremio = giaRiscattato || _apiService.hasRedeemedTutorialLocally;
         });
       }
       await _apiService.getUtenti();
@@ -117,15 +118,22 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   void _concludiTutorial() async {
-    final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
+    final bool giaRiscattato = _haGiaRiscattatoPremio || _apiService.hasRedeemedTutorialLocally;
     final int userLevel = _utente.livello;
     final String badgeAwarded = userLevel >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
 
-    await _apiService.segnaGuidaRegoleCompletata(awardXp: !giaRiscattato);
-    await _caricaProfiloAggiornato();
-    if (!mounted) return;
+    // 1. Rimuovi il banner immediatamente: zero attese
     TutorialController.instance.completeTutorial(context);
+    setState(() {
+      _haGiaRiscattatoPremio = true;
+    });
 
+    // 2. Salva in background senza bloccare la UI
+    _apiService.segnaGuidaRegoleCompletata(awardXp: !giaRiscattato).then((_) {
+      _caricaProfiloAggiornato();
+    });
+
+    // 3. Mostra subito la modale celebrativa
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -230,8 +238,10 @@ class _ProfileViewState extends State<ProfileView> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.pop(ctx);
-                setState(() {});
+                Navigator.of(ctx).pop();
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).pop();
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFACC15),
