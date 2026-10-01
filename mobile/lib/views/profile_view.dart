@@ -1137,8 +1137,12 @@ class _ProfileViewState extends State<ProfileView> {
             icon: const Icon(Icons.sports_esports_rounded, color: Color(0xFFFACC15)),
             tooltip: 'Rivedi Tutorial Guidato',
             onPressed: () {
-              Navigator.pop(context);
-              TutorialController.instance.startTutorial();
+              Navigator.pop(context, true);
+              Future.delayed(const Duration(milliseconds: 320), () {
+                if (!TutorialController.instance.isActive) {
+                  TutorialController.instance.startTutorial();
+                }
+              });
             },
           ),
           IconButton(

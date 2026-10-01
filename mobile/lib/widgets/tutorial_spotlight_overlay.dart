@@ -33,6 +33,8 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   late Animation<double> _bounceAnimation;
+  Animation<double>? _routeAnim;
+  Animation<double>? _secondaryRouteAnim;
 
   @override
   void initState() {
@@ -49,10 +51,49 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
     _bounceAnimation = Tween<double>(begin: 0.0, end: 8.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scheduleCheck());
+  }
+
+  void _scheduleCheck() {
+    if (!mounted) return;
+    Future.delayed(const Duration(milliseconds: 80), () {
+      if (mounted) setState(() {});
+    });
+    Future.delayed(const Duration(milliseconds: 280), () {
+      if (mounted) setState(() {});
+    });
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      if (route.animation != _routeAnim) {
+        _routeAnim?.removeListener(_onRouteTick);
+        _routeAnim = route.animation;
+        _routeAnim?.addListener(_onRouteTick);
+      }
+      if (route.secondaryAnimation != _secondaryRouteAnim) {
+        _secondaryRouteAnim?.removeListener(_onRouteTick);
+        _secondaryRouteAnim = route.secondaryAnimation;
+        _secondaryRouteAnim?.addListener(_onRouteTick);
+      }
+    }
+  }
+
+  void _onRouteTick() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _routeAnim?.removeListener(_onRouteTick);
+    _secondaryRouteAnim?.removeListener(_onRouteTick);
     _pulseController.dispose();
     super.dispose();
   }
@@ -73,80 +114,100 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
 
   @override
   Widget build(BuildContext context) {
-    final targetRect = _calculateTargetRect();
-    final screenSize = MediaQuery.of(context).size;
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, _) {
+        final targetRect = _calculateTargetRect();
+        final screenSize = MediaQuery.of(context).size;
 
-    // Se il target non è ancora renderizzato, attendiamo un frame
-    if (targetRect == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() {});
-      });
-      return const SizedBox.shrink();
-    }
+        // Se il target non è ancora renderizzato, attendiamo un frame
+        if (targetRect == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() {});
+          });
+          return const SizedBox.shrink();
+        }
 
-    final isTargetRound = widget.isTargetRound || (targetRect.width - targetRect.height).abs() < 12;
-    final double holeRadius = (targetRect.width > targetRect.height ? targetRect.width : targetRect.height) / 2;
-    final Offset center = targetRect.center;
-    final Rect holeRect = isTargetRound
-        ? Rect.fromCircle(center: center, radius: holeRadius)
-        : targetRect;
+        final isTargetRound = widget.isTargetRound || (targetRect.width - targetRect.height).abs() < 12;
+        final double holeRadius = (targetRect.width > targetRect.height ? targetRect.width : targetRect.height) / 2;
+        final Offset center = targetRect.center;
+        final Rect holeRect = isTargetRound
+            ? Rect.fromCircle(center: center, radius: holeRadius)
+            : targetRect;
 
-    final isTargetAtBottom = holeRect.center.dy > screenSize.height / 2;
+        final isTargetAtBottom = holeRect.center.dy > screenSize.height / 2;
 
-    return SpotlightHitTestBlocker(
-      targetRect: holeRect,
-      isRound: isTargetRound,
-      child: Stack(
-        children: [
-          // 1. MASCHERA SCURA CON RITAGLIO CIRCOLARE / RTONDO PERFETTO (Senza fori quadrati!)
-          Positioned.fill(
-            child: CustomPaint(
-              painter: SpotlightHolePainter(
-                targetRect: holeRect,
-                isRound: isTargetRound,
-                backdropColor: Colors.black.withValues(alpha: 0.82),
-              ),
-            ),
-          ),
-
-          // 2. CORNICE NEON PULSANTE SUL TARGET (Visiva, identica al ritaglio)
-          Positioned(
-            left: isTargetRound ? (center.dx - holeRadius) : targetRect.left,
-            top: isTargetRound ? (center.dy - holeRadius) : targetRect.top,
-            width: isTargetRound ? (holeRadius * 2) : targetRect.width,
-            height: isTargetRound ? (holeRadius * 2) : targetRect.height,
-            child: IgnorePointer(
-              child: ScaleTransition(
-                scale: _pulseAnimation,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: isTargetRound ? BoxShape.circle : BoxShape.rectangle,
-                    borderRadius: isTargetRound ? null : BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFFACC15), width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFFACC15).withValues(alpha: 0.65),
-                        blurRadius: 18,
-                        spreadRadius: 3,
-                      ),
-                      BoxShadow(
-                        color: const Color(0xFF9333EA).withValues(alpha: 0.5),
-                        blurRadius: 26,
-                        spreadRadius: 4,
-                      ),
-                    ],
+        return SpotlightHitTestBlocker(
+          targetRect: holeRect,
+          isRound: isTargetRound,
+          hasDirectTapHandler: widget.onTargetTapped != null,
+          child: Stack(
+            children: [
+              // 1. MASCHERA SCURA CON RITAGLIO CIRCOLARE / ROTONDO PERFETTO (Senza fori quadrati!)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: SpotlightHolePainter(
+                      targetRect: holeRect,
+                      isRound: isTargetRound,
+                      backdropColor: Colors.black.withValues(alpha: 0.82),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
 
-          // 3. FRECCIA ANIMATA DI PUNTAMENTO VERSO IL TARGET
-          Positioned(
-            left: (holeRect.center.dx - 20).clamp(16.0, screenSize.width - 56.0),
-            top: isTargetAtBottom
-                ? (holeRect.top - 48).clamp(0.0, screenSize.height)
-                : (holeRect.bottom + 8).clamp(0.0, screenSize.height),
+              // 2. CORNICE NEON PULSANTE SUL TARGET (Visiva, identica al ritaglio)
+              Positioned(
+                left: isTargetRound ? (center.dx - holeRadius) : targetRect.left,
+                top: isTargetRound ? (center.dy - holeRadius) : targetRect.top,
+                width: isTargetRound ? (holeRadius * 2) : targetRect.width,
+                height: isTargetRound ? (holeRadius * 2) : targetRect.height,
+                child: IgnorePointer(
+                  child: ScaleTransition(
+                    scale: _pulseAnimation,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: isTargetRound ? BoxShape.circle : BoxShape.rectangle,
+                        borderRadius: isTargetRound ? null : BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFACC15), width: 3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFACC15).withValues(alpha: 0.65),
+                            blurRadius: 18,
+                            spreadRadius: 3,
+                          ),
+                          BoxShadow(
+                            color: const Color(0xFF9333EA).withValues(alpha: 0.5),
+                            blurRadius: 26,
+                            spreadRadius: 4,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // 3. FORO ATTIVO: Tap handler dedicato istantaneo sul target
+              if (widget.onTargetTapped != null)
+                Positioned(
+                  left: isTargetRound ? (center.dx - holeRadius) : targetRect.left,
+                  top: isTargetRound ? (center.dy - holeRadius) : targetRect.top,
+                  width: isTargetRound ? (holeRadius * 2) : targetRect.width,
+                  height: isTargetRound ? (holeRadius * 2) : targetRect.height,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: widget.onTargetTapped,
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+
+              // 4. FRECCIA ANIMATA DI PUNTAMENTO VERSO IL TARGET
+              Positioned(
+                left: (holeRect.center.dx - 20).clamp(16.0, screenSize.width - 56.0),
+                top: isTargetAtBottom
+                    ? (holeRect.top - 48).clamp(0.0, screenSize.height)
+                    : (holeRect.bottom + 8).clamp(0.0, screenSize.height),
             child: IgnorePointer(
               child: AnimatedBuilder(
                 animation: _bounceAnimation,
@@ -177,7 +238,7 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
             ),
           ),
 
-          // 4. FLOATING GUIDE CARD ELEGANTE (Posizionata in modo opposto al target)
+          // 5. FLOATING GUIDE CARD ELEGANTE (Posizionata in modo opposto al target)
           Positioned(
             left: 16,
             right: 16,
@@ -315,6 +376,8 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
         ],
       ),
     );
+      },
+    );
   }
 }
 
@@ -362,11 +425,13 @@ class SpotlightHolePainter extends CustomPainter {
 class SpotlightHitTestBlocker extends SingleChildRenderObjectWidget {
   final Rect targetRect;
   final bool isRound;
+  final bool hasDirectTapHandler;
 
   const SpotlightHitTestBlocker({
     super.key,
     required this.targetRect,
     required this.isRound,
+    required this.hasDirectTapHandler,
     super.child,
   });
 
@@ -375,6 +440,7 @@ class SpotlightHitTestBlocker extends SingleChildRenderObjectWidget {
     return RenderSpotlightHitTestBlocker(
       targetRect: targetRect,
       isRound: isRound,
+      hasDirectTapHandler: hasDirectTapHandler,
     );
   }
 
@@ -382,27 +448,25 @@ class SpotlightHitTestBlocker extends SingleChildRenderObjectWidget {
   void updateRenderObject(BuildContext context, RenderSpotlightHitTestBlocker renderObject) {
     renderObject
       ..targetRect = targetRect
-      ..isRound = isRound;
+      ..isRound = isRound
+      ..hasDirectTapHandler = hasDirectTapHandler;
   }
 }
 
 class RenderSpotlightHitTestBlocker extends RenderProxyBox {
   Rect targetRect;
   bool isRound;
+  bool hasDirectTapHandler;
 
   RenderSpotlightHitTestBlocker({
     required this.targetRect,
     required this.isRound,
+    required this.hasDirectTapHandler,
   });
 
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    // 1. Prima testiamo i figli interattivi (es. la card con il tasto 'Salta Tutorial')
-    if (super.hitTestChildren(result, position: position)) {
-      return true;
-    }
-
-    // 2. Verifichiamo se il punto del tocco cade dentro l'apertura dello spotlight
+    // 1. Verifichiamo se il punto del tocco cade dentro l'apertura dello spotlight
     bool isInsideHole;
     if (isRound) {
       final center = targetRect.center;
@@ -414,12 +478,21 @@ class RenderSpotlightHitTestBlocker extends RenderProxyBox {
     }
 
     if (isInsideHole) {
-      // Il tocco è dentro lo spotlight: ritorniamo false in modo che Flutter
-      // continui il test degli strati sottostanti (il FAB +, il campanellino, o il pulsante)!
-      return false;
+      if (hasDirectTapHandler) {
+        // C'è un GestureDetector dedicato sul foro: inoltriamo ai figli e catturiamo l'evento
+        return super.hitTestChildren(result, position: position);
+      } else {
+        // Nessun handler dedicato: lasciamo passare il tocco direttamente ai widget sottostanti!
+        return false;
+      }
     }
 
-    // 3. Tocco fuori dallo spotlight: assorbiamo il tocco per proteggere il gioco
+    // 2. Tocco fuori dallo spotlight: prima testiamo i figli interattivi (es. la card con il tasto 'Salta Tutorial')
+    if (super.hitTestChildren(result, position: position)) {
+      return true;
+    }
+
+    // 3. Tocco fuori dallo spotlight sul backdrop scuro: assorbiamo il tocco per proteggere il gioco
     result.add(BoxHitTestEntry(this, position));
     return true;
   }

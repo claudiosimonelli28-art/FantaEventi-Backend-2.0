@@ -185,7 +185,51 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     TutorialController.instance.startTutorial();
   }
 
+  void _apriCreaEvento() async {
+    if (TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
+      TutorialController.instance.setStage(TutorialStage.step3_in_create_event);
+    }
+    _closeFabMenu(fromTutorialNavigation: true);
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CreateEventView()),
+    );
+    _loadData(forceRefresh: true, silent: true);
+  }
+
+  void _apriPrimoEvento() async {
+    if (_eventi.isEmpty) return;
+    final ev = _eventi.first;
+    if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card) {
+      TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
+    );
+    _loadData(forceRefresh: true);
+  }
+
+  void _apriProfilo() async {
+    if (TutorialController.instance.stage == TutorialStage.step9_tap_profile) {
+      TutorialController.instance.setStage(TutorialStage.step10_in_profile);
+    }
+    final restartedTutorial = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const ProfileView()),
+    );
+    if (restartedTutorial == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        TutorialController.instance.startTutorial();
+      });
+    }
+    if (mounted) {
+      setState(() {});
+      _loadData(silent: true, forceRefresh: true);
+    }
+  }
+
   void _apriNotifiche() async {
+    if (TutorialController.instance.stage == TutorialStage.step8_tap_notification) {
+      TutorialController.instance.setStage(TutorialStage.step9_tap_profile);
+    }
     final userNick = _apiService.currentUser?.nome ?? 'Cloud';
     try {
       final nots = await _apiService.getNotifiche(userNick);
@@ -202,6 +246,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     }
     _apiService.segnaNotificheComeLette(userNick);
 
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -523,16 +568,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           // Profile User Chip (Foto Profilo reale + Livello)
           InkWell(
             key: TutorialController.instance.keyProfilo,
-            onTap: () async {
-              if (TutorialController.instance.stage == TutorialStage.step9_tap_profile) {
-                TutorialController.instance.setStage(TutorialStage.step10_in_profile);
-              }
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ProfileView()),
-              );
-              setState(() {});
-              _loadData();
-            },
+            onTap: _apriProfilo,
             borderRadius: BorderRadius.circular(20),
             child: Container(
               margin: const EdgeInsets.only(right: 12),
@@ -713,6 +749,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           stepTag: 'Tappa 1 di 4 • Hub Azioni',
           title: 'Tocca il pulsante ➕ in basso',
           description: 'Questo è l\'hub rapido delle azioni di gioco. Da qui puoi creare nuovi Eventi o proporre nuove regole Bonus & Malus.',
+          onTargetTapped: () => _toggleFabMenu(),
           onSkip: () => tutorial.skipTutorial(),
         );
 
@@ -727,6 +764,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           stepTag: 'Tappa 1 di 4 • Crea Evento',
           title: 'Tocca "Crea Evento"',
           description: 'Apri la schermata per impostare il tuo primo evento di gioco e scoprire come invitare i tuoi compagni.',
+          onTargetTapped: () => _apriCreaEvento(),
           onSkip: () => tutorial.skipTutorial(),
         );
 
@@ -738,6 +776,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           stepTag: 'Tappa 2 di 4 • Entra nell\'Evento',
           title: 'Tocca la Scheda dell\'Evento!',
           description: 'Ottimo lavoro! Il tuo evento è ora nel feed. Toccalo per aprire i dettagli, visualizzare la classifica e proporre la prima regola.',
+          onTargetTapped: () => _apriPrimoEvento(),
           onSkip: () => tutorial.skipTutorial(),
         );
 
@@ -752,6 +791,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           stepTag: 'Tappa 3 di 4 • Centro Notifiche',
           title: 'Tocca il Campanellino 🔔',
           description: 'Hai 1 notifica ufficiale! Tocca il campanellino per leggere il messaggio di benvenuto della Redazione e scoprire come gestire gli avvisi.',
+          onTargetTapped: () => _apriNotifiche(),
           onSkip: () => tutorial.skipTutorial(),
         );
 
@@ -763,6 +803,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           stepTag: 'Tappa 4 di 4 • Profilo Giocatore',
           title: 'Tocca il tuo Profilo 📸',
           description: 'Ci siamo quasi! Tocca il tuo profilo in alto a destra per scoprire il tuo Codice Amico, impostare la tua foto e riscuotere la ricompensa (+100 XP)!',
+          onTargetTapped: () => _apriProfilo(),
           onSkip: () => tutorial.skipTutorial(),
         );
 
