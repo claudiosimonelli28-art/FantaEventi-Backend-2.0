@@ -169,37 +169,65 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
               bottom: MediaQuery.of(context).padding.bottom + 14,
             ),
             child: _currentPage == 4
-                ? SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: () => _chiudiGuida(startTutorial: widget.isFirstAccess),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFACC15),
-                        foregroundColor: const Color(0xFF0F172A),
-                        elevation: 4,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            widget.isFirstAccess
-                                ? '🎮 INIZIA TUTORIAL GUIDATO (+100 XP)'
-                                : 'HO CAPITO, ANDIAMO A GIOCARE!',
-                            style: GoogleFonts.poppins(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.3,
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: () => _chiudiGuida(startTutorial: widget.isFirstAccess),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFACC15),
+                            foregroundColor: const Color(0xFF0F172A),
+                            elevation: 4,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(widget.isFirstAccess ? '✨' : '🚀', style: const TextStyle(fontSize: 18)),
-                        ],
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                widget.isFirstAccess
+                                    ? '🎮 INIZIA TUTORIAL GUIDATO (+100 XP)'
+                                    : 'HO CAPITO, ANDIAMO A GIOCARE!',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(widget.isFirstAccess ? '✨' : '🚀', style: const TextStyle(fontSize: 18)),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      if (!widget.isFirstAccess) ...[
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _chiudiGuida(startTutorial: true),
+                            icon: const Icon(Icons.sports_esports_rounded, color: Color(0xFFC084FC), size: 18),
+                            label: Text(
+                              'Riavvia Tutorial Guidato 🎮',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFFC084FC),
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFF9333EA), width: 1.2),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   )
                 : Row(
                     children: [

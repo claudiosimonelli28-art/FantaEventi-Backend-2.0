@@ -1102,6 +1102,14 @@ class _ProfileViewState extends State<ProfileView> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
+            icon: const Icon(Icons.sports_esports_rounded, color: Color(0xFFFACC15)),
+            tooltip: 'Rivedi Tutorial Guidato',
+            onPressed: () {
+              Navigator.pop(context);
+              TutorialController.instance.startTutorial();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             tooltip: 'Logout',
             onPressed: () async {

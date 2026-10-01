@@ -228,7 +228,7 @@ class ApiService {
   Future<bool> haVistoGuidaRegole() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final seenLocal = prefs.getBool('tutorial_spotlight_v2_completato') ?? false;
+      final seenLocal = prefs.getBool('tutorial_interactive_v3_completato') ?? false;
       return seenLocal;
     } catch (_) {
       return false;
@@ -238,7 +238,7 @@ class ApiService {
   Future<void> segnaGuidaRegoleCompletata() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('tutorial_spotlight_v2_completato', true);
+      await prefs.setBool('tutorial_interactive_v3_completato', true);
       if (_currentUser != null) {
         _currentUser = _currentUser!.copyWith(haVistoGuida: true);
         final db = await _getMongoDb();
@@ -246,10 +246,19 @@ class ApiService {
           final uColl = db.collection('Utenti');
           await uColl.update(
             where.eq('nome', _currentUser!.nome),
-            modify.set('haVistoGuida', true).set('tutorialV2Completato', true),
+            modify.set('haVistoGuida', true).set('tutorialV3Completato', true),
           );
         }
       }
+    } catch (_) {}
+  }
+
+  Future<void> resettaTutorialGuidato() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('tutorial_interactive_v3_completato');
+      await prefs.remove('tutorial_spotlight_v2_completato');
+      await prefs.remove('guida_regole_completata_v1');
     } catch (_) {}
   }
 

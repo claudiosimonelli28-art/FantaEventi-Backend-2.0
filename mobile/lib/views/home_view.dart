@@ -463,7 +463,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         actions: [
           // Icona Guida & Regolamento (?)
           IconButton(
-            onPressed: () => GuidaRegolamentoModal.mostra(context),
+            onPressed: () async {
+              final startTutorial = await GuidaRegolamentoModal.mostra(context);
+              if (startTutorial == true && mounted) {
+                _avviaTutorialGuidato();
+              }
+            },
             icon: const Icon(Icons.help_outline_rounded, color: Color(0xFFFACC15), size: 22),
             tooltip: 'Regole & Guida di FantaEventi',
             padding: const EdgeInsets.all(8),
