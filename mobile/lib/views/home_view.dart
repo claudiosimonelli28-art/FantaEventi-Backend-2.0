@@ -85,6 +85,20 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       ),
     );
 
+    _fabAnimationController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (TutorialController.instance.stage == TutorialStage.step1_tap_plus) {
+          TutorialController.instance.setStage(TutorialStage.step2_tap_crea_evento);
+        }
+        if (mounted) setState(() {});
+      } else if (status == AnimationStatus.dismissed) {
+        if (TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
+          TutorialController.instance.setStage(TutorialStage.step1_tap_plus);
+        }
+        if (mounted) setState(() {});
+      }
+    });
+
     _loadData(forceRefresh: true);
     _liveSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       _loadData(silent: true, forceRefresh: false);
@@ -386,9 +400,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       _isFabMenuOpen = !_isFabMenuOpen;
       if (_isFabMenuOpen) {
         _fabAnimationController.forward();
-        if (TutorialController.instance.stage == TutorialStage.step1_tap_plus) {
-          TutorialController.instance.setStage(TutorialStage.step2_tap_crea_evento);
-        }
       } else {
         _fabAnimationController.reverse();
       }
@@ -400,9 +411,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       setState(() {
         _isFabMenuOpen = false;
         _fabAnimationController.reverse();
-        if (!fromTutorialNavigation && TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
-          TutorialController.instance.setStage(TutorialStage.step1_tap_plus);
-        }
       });
     }
   }
@@ -709,6 +717,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         );
 
       case TutorialStage.step2_tap_crea_evento:
+        if (_fabAnimationController.isAnimating || !_isFabMenuOpen) {
+          return null;
+        }
         return InteractiveSpotlightOverlay(
           targetKey: tutorial.keyCreaEventoItem,
           isTargetRound: false,

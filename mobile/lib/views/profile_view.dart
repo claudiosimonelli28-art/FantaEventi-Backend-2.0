@@ -47,6 +47,7 @@ class _ProfileViewState extends State<ProfileView> {
   int _countFantasma = 0;
   int _countSbirro = 0;
   int _countGiustiziere = 0;
+  bool _haGiaRiscattatoPremio = false;
 
   @override
   void initState() {
@@ -95,15 +96,19 @@ class _ProfileViewState extends State<ProfileView> {
   Future<void> _caricaProfiloAggiornato() async {
     try {
       final updatedUser = await _apiService.syncCurrentUserFromDb();
-      if (updatedUser != null && mounted) {
+      final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
+      if (mounted) {
         setState(() {
-          _utente = updatedUser;
-          _countCampione = _utente.countCampione;
-          _countReMalus = _utente.countReMalus;
-          _countAvvocato = _utente.countAvvocato;
-          _countFantasma = _utente.countFantasma;
-          _countSbirro = _utente.countSbirro;
-          _countGiustiziere = _utente.countGiustiziere;
+          if (updatedUser != null) {
+            _utente = updatedUser;
+            _countCampione = _utente.countCampione;
+            _countReMalus = _utente.countReMalus;
+            _countAvvocato = _utente.countAvvocato;
+            _countFantasma = _utente.countFantasma;
+            _countSbirro = _utente.countSbirro;
+            _countGiustiziere = _utente.countGiustiziere;
+          }
+          _haGiaRiscattatoPremio = giaRiscattato;
         });
       }
       await _apiService.getUtenti();
@@ -112,13 +117,15 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   void _concludiTutorial() async {
+    final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
     final int userLevel = _utente.livello;
     final String badgeAwarded = userLevel >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
 
-    await _apiService.segnaGuidaRegoleCompletata();
+    await _apiService.segnaGuidaRegoleCompletata(awardXp: !giaRiscattato);
+    await _caricaProfiloAggiornato();
+    if (!mounted) return;
     TutorialController.instance.completeTutorial(context);
 
-    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -147,7 +154,9 @@ class _ProfileViewState extends State<ProfileView> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Fantastico! Ora conosci tutte le meccaniche di FantaEventi:',
+              giaRiscattato
+                  ? 'Ottimo ripasso! Conosci tutte le funzionalità principali di FantaEventi:'
+                  : 'Fantastico! Ora conosci tutte le meccaniche di FantaEventi:',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(color: const Color(0xFFCBD5E1), fontSize: 13),
             ),
@@ -194,10 +203,23 @@ class _ProfileViewState extends State<ProfileView> {
                     ],
                   ),
                   const Divider(color: Color(0xFF334155), height: 16),
-                  Text('BADGE SPECIALE SBLOCCATO:', style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF94A3B8), fontWeight: FontWeight.bold)),
+                  Text(
+                    giaRiscattato ? 'BADGE CONFERMATO AL PROFILO:' : 'BADGE SPECIALE SBLOCCATO:',
+                    style: GoogleFonts.poppins(fontSize: 10, color: const Color(0xFF94A3B8), fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 2),
                   Text(badgeAwarded, style: GoogleFonts.poppins(fontSize: 14, color: const Color(0xFFFACC15), fontWeight: FontWeight.bold)),
-                  Text('+100 Punti XP Aggiunti al tuo Profilo! 🚀', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF38BDF8))),
+                  const SizedBox(height: 4),
+                  Text(
+                    giaRiscattato
+                        ? 'ℹ️ Premio di +100 XP già riscosso in precedenza'
+                        : '+100 Punti XP Aggiunti al tuo Profilo! 🚀',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      color: giaRiscattato ? const Color(0xFF94A3B8) : const Color(0xFF38BDF8),
+                      fontWeight: giaRiscattato ? FontWeight.normal : FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1143,16 +1165,22 @@ class _ProfileViewState extends State<ProfileView> {
                   margin: const EdgeInsets.only(bottom: 20),
                   child: ElevatedButton.icon(
                     onPressed: _concludiTutorial,
-                    icon: const Text('🏆', style: TextStyle(fontSize: 22)),
+                    icon: Text(_haGiaRiscattatoPremio ? '✅' : '🏆', style: const TextStyle(fontSize: 22)),
                     label: Text(
-                      'COMPLETA IL TUTORIAL E RITIRA +100 XP',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 13),
+                      _haGiaRiscattatoPremio
+                          ? 'COMPLETA IL TUTORIAL (PREMIO GIÀ RISCATTATO)'
+                          : 'COMPLETA IL TUTORIAL E RITIRA +100 XP',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 12.5),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFACC15),
-                      foregroundColor: const Color(0xFF0F172A),
+                      backgroundColor: _haGiaRiscattatoPremio ? const Color(0xFF334155) : const Color(0xFFFACC15),
+                      foregroundColor: _haGiaRiscattatoPremio ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
                       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: _haGiaRiscattatoPremio ? const BorderSide(color: Color(0xFF64748B), width: 1.2) : BorderSide.none,
+                      ),
                       elevation: 6,
                     ),
                   ),

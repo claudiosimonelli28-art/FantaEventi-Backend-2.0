@@ -235,32 +235,74 @@ class ApiService {
     }
   }
 
-  Future<void> segnaGuidaRegoleCompletata() async {
+  Future<bool> haGiaRiscattatoPremioTutorial() async {
+    try {
+      final curUser = _currentUser;
+      final prefs = await SharedPreferences.getInstance();
+      if (curUser != null) {
+        final localVal = prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome}');
+        if (localVal == true) return true;
+      }
+      final globalLocal = prefs.getBool('tutorial_premio_riscattato_v3') ?? false;
+      if (globalLocal) return true;
+
+      if (curUser != null) {
+        final db = await _getMongoDb();
+        if (db != null && db.isConnected) {
+          final uDoc = await db.collection('Utenti').findOne(where.eq('nome', curUser.nome));
+          if (uDoc != null) {
+            if (uDoc['tutorialPremioRiscattato'] == true || uDoc['tutorialV3Completato'] == true) {
+              await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome}', true);
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> segnaGuidaRegoleCompletata({bool awardXp = true}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('tutorial_interactive_v3_completato', true);
-      if (_currentUser != null) {
-        final badge = _currentUser!.livello >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
-        final newBadges = List<String>.from(_currentUser!.badgeList);
+      
+      final curUser = _currentUser;
+      if (curUser != null) {
+        await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome}', true);
+        await prefs.setBool('tutorial_premio_riscattato_v3', true);
+
+        final badge = curUser.livello >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
+        final newBadges = List<String>.from(curUser.badgeList);
         if (!newBadges.contains(badge)) {
           newBadges.add(badge);
         }
-        final newXp = _currentUser!.xp + 100;
-        _currentUser = _currentUser!.copyWith(
+        
+        final newXp = awardXp ? (curUser.xp + 100) : curUser.xp;
+        _currentUser = curUser.copyWith(
           haVistoGuida: true,
           xp: newXp,
           badgeList: newBadges,
         );
+
         final db = await _getMongoDb();
         if (db != null && db.state == State.open) {
           final uColl = db.collection('Utenti');
+          var mod = modify
+            .set('haVistoGuida', true)
+            .set('tutorialV3Completato', true)
+            .set('tutorialPremioRiscattato', true)
+            .addToSet('badgeList', badge);
+
+          if (awardXp) {
+            mod = mod.inc('xp', 100);
+          }
+
           await uColl.update(
-            where.eq('nome', _currentUser!.nome),
-            modify
-              .set('haVistoGuida', true)
-              .set('tutorialV3Completato', true)
-              .inc('xp', 100)
-              .addToSet('badges', badge),
+            where.eq('nome', curUser.nome),
+            mod,
           );
         }
       }
@@ -298,6 +340,46 @@ class ApiService {
         }
       }
     } catch (_) {}
+  }
+
+  List<String> _extractAndHealBadgeList(Map<String, dynamic> d, [Db? db]) {
+    final List<String> list = [];
+    if (d['badgeList'] is List) {
+      for (var b in (d['badgeList'] as List)) {
+        final str = b.toString().trim();
+        if (str.isNotEmpty && !list.contains(str)) {
+          list.add(str);
+        }
+      }
+    }
+    // Self-healing automatico: se sono presenti badge memorizzati sotto 'badges'
+    if (d['badges'] is List) {
+      bool addedFromBadges = false;
+      for (var b in (d['badges'] as List)) {
+        final str = b.toString().trim();
+        if (str.isNotEmpty && !list.contains(str)) {
+          list.add(str);
+          addedFromBadges = true;
+        }
+      }
+      if (addedFromBadges && db != null && db.isConnected) {
+        try {
+          ObjectId? uId;
+          if (d['_id'] is ObjectId) {
+            uId = d['_id'] as ObjectId;
+          } else if (d['_id'] != null) {
+            uId = ObjectId.fromHexString(d['_id'].toString());
+          }
+          if (uId != null) {
+            db.collection('Utenti').update(
+              where.id(uId),
+              modify.set('badgeList', list).unset('badges'),
+            );
+          }
+        } catch (_) {}
+      }
+    }
+    return list;
   }
 
   // --- LOGIN RIGOROSO REALE DA MONGODB ATLAS (CON PASSWORD HASHATA) ---
@@ -354,7 +436,7 @@ class ApiService {
               'xp': d['xp'] ?? 100,
               'xpProssimoLivello': d['xpProssimoLivello'] ?? 1000,
               'puntiTotali': d['puntiTotali'] ?? 0,
-              'badgeList': d['badgeList'] ?? [],
+              'badgeList': _extractAndHealBadgeList(d, db),
               'storicoVoti': d['storicoVoti'] ?? [],
               'codiceAmico': d['codiceAmico'] ?? '',
               'amici': d['amici'] ?? [],
@@ -484,7 +566,7 @@ class ApiService {
               'xp': d['xp'] ?? 100,
               'xpProssimoLivello': d['xpProssimoLivello'] ?? 1000,
               'puntiTotali': d['puntiTotali'] ?? 0,
-              'badgeList': d['badgeList'] ?? [],
+              'badgeList': _extractAndHealBadgeList(d, db),
               'storicoVoti': d['storicoVoti'] ?? [],
               'codiceAmico': d['codiceAmico'] ?? '',
               'amici': d['amici'] ?? [],
@@ -1034,7 +1116,7 @@ class ApiService {
           jsonMap['xp'] = d['xp'] ?? 100;
           jsonMap['xpProssimoLivello'] = d['xpProssimoLivello'] ?? 1000;
           jsonMap['puntiTotali'] = d['puntiTotali'] ?? 0;
-          jsonMap['badgeList'] = d['badgeList'] ?? [];
+          jsonMap['badgeList'] = _extractAndHealBadgeList(d, db);
           jsonMap['storicoVoti'] = d['storicoVoti'] ?? [];
           jsonMap['codiceAmico'] = d['codiceAmico'] ?? '';
           jsonMap['amici'] = d['amici'] ?? [];

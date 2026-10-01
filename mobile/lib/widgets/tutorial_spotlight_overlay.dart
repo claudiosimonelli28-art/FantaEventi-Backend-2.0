@@ -315,7 +315,7 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
       behavior: HitTestBehavior.opaque,
       onTap: () {},
       child: Container(
-        color: const Color(0xF2070D1A),
+        color: Colors.black.withValues(alpha: 0.82),
       ),
     );
   }
