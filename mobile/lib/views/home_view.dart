@@ -58,7 +58,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     _fabAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 950),
+      duration: const Duration(milliseconds: 240),
     );
     // 0.375 giri = 135 gradi con curva cubica ben visibile ed elegante
     _fabRotationAnimation = Tween<double>(begin: 0.0, end: 0.375).animate(
@@ -395,12 +395,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     });
   }
 
-  void _closeFabMenu() {
+  void _closeFabMenu({bool fromTutorialNavigation = false}) {
     if (_isFabMenuOpen) {
       setState(() {
         _isFabMenuOpen = false;
         _fabAnimationController.reverse();
-        if (TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
+        if (!fromTutorialNavigation && TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
           TutorialController.instance.setStage(TutorialStage.step1_tap_plus);
         }
       });
@@ -596,11 +596,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                     _buildVotazioniTab(),
                   ],
                 ),
-          // Backdrop Overlay quando il menu del FAB è aperto
-          if (_isFabMenuOpen)
+          // Backdrop Overlay quando il menu del FAB è aperto (solo quando tutorial non attivo per non sovrapporsi)
+          if (_isFabMenuOpen && !TutorialController.instance.isActive)
             Positioned.fill(
               child: GestureDetector(
-                onTap: _closeFabMenu,
+                onTap: () => _closeFabMenu(),
                 behavior: HitTestBehavior.opaque,
                 child: AnimatedBuilder(
                   animation: _fabAnimationController,
@@ -636,14 +636,14 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                         icon: Icons.calendar_today_rounded,
                         color: const Color(0xFF6366F1),
                         onTap: () async {
-                          _closeFabMenu();
                           if (TutorialController.instance.stage == TutorialStage.step2_tap_crea_evento) {
                             TutorialController.instance.setStage(TutorialStage.step3_in_create_event);
                           }
+                          _closeFabMenu(fromTutorialNavigation: true);
                           await Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const CreateEventView()),
                           );
-                          _loadData(forceRefresh: true);
+                          _loadData(forceRefresh: true, silent: true);
                         },
                       ),
                       const SizedBox(height: 12),

@@ -240,13 +240,27 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('tutorial_interactive_v3_completato', true);
       if (_currentUser != null) {
-        _currentUser = _currentUser!.copyWith(haVistoGuida: true);
+        final badge = _currentUser!.livello >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
+        final newBadges = List<String>.from(_currentUser!.badgeList);
+        if (!newBadges.contains(badge)) {
+          newBadges.add(badge);
+        }
+        final newXp = _currentUser!.xp + 100;
+        _currentUser = _currentUser!.copyWith(
+          haVistoGuida: true,
+          xp: newXp,
+          badgeList: newBadges,
+        );
         final db = await _getMongoDb();
         if (db != null && db.state == State.open) {
           final uColl = db.collection('Utenti');
           await uColl.update(
             where.eq('nome', _currentUser!.nome),
-            modify.set('haVistoGuida', true).set('tutorialV3Completato', true),
+            modify
+              .set('haVistoGuida', true)
+              .set('tutorialV3Completato', true)
+              .inc('xp', 100)
+              .addToSet('badges', badge),
           );
         }
       }

@@ -59,8 +59,9 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
   Rect? _calculateTargetRect() {
     final renderBox = widget.targetKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.attached) return null;
-    final offset = renderBox.localToGlobal(Offset.zero);
     final size = renderBox.size;
+    if (size.width < 10 || size.height < 10) return null;
+    final offset = renderBox.localToGlobal(Offset.zero);
     return Rect.fromLTWH(
       offset.dx - widget.padding,
       offset.dy - widget.padding,
@@ -312,31 +313,9 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
   Widget _buildBackdropBlock() {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        ScaffoldMessenger.of(context).removeCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            duration: const Duration(milliseconds: 1500),
-            backgroundColor: const Color(0xFF1E293B),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xFFFACC15))),
-            content: Row(
-              children: [
-                const Icon(Icons.touch_app_rounded, color: Color(0xFFFACC15), size: 18),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Tocca l\'elemento evidenziato per proseguire!',
-                    style: GoogleFonts.poppins(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      onTap: () {},
       child: Container(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.85),
+        color: const Color(0xF2070D1A),
       ),
     );
   }

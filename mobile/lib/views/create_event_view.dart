@@ -286,8 +286,8 @@ class _CreateEventViewState extends State<CreateEventView> {
                 if (TutorialController.instance.stage == TutorialStage.step3_in_create_event)
                   TutorialStepBanner(
                     stepTag: 'Tappa 1 di 4 • Creazione Evento',
-                    title: 'Questo è il tuo primo Evento di Prova!',
-                    description: 'Al momento sei da solo perché non hai ancora collegato i tuoi amici, ma in futuro potrai invitarli tutti qui col tuo Codice Amico. Tocca "Crea Evento" in fondo alla pagina per confermare!',
+                    title: 'Crea il tuo Evento di Prova!',
+                    description: 'I campi sono già precompilati per questa prova. Puoi selezionare i tuoi amici dalla lista oppure procedere da solo. Tocca "CREA EVENTO" in fondo per confermare!',
                     onSkip: () {
                       TutorialController.instance.skipTutorial();
                       setState(() {});
