@@ -67,11 +67,21 @@ class TutorialController extends ChangeNotifier {
   bool isTutorialEvent(dynamic evento) {
     if (evento == null) return false;
     final String evId = (evento.id ?? '').toString();
-    final String evTitolo = (evento.titolo ?? '').toString();
+    final String evTitolo = (evento.titolo ?? '').toString().toLowerCase();
+
+    // 1. Se abbiamo memorizzato l'ID reale dell'evento creato in questo ciclo di tutorial
     if (tutorialCreatedEventId != null && tutorialCreatedEventId!.isNotEmpty) {
-      return evId == tutorialCreatedEventId;
+      if (evId == tutorialCreatedEventId) return true;
+      // Se non coincide con l'ID ma il titolo è Festa di Benvenuto, è un residuo di un tutorial precedente
+      if (evTitolo.contains('festa di benvenuto')) return false;
     }
-    return evTitolo.contains('Festa di Benvenuto');
+
+    // 2. Fallback sul titolo per sincronizzare l'ID al primo passaggio
+    final bool isTitleMatch = evTitolo.contains('festa di benvenuto');
+    if (isTitleMatch && evId.isNotEmpty && (tutorialCreatedEventId == null || tutorialCreatedEventId!.isEmpty)) {
+      tutorialCreatedEventId = evId;
+    }
+    return isTitleMatch;
   }
 
   void skipTutorial() {

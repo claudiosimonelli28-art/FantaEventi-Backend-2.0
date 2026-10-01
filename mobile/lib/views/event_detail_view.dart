@@ -622,7 +622,13 @@ class _EventDetailViewState extends State<EventDetailView> {
                               backgroundColor: const Color(0xFF9333EA),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                side: (TutorialController.instance.stage == TutorialStage.step5_in_event_detail &&
+                                        TutorialController.instance.isTutorialEvent(_evento))
+                                    ? const BorderSide(color: Color(0xFFFACC15), width: 2)
+                                    : BorderSide.none,
+                              ),
                             ),
                           ),
                         ),

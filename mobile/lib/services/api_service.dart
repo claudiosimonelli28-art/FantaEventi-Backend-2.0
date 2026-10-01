@@ -2006,6 +2006,7 @@ class ApiService {
 
     // Scrittura DIRETTA dell'evento e delle notifiche su MongoDB Atlas (Singola Scrittura Infallibile)
     bool directSuccess = false;
+    String realEvId = eventPayload.id;
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
@@ -2026,6 +2027,9 @@ class ApiService {
         });
 
         final insertedEvId = evRes.id?.toHexString() ?? '';
+        if (insertedEvId.isNotEmpty) {
+          realEvId = insertedEvId;
+        }
         for (var invUser in invitati) {
           await db.collection('Notifiche').insertOne({
             'mittente': creatore,
@@ -2054,7 +2058,8 @@ class ApiService {
       }
     }
 
-    _eventi.insert(0, eventPayload);
+    final savedEvento = eventPayload.copyWith(id: realEvId);
+    _eventi.insert(0, savedEvento);
 
     if (_currentUser != null && awardXp) {
       final nuoviXp = _currentUser!.xp + 100;
@@ -2069,7 +2074,7 @@ class ApiService {
       );
     }
 
-    return eventPayload;
+    return savedEvento;
   }
 
   // --- AGGIORNA COPERTINA EVENTO SU MONGODB ATLAS & MEMORIA LOCALE ---

@@ -252,10 +252,10 @@ class _CreateEventViewState extends State<CreateEventView> {
       );
 
       final bool isTutorial = TutorialController.instance.stage == TutorialStage.step3_in_create_event;
-      await _apiService.creaEvento(nuovoEvento, awardXp: !isTutorial);
+      final savedEvento = await _apiService.creaEvento(nuovoEvento, awardXp: !isTutorial);
 
       if (isTutorial) {
-        TutorialController.instance.tutorialCreatedEventId = nuovoEvento.id;
+        TutorialController.instance.tutorialCreatedEventId = savedEvento.id;
         TutorialController.instance.setStage(TutorialStage.step4_tap_event_card);
       }
 
@@ -267,6 +267,7 @@ class _CreateEventViewState extends State<CreateEventView> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isTutorial = TutorialController.instance.stage == TutorialStage.step3_in_create_event;
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
@@ -755,7 +756,7 @@ class _CreateEventViewState extends State<CreateEventView> {
                     child: _isLoading
                         ? const CircularProgressIndicator(color: Color(0xFF0F172A))
                         : Text(
-                            'CREA EVENTO (+100 XP)',
+                            isTutorial ? 'CREA EVENTO (TUTORIAL)' : 'CREA EVENTO (+100 XP)',
                             style: GoogleFonts.poppins(
                               fontSize: 16,
                               fontWeight: FontWeight.w800,

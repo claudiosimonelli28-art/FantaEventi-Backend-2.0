@@ -1061,16 +1061,20 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemCount: _eventi.length,
         itemBuilder: (ctx, idx) {
           final ev = _eventi[idx];
+          final tutorialEv = _eventi.cast<Evento?>().firstWhere(
+            (e) => e != null && TutorialController.instance.isTutorialEvent(e),
+            orElse: () => null,
+          );
           final bool isTutorialTarget = TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
-              (TutorialController.instance.isTutorialEvent(ev) ||
-                  (!_eventi.any((e) => TutorialController.instance.isTutorialEvent(e)) && idx == 0));
+              (tutorialEv != null ? ev.id == tutorialEv.id : idx == 0);
           return Container(
             key: isTutorialTarget ? TutorialController.instance.keyFirstEventCard : null,
             child: EventCard(
               evento: ev,
               currentUserNickname: userNick,
               onTap: () async {
-                if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card && isTutorialTarget) {
+                if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
+                    TutorialController.instance.isTutorialEvent(ev)) {
                   TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
                 }
                 await Navigator.of(context).push(
