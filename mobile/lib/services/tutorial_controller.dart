@@ -34,10 +34,18 @@ class TutorialController extends ChangeNotifier {
   final GlobalKey keyCodiceAmico = GlobalKey();
   final GlobalKey keyFotoProfilo = GlobalKey();
 
-  void startTutorial() {
+  bool isReplay = false;
+  String? tutorialCreatedEventId;
+
+  void startTutorial({bool? isReplay}) {
     _stage = TutorialStage.step1_tap_plus;
     final user = ApiService().currentUser;
     final nick = user?.nome ?? 'Cloud';
+    
+    final bool alreadyDone = ApiService().hasRedeemedTutorialLocally || (user?.haVistoGuida ?? false);
+    this.isReplay = isReplay ?? alreadyDone;
+    tutorialCreatedEventId = null;
+
     ApiService().assicuraNotificaBenvenuto(nick);
     notifyListeners();
   }
@@ -49,13 +57,34 @@ class TutorialController extends ChangeNotifier {
     }
   }
 
+  void rollbackFromEventDetail() {
+    if (_stage == TutorialStage.step5_in_event_detail) {
+      _stage = TutorialStage.step4_tap_event_card;
+      notifyListeners();
+    }
+  }
+
+  bool isTutorialEvent(dynamic evento) {
+    if (evento == null) return false;
+    final String evId = (evento.id ?? '').toString();
+    final String evTitolo = (evento.titolo ?? '').toString();
+    if (tutorialCreatedEventId != null && tutorialCreatedEventId!.isNotEmpty) {
+      return evId == tutorialCreatedEventId;
+    }
+    return evTitolo.contains('Festa di Benvenuto');
+  }
+
   void skipTutorial() {
     _stage = TutorialStage.idle;
+    tutorialCreatedEventId = null;
+    isReplay = false;
     notifyListeners();
   }
 
   void completeTutorial(BuildContext context) {
     _stage = TutorialStage.idle;
+    tutorialCreatedEventId = null;
+    isReplay = false;
     notifyListeners();
   }
 }

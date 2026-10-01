@@ -198,7 +198,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   void _apriPrimoEvento() async {
     if (_eventi.isEmpty) return;
-    final ev = _eventi.first;
+    final ev = _eventi.firstWhere(
+      (e) => TutorialController.instance.isTutorialEvent(e),
+      orElse: () => _eventi.first,
+    );
     if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card) {
       TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
     }
@@ -825,120 +828,130 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           ),
         ),
         Center(
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 24),
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: const Color(0xFFFACC15), width: 1.8),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFFACC15).withValues(alpha: 0.3),
-                  blurRadius: 25,
-                  spreadRadius: 3,
-                ),
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.7),
-                  blurRadius: 30,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFACC15).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFFACC15)),
-                      ),
-                      child: Text(
-                        'TAPPA 2 DI 4 • VOTAZIONE LIVE',
-                        style: GoogleFonts.poppins(
-                          color: const Color(0xFFFACC15),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
+          child: Material(
+            type: MaterialType.transparency,
+            child: DefaultTextStyle(
+              style: const TextStyle(decoration: TextDecoration.none),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.65), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                      blurRadius: 25,
+                      spreadRadius: 2,
                     ),
-                    const Text('🗳️ DEMOCRAZIA', style: TextStyle(fontSize: 12, color: Color(0xFFC084FC), fontWeight: FontWeight.bold)),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 14),
-                Text(
-                  'Ecco la tua proposta tra i Voti Live! 🎉',
-                  style: GoogleFonts.poppins(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Come vedi, la proposta è apparsa qui in tempo reale. Visto che l\'hai proposta tu, il tuo voto è già calcolato a favore.\n\nQuando giocherai con i tuoi amici, la votazione sarà democratica e servirà il raggiungimento del Quorum per approvarla ufficialmente!',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    height: 1.5,
-                    color: const Color(0xFFE2E8F0),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          TutorialController.instance.setStage(TutorialStage.step8_tap_notification);
-                        },
-                        icon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 18),
-                        label: Text(
-                          'AVANTI: VEDI NOTIFICHE 🔔',
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: const Color(0xFF0F172A),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4)),
+                          ),
+                          child: Text(
+                            'TAPPA 2 DI 4 • VOTAZIONE LIVE',
+                            style: GoogleFonts.poppins(
+                              color: const Color(0xFFFACC15),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              letterSpacing: 0.5,
+                              decoration: TextDecoration.none,
+                            ),
                           ),
                         ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFFACC15),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 6,
+                        const Text('🗳️ DEMOCRAZIA', style: TextStyle(fontSize: 12, color: Color(0xFFC084FC), fontWeight: FontWeight.bold, decoration: TextDecoration.none)),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Ecco la tua proposta tra i Voti Live! 🎉',
+                      style: GoogleFonts.poppins(
+                        fontSize: 17,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Come vedi, la proposta è apparsa qui in tempo reale. Visto che l\'hai proposta tu, il tuo voto è già calcolato a favore.\n\nQuando giocherai con i tuoi amici, la votazione sarà democratica e servirà il raggiungimento del Quorum per approvarla ufficialmente!',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        height: 1.5,
+                        color: const Color(0xFFE2E8F0),
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              TutorialController.instance.setStage(TutorialStage.step8_tap_notification);
+                            },
+                            icon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 18),
+                            label: Text(
+                              'AVANTI: VEDI NOTIFICHE 🔔',
+                              style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: const Color(0xFF0F172A),
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFACC15),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              elevation: 6,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: TextButton(
+                        onPressed: () => TutorialController.instance.skipTutorial(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF94A3B8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: Text(
+                          'Salta Tutorial',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Center(
-                  child: TextButton(
-                    onPressed: () => TutorialController.instance.skipTutorial(),
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF94A3B8),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    child: Text(
-                      'Salta Tutorial',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        decoration: TextDecoration.underline,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -1048,14 +1061,16 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemCount: _eventi.length,
         itemBuilder: (ctx, idx) {
           final ev = _eventi[idx];
-          final isFirstCard = idx == 0;
+          final bool isTutorialTarget = TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
+              (TutorialController.instance.isTutorialEvent(ev) ||
+                  (!_eventi.any((e) => TutorialController.instance.isTutorialEvent(e)) && idx == 0));
           return Container(
-            key: isFirstCard ? TutorialController.instance.keyFirstEventCard : null,
+            key: isTutorialTarget ? TutorialController.instance.keyFirstEventCard : null,
             child: EventCard(
               evento: ev,
               currentUserNickname: userNick,
               onTap: () async {
-                if (isFirstCard && TutorialController.instance.stage == TutorialStage.step4_tap_event_card) {
+                if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card && isTutorialTarget) {
                   TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
                 }
                 await Navigator.of(context).push(

@@ -1140,7 +1140,7 @@ class _ProfileViewState extends State<ProfileView> {
               Navigator.pop(context, true);
               Future.delayed(const Duration(milliseconds: 320), () {
                 if (!TutorialController.instance.isActive) {
-                  TutorialController.instance.startTutorial();
+                  TutorialController.instance.startTutorial(isReplay: true);
                 }
               });
             },

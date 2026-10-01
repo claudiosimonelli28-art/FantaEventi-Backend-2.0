@@ -104,9 +104,10 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         riassegnabileMoltepliciVolte: _riassegnabileMoltepliciVolte,
       );
 
-      await _apiService.proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus);
+      final bool isTutorial = TutorialController.instance.stage == TutorialStage.step6_in_add_bonus;
+      await _apiService.proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus, awardXp: !isTutorial);
 
-      if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus) {
+      if (isTutorial) {
         TutorialController.instance.setStage(TutorialStage.step7_view_votazioni);
       }
 
@@ -497,7 +498,9 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                     child: _isLoading
                         ? const CircularProgressIndicator(color: Colors.white)
                         : Text(
-                            'PROPONI ALL\'EVENTO (+50 XP)',
+                            TutorialController.instance.stage == TutorialStage.step6_in_add_bonus
+                                ? 'PROPONI ALL\'EVENTO (TUTORIAL)'
+                                : 'PROPONI ALL\'EVENTO (+50 XP)',
                             style: GoogleFonts.poppins(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,

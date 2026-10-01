@@ -61,6 +61,7 @@ class _EventDetailViewState extends State<EventDetailView> {
 
   @override
   void dispose() {
+    TutorialController.instance.rollbackFromEventDetail();
     _liveLeaderboardTimer?.cancel();
     super.dispose();
   }
@@ -132,8 +133,15 @@ class _EventDetailViewState extends State<EventDetailView> {
     final giaPartecipa = _partecipantiConfermati.contains(currentUserNick) ||
         _partecipantiConfermati.contains(_apiService.currentUser?.id);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          TutorialController.instance.rollbackFromEventDetail();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
       body: CustomScrollView(
         slivers: [
           // Slivers AppBar con Copertina dell'Evento
@@ -228,7 +236,8 @@ class _EventDetailViewState extends State<EventDetailView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (TutorialController.instance.stage == TutorialStage.step5_in_event_detail)
+                  if (TutorialController.instance.stage == TutorialStage.step5_in_event_detail &&
+                      TutorialController.instance.isTutorialEvent(_evento))
                     TutorialStepBanner(
                       stepTag: 'Tappa 2 di 4 • Dettaglio Evento',
                       title: 'Proponi la prima Regola di Gioco!',
@@ -593,9 +602,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                       if (_evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
                         Expanded(
                           child: ElevatedButton.icon(
-                            key: TutorialController.instance.keyProponiBonus,
+                            key: TutorialController.instance.isTutorialEvent(_evento) ? TutorialController.instance.keyProponiBonus : null,
                             onPressed: () async {
-                              if (TutorialController.instance.stage == TutorialStage.step5_in_event_detail) {
+                              if (TutorialController.instance.stage == TutorialStage.step5_in_event_detail &&
+                                  TutorialController.instance.isTutorialEvent(_evento)) {
                                 TutorialController.instance.setStage(TutorialStage.step6_in_add_bonus);
                               }
                               await Navigator.of(context).push(
@@ -625,8 +635,9 @@ class _EventDetailViewState extends State<EventDetailView> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildLeaderboardSection() {
     final now = DateTime.now();

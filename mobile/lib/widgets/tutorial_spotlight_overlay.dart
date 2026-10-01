@@ -244,132 +244,143 @@ class _InteractiveSpotlightOverlayState extends State<InteractiveSpotlightOverla
             right: 16,
             top: isTargetAtBottom ? MediaQuery.of(context).padding.top + 20 : null,
             bottom: !isTargetAtBottom ? MediaQuery.of(context).padding.bottom + 24 : null,
-            child: Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    blurRadius: 25,
-                    spreadRadius: 4,
-                  ),
-                  BoxShadow(
-                    color: const Color(0xFF9333EA).withValues(alpha: 0.35),
-                    blurRadius: 18,
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFACC15).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4)),
-                        ),
-                        child: Text(
-                          widget.stepTag.toUpperCase(),
-                          style: GoogleFonts.poppins(
-                            color: const Color(0xFFFACC15),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 11,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
+            child: Material(
+              type: MaterialType.transparency,
+              child: DefaultTextStyle(
+                style: const TextStyle(decoration: TextDecoration.none),
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.65), width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        blurRadius: 25,
+                        spreadRadius: 2,
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF9333EA).withValues(alpha: 0.25),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            const Text('✨', style: TextStyle(fontSize: 12)),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Guida',
-                              style: GoogleFonts.poppins(
-                                color: const Color(0xFFC084FC),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
+                      BoxShadow(
+                        color: const Color(0xFF9333EA).withValues(alpha: 0.25),
+                        blurRadius: 18,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    widget.title,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                      height: 1.25,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.description,
-                    style: GoogleFonts.inter(
-                      color: const Color(0xFFCBD5E1),
-                      fontSize: 13,
-                      height: 1.45,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Icon(Icons.touch_app_rounded, color: Color(0xFFFACC15), size: 18),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Tocca l\'icona evidenziata!',
-                            style: GoogleFonts.poppins(
-                              color: const Color(0xFFFACC15),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4)),
+                            ),
+                            child: Text(
+                              widget.stepTag.toUpperCase(),
+                              style: GoogleFonts.poppins(
+                                color: const Color(0xFFFACC15),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11,
+                                letterSpacing: 0.8,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF9333EA).withValues(alpha: 0.25),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Text('✨', style: TextStyle(fontSize: 12)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Guida',
+                                  style: GoogleFonts.poppins(
+                                    color: const Color(0xFFC084FC),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                    decoration: TextDecoration.none,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                      if (widget.onSkip != null)
-                        TextButton(
-                          onPressed: widget.onSkip,
-                          style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFF94A3B8),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          child: Text(
-                            'Salta Tutorial',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
+                      const SizedBox(height: 12),
+                      Text(
+                        widget.title,
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 18,
+                          height: 1.25,
+                          decoration: TextDecoration.none,
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        widget.description,
+                        style: GoogleFonts.inter(
+                          color: const Color(0xFFCBD5E1),
+                          fontSize: 13,
+                          height: 1.45,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.touch_app_rounded, color: Color(0xFFFACC15), size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Tocca l\'icona evidenziata!',
+                                style: GoogleFonts.poppins(
+                                  color: const Color(0xFFFACC15),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (widget.onSkip != null)
+                            TextButton(
+                              onPressed: widget.onSkip,
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF94A3B8),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(
+                                'Salta Tutorial',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -515,81 +526,90 @@ class TutorialStepBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 18),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFACC15).withValues(alpha: 0.2),
-            blurRadius: 14,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFACC15).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  stepTag.toUpperCase(),
-                  style: GoogleFonts.poppins(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFFFACC15),
-                  ),
-                ),
+    return Material(
+      type: MaterialType.transparency,
+      child: DefaultTextStyle(
+        style: const TextStyle(decoration: TextDecoration.none),
+        child: Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.65), width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                blurRadius: 14,
+                spreadRadius: 2,
               ),
-              if (onSkip != null)
-                GestureDetector(
-                  onTap: onSkip,
-                  child: Text(
-                    'Salta',
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF94A3B8),
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFACC15).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      stepTag.toUpperCase(),
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFFFACC15),
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                  if (onSkip != null)
+                    GestureDetector(
+                      onTap: onSkip,
+                      child: Text(
+                        'Salta',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF94A3B8),
+                          decoration: TextDecoration.underline,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: const Color(0xFFCBD5E1),
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            description,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              height: 1.4,
-              color: const Color(0xFFCBD5E1),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

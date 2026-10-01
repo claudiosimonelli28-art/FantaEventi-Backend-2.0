@@ -1987,7 +1987,7 @@ class ApiService {
     }
   }
 
-  Future<Evento> creaEvento(Evento nuovoEvento) async {
+  Future<Evento> creaEvento(Evento nuovoEvento, {bool awardXp = true}) async {
     invalidateCache();
     final creatore = nuovoEvento.propostoDa.isNotEmpty ? nuovoEvento.propostoDa : (_currentUser?.nome ?? 'Cloud');
     final List<String> invitati = nuovoEvento.partecipanti
@@ -2056,7 +2056,7 @@ class ApiService {
 
     _eventi.insert(0, eventPayload);
 
-    if (_currentUser != null) {
+    if (_currentUser != null && awardXp) {
       final nuoviXp = _currentUser!.xp + 100;
       final nuovoLivello = (nuoviXp / 1000).floor() + 1;
       _currentUser = _currentUser!.copyWith(
@@ -2104,7 +2104,7 @@ class ApiService {
   }
 
   // --- PROPOSTA BONUS/MALUS LEGATA A UN EVENTO SPECIFICO ---
-  Future<BonusMalus> proponiBonusMalusPerEvento(String eventoId, BonusMalus nuovoBonus) async {
+  Future<BonusMalus> proponiBonusMalusPerEvento(String eventoId, BonusMalus nuovoBonus, {bool awardXp = true}) async {
     final curUserNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
     Evento evMatch = _eventi.firstWhere(
       (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoId.toLowerCase(),
@@ -2230,7 +2230,7 @@ class ApiService {
       _bonusMalusList.insert(0, nuovoBonus);
     }
 
-    if (_currentUser != null) {
+    if (_currentUser != null && awardXp) {
       final nuoviXp = _currentUser!.xp + 50;
       _currentUser = _currentUser!.copyWith(
         xp: nuoviXp,

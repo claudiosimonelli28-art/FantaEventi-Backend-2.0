@@ -251,9 +251,11 @@ class _CreateEventViewState extends State<CreateEventView> {
         penalitaFalsaTestimonianza: _penalitaFalsaTestimonianza,
       );
 
-      await _apiService.creaEvento(nuovoEvento);
+      final bool isTutorial = TutorialController.instance.stage == TutorialStage.step3_in_create_event;
+      await _apiService.creaEvento(nuovoEvento, awardXp: !isTutorial);
 
-      if (TutorialController.instance.stage == TutorialStage.step3_in_create_event) {
+      if (isTutorial) {
+        TutorialController.instance.tutorialCreatedEventId = nuovoEvento.id;
         TutorialController.instance.setStage(TutorialStage.step4_tap_event_card);
       }
 
