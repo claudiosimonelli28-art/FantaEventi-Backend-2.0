@@ -59,6 +59,8 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
   }
 
   Future<void> _submitForm() async {
+    if (_isLoading) return;
+
     if (_formKey.currentState?.validate() ?? false) {
       if (_eventoSelezionato == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -84,36 +86,55 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         _isLoading = true;
       });
 
-      int mePunti = int.tryParse(_puntiController.text.trim()) ?? 10;
-      if (!_isBonus && mePunti > 0) {
-        mePunti = -mePunti;
-      } else if (_isBonus && mePunti < 0) {
-        mePunti = mePunti.abs();
+      try {
+        int mePunti = int.tryParse(_puntiController.text.trim()) ?? 10;
+        if (!_isBonus && mePunti > 0) {
+          mePunti = -mePunti;
+        } else if (_isBonus && mePunti < 0) {
+          mePunti = mePunti.abs();
+        }
+
+        final meUser = _apiService.getCurrentUser();
+
+        final nuovoBonus = BonusMalus(
+          id: 'bm_${DateTime.now().millisecondsSinceEpoch}',
+          titolo: _titoloController.text.trim(),
+          descrizione: _descrizioneController.text.trim(),
+          punti: mePunti,
+          categoria: _categoriaSelezionata,
+          propostoDa: meUser.nome,
+          approvato: false,
+          riassegnabileMoltepliciVolte: _riassegnabileMoltepliciVolte,
+        );
+
+        final bool isTutorial = TutorialController.instance.stage == TutorialStage.step6_in_add_bonus;
+        await _apiService
+            .proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus, awardXp: !isTutorial)
+            .timeout(const Duration(seconds: 6));
+
+        if (isTutorial) {
+          TutorialController.instance.setStage(TutorialStage.step7_view_votazioni);
+        }
+
+        if (!mounted) return;
+
+        Navigator.pop(context);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFFEF4444),
+              content: Text('Errore durante la proposta: ${e.toString().replaceAll("Exception: ", "")}'),
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
-
-      final meUser = _apiService.getCurrentUser();
-
-      final nuovoBonus = BonusMalus(
-        id: 'bm_${DateTime.now().millisecondsSinceEpoch}',
-        titolo: _titoloController.text.trim(),
-        descrizione: _descrizioneController.text.trim(),
-        punti: mePunti,
-        categoria: _categoriaSelezionata,
-        propostoDa: meUser.nome,
-        approvato: false,
-        riassegnabileMoltepliciVolte: _riassegnabileMoltepliciVolte,
-      );
-
-      final bool isTutorial = TutorialController.instance.stage == TutorialStage.step6_in_add_bonus;
-      await _apiService.proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus, awardXp: !isTutorial);
-
-      if (isTutorial) {
-        TutorialController.instance.setStage(TutorialStage.step7_view_votazioni);
-      }
-
-      if (!mounted) return;
-
-      Navigator.pop(context);
     }
   }
 

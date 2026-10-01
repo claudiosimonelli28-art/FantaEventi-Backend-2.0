@@ -117,12 +117,15 @@ class ApiService {
     }
   }
 
+  void markMongoDbDisconnected() {
+    try {
+      _db?.close();
+    } catch (_) {}
+    _db = null;
+  }
+
   final List<String> baseUrls = [
     'https://fantaeventi-backend-2-0.onrender.com/api',
-    'http://192.168.88.133:8088/api',
-    'http://10.0.2.2:8088/api',
-    'http://localhost:8088/api',
-    'http://127.0.0.1:8088/api',
   ];
 
   Map<String, String> get defaultHeaders => {
@@ -440,9 +443,9 @@ class ApiService {
 
     // 1. Prova PRIMA la connessione DIRETTA a MongoDB Atlas (Istantanea <30ms)
     try {
-      final db = await _getMongoDb();
+      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Utenti').find().toList();
+        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
         for (var d in docs) {
           final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
@@ -502,6 +505,7 @@ class ApiService {
         throw Exception('Nessun utente trovato nel database per "$cleanIdentifier". Registrati prima di accedere!');
       }
     } catch (e) {
+      markMongoDbDisconnected();
       if (e is NeedsPasswordSetupException) rethrow;
       if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
         rethrow;
@@ -554,7 +558,7 @@ class ApiService {
         if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
           rethrow;
         }
-        lastError = 'Impossibile contattare il server: $e';
+        lastError = 'Connessione al server non disponibile o server in riavvio. Riprova tra pochi istanti! 🔄';
       }
     }
 
@@ -1216,9 +1220,9 @@ class ApiService {
     }
 
     try {
-      final db = await _getMongoDb();
+      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Evento').find().toList();
+        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
 
         final now = DateTime.now();
         final List<Evento> list = [];
@@ -1591,7 +1595,9 @@ class ApiService {
         _lastFetchTime = DateTime.now();
         return list;
       }
-    } catch (_) {}
+    } catch (_) {
+      markMongoDbDisconnected();
+    }
 
     // 2. Fallback veloce HTTP (timeout 2s)
     for (String url in baseUrls) {
@@ -2008,7 +2014,7 @@ class ApiService {
     bool directSuccess = false;
     String realEvId = eventPayload.id;
     try {
-      final db = await _getMongoDb();
+      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
         final evRes = await db.collection('Evento').insertOne({
           'titolo': nuovoEvento.titolo,
@@ -2026,27 +2032,31 @@ class ApiService {
           'invitati': invitati,
           'copertinaUrl': nuovoEvento.copertinaUrl,
           'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
-        });
+        }).timeout(const Duration(seconds: 4));
 
         final insertedEvId = evRes.id?.toHexString() ?? '';
         if (insertedEvId.isNotEmpty) {
           realEvId = insertedEvId;
         }
         for (var invUser in invitati) {
-          await db.collection('Notifiche').insertOne({
-            'mittente': creatore,
-            'destinatario': invUser,
-            'titolo': 'Invito ad Evento: ${nuovoEvento.titolo}',
-            'messaggio': '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
-            'eventoId': insertedEvId,
-            'tipo': 'invito',
-            'stato': 'in_attesa',
-            'data': DateTime.now().toIso8601String(),
-          });
+          try {
+            await db.collection('Notifiche').insertOne({
+              'mittente': creatore,
+              'destinatario': invUser,
+              'titolo': 'Invito ad Evento: ${nuovoEvento.titolo}',
+              'messaggio': '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
+              'eventoId': insertedEvId,
+              'tipo': 'invito',
+              'stato': 'in_attesa',
+              'data': DateTime.now().toIso8601String(),
+            }).timeout(const Duration(seconds: 3));
+          } catch (_) {}
         }
         directSuccess = true;
       }
-    } catch (_) {}
+    } catch (_) {
+      markMongoDbDisconnected();
+    }
 
     if (!directSuccess) {
       for (String url in baseUrls) {
@@ -2055,7 +2065,7 @@ class ApiService {
             Uri.parse('$url/eventi/crea'),
             headers: defaultHeaders,
             body: jsonEncode(payloadMap),
-          ).timeout(const Duration(seconds: 8));
+          ).timeout(const Duration(seconds: 4));
         } catch (_) {}
       }
     }
@@ -2132,14 +2142,14 @@ class ApiService {
     // Scrittura DIRETTA della notifica e del bonus su MongoDB Atlas (Singola Scrittura Infallibile)
     bool directSuccessBM = false;
     try {
-      final db = await _getMongoDb();
+      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
         if (evMatch.partecipanti.isEmpty) {
           ObjectId? evObjId;
           try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
           final evDoc = await db.collection('Evento').findOne(
             evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId).or(where.eq('titolo', eventoId))
-          );
+          ).timeout(const Duration(seconds: 4));
           if (evDoc != null) {
             evMatch = evMatch.copyWith(
               titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
@@ -2160,7 +2170,7 @@ class ApiService {
           'propostoDa': curUserNick,
           'stato': 'in_votazione',
           'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
-        });
+        }).timeout(const Duration(seconds: 4));
 
         final Map<String, String> uniqueDestMap = {};
         for (var d in [...evMatch.partecipanti, ...evMatch.invitati, evMatch.propostoDa, evMatch.creatore]) {
@@ -2170,21 +2180,25 @@ class ApiService {
           }
         }
         for (var destUser in uniqueDestMap.values) {
-          await db.collection('Notifiche').insertOne({
-            'mittente': curUserNick,
-            'destinatario': destUser,
-            'titolo': '⭐ Nuova Proposta Bonus/Malus',
-            'messaggio': '$curUserNick ha proposto il bonus "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) per l\'evento "${evMatch.titolo}"!',
-            'eventoId': eventoId,
-            'tipo': 'bonus_malus',
-            'stato': 'in_attesa',
-            'letto': false,
-            'data': DateTime.now().toIso8601String(),
-          });
+          try {
+            await db.collection('Notifiche').insertOne({
+              'mittente': curUserNick,
+              'destinatario': destUser,
+              'titolo': '⭐ Nuova Proposta Bonus/Malus',
+              'messaggio': '$curUserNick ha proposto il bonus "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) per l\'evento "${evMatch.titolo}"!',
+              'eventoId': eventoId,
+              'tipo': 'bonus_malus',
+              'stato': 'in_attesa',
+              'letto': false,
+              'data': DateTime.now().toIso8601String(),
+            }).timeout(const Duration(seconds: 3));
+          } catch (_) {}
         }
         directSuccessBM = true;
       }
-    } catch (_) {}
+    } catch (_) {
+      markMongoDbDisconnected();
+    }
 
     if (!directSuccessBM) {
       for (String url in baseUrls) {
@@ -2202,7 +2216,7 @@ class ApiService {
               'punti': nuovoBonus.punti,
               'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
             }),
-          ).timeout(const Duration(seconds: 10));
+          ).timeout(const Duration(seconds: 4));
         } catch (_) {}
       }
     }
@@ -2247,20 +2261,22 @@ class ApiService {
         ],
       );
       try {
-        final db = await _getMongoDb();
+        final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
         if (db != null && db.isConnected) {
-          final uDocs = await db.collection('Utenti').find().toList();
+          final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
           for (var uDoc in uDocs) {
             final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
             if (uName == _currentUser!.nome.trim().toLowerCase()) {
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
                 modify.set('xp', _currentUser!.xp).set('storicoVoti', _currentUser!.storicoVoti),
-              );
+              ).timeout(const Duration(seconds: 4));
             }
           }
         }
-      } catch (_) {}
+      } catch (_) {
+        markMongoDbDisconnected();
+      }
     }
 
     return nuovoBonus;
@@ -2494,10 +2510,10 @@ class ApiService {
 
   Future<List<Votazione>> getVotazioni() async {
     try {
-      final db = await _getMongoDb();
+      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
-        final bmDocs = await db.collection('BonusMalus').find().toList();
-        final votiDocs = await db.collection('Votazioni').find().toList();
+        final bmDocs = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 4));
+        final votiDocs = await db.collection('Votazioni').find().toList().timeout(const Duration(seconds: 4));
 
         final List<Votazione> list = [];
         _bonusMalusList.clear();
@@ -2660,7 +2676,9 @@ class ApiService {
 
         return list;
       }
-    } catch (_) {}
+    } catch (_) {
+      markMongoDbDisconnected();
+    }
 
     return List.unmodifiable(_votazioniList);
   }
