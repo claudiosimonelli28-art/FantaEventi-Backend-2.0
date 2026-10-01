@@ -21,6 +21,7 @@ import '../services/api_service.dart';
 import 'add_bonus_malus_view.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class EventDetailView extends StatefulWidget {
   final Evento evento;
@@ -381,29 +382,84 @@ class _EventDetailViewState extends State<EventDetailView> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1E293B),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFF334155)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.place_rounded, color: Color(0xFF9333EA), size: 20),
-                            const SizedBox(width: 10),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Location / Luogo', style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 11)),
-                                Text(
-                                  _evento.luogo.isNotEmpty ? _evento.luogo : 'Non specificata',
-                                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                      InkWell(
+                        onTap: _evento.luogo.isNotEmpty ? () => _apriModalPortamiLa(_evento) : null,
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1E293B),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: (_evento.latitudine != null && _evento.longitudine != null)
+                                  ? const Color(0xFF10B981).withValues(alpha: 0.5)
+                                  : const Color(0xFF334155),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF9333EA).withValues(alpha: 0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.place_rounded, color: Color(0xFFC084FC), size: 20),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text('Location / Luogo', style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 11)),
+                                        if (_evento.latitudine != null && _evento.longitudine != null) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFF065F46).withValues(alpha: 0.5),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              'GPS MAPPA',
+                                              style: GoogleFonts.inter(color: const Color(0xFF34D399), fontSize: 9, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _evento.luogo.isNotEmpty ? _evento.luogo : 'Non specificata',
+                                      style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (_evento.luogo.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                ElevatedButton.icon(
+                                  onPressed: () => _apriModalPortamiLa(_evento),
+                                  icon: const Icon(Icons.navigation_rounded, size: 14, color: Color(0xFF0F172A)),
+                                  label: Text(
+                                    'PORTAMI LÀ',
+                                    style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFFACC15),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                    visualDensity: VisualDensity.compact,
+                                  ),
                                 ),
                               ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -2685,6 +2741,266 @@ class _EventDetailViewState extends State<EventDetailView> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Future<void> _lanciaNavigatore(String urlString) async {
+    final uri = Uri.parse(urlString);
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (_) {
+      try {
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+      } catch (_) {}
+    }
+  }
+
+  void _apriModalPortamiLa(Evento ev) {
+    final hasGps = ev.latitudine != null && ev.longitudine != null;
+    final String destinationQuery = hasGps
+        ? '${ev.latitudine},${ev.longitudine}'
+        : Uri.encodeComponent(ev.luogo.trim());
+
+    final String googleMapsUrl = 'https://www.google.com/maps/dir/?api=1&destination=$destinationQuery';
+    final String appleMapsUrl = 'https://maps.apple.com/?daddr=$destinationQuery';
+    final String wazeUrl = hasGps
+        ? 'https://waze.com/ul?ll=${ev.latitudine},${ev.longitudine}&navigate=yes'
+        : 'https://waze.com/ul?q=$destinationQuery&navigate=yes';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF334155),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.navigation_rounded, color: Color(0xFFFACC15), size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Portami là 🧭',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            'Scegli il tuo navigatore preferito',
+                            style: GoogleFonts.inter(
+                              color: const Color(0xFF94A3B8),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Destinazione Card
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.place_rounded, color: Color(0xFFFACC15), size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Destinazione:',
+                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B)),
+                            ),
+                            Text(
+                              ev.luogo,
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (hasGps)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Text(
+                                  'Coordinate GPS: ${ev.latitudine!.toStringAsFixed(4)}, ${ev.longitudine!.toStringAsFixed(4)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    color: const Color(0xFF10B981),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Copia Indirizzo',
+                        icon: const Icon(Icons.copy_rounded, color: Color(0xFF94A3B8), size: 18),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: ev.luogo));
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              backgroundColor: const Color(0xFF10B981),
+                              content: Text(
+                                'Indirizzo copiato negli appunti! 📋',
+                                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Opzione 1: Google Maps
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  tileColor: const Color(0xFF0F172A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: const BorderSide(color: Color(0xFF334155)),
+                  ),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4285F4).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.map_rounded, color: Color(0xFF4285F4), size: 22),
+                  ),
+                  title: Text(
+                    'Google Maps',
+                    style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Indicazioni stradali in tempo reale',
+                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _lanciaNavigatore(googleMapsUrl);
+                  },
+                ),
+                const SizedBox(height: 10),
+
+                // Opzione 2: Apple Maps
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  tileColor: const Color(0xFF0F172A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: const BorderSide(color: Color(0xFF334155)),
+                  ),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.apple_rounded, color: Colors.white, size: 22),
+                  ),
+                  title: Text(
+                    'Apple Maps',
+                    style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Mappe native per dispositivi iOS',
+                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _lanciaNavigatore(appleMapsUrl);
+                  },
+                ),
+                const SizedBox(height: 10),
+
+                // Opzione 3: Waze
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  tileColor: const Color(0xFF0F172A),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: const BorderSide(color: Color(0xFF334155)),
+                  ),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF33CCFF).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.directions_car_rounded, color: Color(0xFF33CCFF), size: 22),
+                  ),
+                  title: Text(
+                    'Waze',
+                    style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                  subtitle: Text(
+                    'Traffico, autovelox e navigazione',
+                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _lanciaNavigatore(wazeUrl);
+                  },
+                ),
+                const SizedBox(height: 10),
+              ],
+            ),
+          ),
         );
       },
     );

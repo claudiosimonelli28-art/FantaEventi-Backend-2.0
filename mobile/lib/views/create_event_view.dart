@@ -8,6 +8,7 @@ import '../models/utente.dart';
 import '../widgets/avatar_helper.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
+import '../widgets/map_location_picker_modal.dart';
 
 class CreateEventView extends StatefulWidget {
   const CreateEventView({super.key});
@@ -21,6 +22,8 @@ class _CreateEventViewState extends State<CreateEventView> {
   final _titoloController = TextEditingController();
   final _descrizioneController = TextEditingController();
   final _luogoController = TextEditingController();
+  double? _selectedLat;
+  double? _selectedLng;
   final _copertinaController = TextEditingController();
   final _searchController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
@@ -222,6 +225,23 @@ class _CreateEventViewState extends State<CreateEventView> {
     super.dispose();
   }
 
+  Future<void> _apriMappaPicker() async {
+    final result = await MapLocationPickerModal.mostra(
+      context,
+      initialLat: _selectedLat,
+      initialLng: _selectedLng,
+      initialName: _luogoController.text,
+    );
+
+    if (result != null) {
+      setState(() {
+        _luogoController.text = result.displayName;
+        _selectedLat = result.latitude;
+        _selectedLng = result.longitude;
+      });
+    }
+  }
+
   Future<void> _submitForm() async {
     if (_formKey.currentState?.validate() ?? false) {
       final curUser = _apiService.currentUser;
@@ -242,6 +262,8 @@ class _CreateEventViewState extends State<CreateEventView> {
         data: _selectedStartDate,
         dataFine: _selectedEndDate,
         luogo: _luogoController.text.trim(),
+        latitudine: _selectedLat,
+        longitudine: _selectedLng,
         stato: 'in_programma',
         propostoDa: creatore,
         partecipanti: _partecipantiSelezionati,
@@ -306,7 +328,7 @@ class _CreateEventViewState extends State<CreateEventView> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Seleziona i partecipanti reali registrati nel database MongoDB',
+                  'Invita i tuoi amici e partecipanti all\'evento',
                   style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 20),
@@ -461,9 +483,14 @@ class _CreateEventViewState extends State<CreateEventView> {
                   controller: _luogoController,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    labelText: 'Luogo / Location',
+                    labelText: 'Luogo / Location (a mano o da mappa)',
                     labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
                     prefixIcon: const Icon(Icons.place, color: Color(0xFFFACC15)),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.map_rounded, color: Color(0xFFFACC15)),
+                      tooltip: 'Scegli sulla Mappa',
+                      onPressed: _apriMappaPicker,
+                    ),
                     filled: true,
                     fillColor: const Color(0xFF1E293B),
                     border: OutlineInputBorder(
@@ -473,7 +500,72 @@ class _CreateEventViewState extends State<CreateEventView> {
                   ),
                   validator: (val) => val == null || val.isEmpty ? 'Inserisci il luogo' : null,
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    InkWell(
+                      onTap: _apriMappaPicker,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.5)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.explore_rounded, color: Color(0xFFFACC15), size: 16),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Scegli o cerca sulla Mappa 🗺️',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFFFACC15),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_selectedLat != null && _selectedLng != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF065F46).withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFF10B981)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.gps_fixed_rounded, size: 13, color: Color(0xFF34D399)),
+                            const SizedBox(width: 5),
+                            Text(
+                              'GPS Collegato',
+                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF34D399), fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedLat = null;
+                                  _selectedLng = null;
+                                });
+                              },
+                              child: const Icon(Icons.close_rounded, size: 14, color: Color(0xFF34D399)),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
 
                 // Date & Time Picker Inizio
                 InkWell(

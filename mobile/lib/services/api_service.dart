@@ -2017,6 +2017,8 @@ class ApiService {
           'data': nuovoEvento.data.toIso8601String(),
           'dataFine': nuovoEvento.dataFine.toIso8601String(),
           'luogo': nuovoEvento.luogo,
+          if (nuovoEvento.latitudine != null) 'latitudine': nuovoEvento.latitudine,
+          if (nuovoEvento.longitudine != null) 'longitudine': nuovoEvento.longitudine,
           'stato': 'in_programma',
           'propostoDa': creatore,
           'creatore': creatore,

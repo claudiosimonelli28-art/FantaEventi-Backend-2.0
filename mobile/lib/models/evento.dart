@@ -8,6 +8,8 @@ class Evento {
   final DateTime data;
   final DateTime dataFine;
   final String luogo;
+  final double? latitudine;
+  final double? longitudine;
   final String stato; // 'in_programma', 'in_corso', 'concluso'
   final String propostoDa;
   final List<String> partecipanti;
@@ -34,6 +36,8 @@ class Evento {
     required this.data,
     DateTime? dataFine,
     required this.luogo,
+    this.latitudine,
+    this.longitudine,
     required this.stato,
     this.propostoDa = '',
     required this.partecipanti,
@@ -72,6 +76,8 @@ class Evento {
       data: dtInizio,
       dataFine: dtFine,
       luogo: json['luogo'] as String? ?? '',
+      latitudine: (json['latitudine'] as num?)?.toDouble(),
+      longitudine: (json['longitudine'] as num?)?.toDouble(),
       stato: calculatedStato,
       propostoDa: json['propostoDa'] as String? ?? (json['creatore'] as String? ?? ''),
       partecipanti: (json['partecipanti'] as List<dynamic>?)
@@ -107,6 +113,8 @@ class Evento {
       'data': data.toIso8601String(),
       'dataFine': dataFine.toIso8601String(),
       'luogo': luogo,
+      if (latitudine != null) 'latitudine': latitudine,
+      if (longitudine != null) 'longitudine': longitudine,
       'stato': isConcluso ? 'concluso' : stato,
       'propostoDa': propostoDa,
       'creatore': propostoDa,
@@ -128,6 +136,8 @@ class Evento {
     DateTime? data,
     DateTime? dataFine,
     String? luogo,
+    double? latitudine,
+    double? longitudine,
     String? stato,
     String? propostoDa,
     List<String>? partecipanti,
@@ -145,6 +155,8 @@ class Evento {
       data: data ?? this.data,
       dataFine: dataFine ?? this.dataFine,
       luogo: luogo ?? this.luogo,
+      latitudine: latitudine ?? this.latitudine,
+      longitudine: longitudine ?? this.longitudine,
       stato: stato ?? this.stato,
       propostoDa: propostoDa ?? this.propostoDa,
       partecipanti: partecipanti ?? this.partecipanti,
