@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import 'home_view.dart';
+import '../widgets/app_toast.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -37,15 +38,10 @@ class _LoginViewState extends State<LoginView> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: const Color(0xFFEF4444),
-        duration: const Duration(seconds: 4),
-        content: Text(
-          message.replaceAll('Exception: ', ''),
-          style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-      ),
+    AppToast.showError(
+      context,
+      'Attenzione',
+      message.replaceAll('Exception: ', ''),
     );
   }
 
@@ -314,26 +310,23 @@ class _LoginViewState extends State<LoginView> {
                         final p2 = setupConfirmPassController.text.trim();
 
                         if (p1.length < 6) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              backgroundColor: Color(0xFFEF4444),
-                              content: Text('La password deve contenere almeno 6 caratteri.'),
-                            ),
+                          AppToast.showWarning(
+                            context,
+                            'Password troppo corta',
+                            'La password deve contenere almeno 6 caratteri.',
                           );
                           return;
                         }
 
                         if (p1 != p2) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              backgroundColor: Color(0xFFEF4444),
-                              content: Text('Le password non coincidono! Controlla e riprova.'),
-                            ),
+                          AppToast.showWarning(
+                            context,
+                            'Password non coincidenti',
+                            'Le password non coincidono! Controlla e riprova.',
                           );
                           return;
                         }
 
-                        final messenger = ScaffoldMessenger.of(context);
                         final nav = Navigator.of(context);
                         setModalState(() => isSaving = true);
 
@@ -351,11 +344,10 @@ class _LoginViewState extends State<LoginView> {
                           );
                         } catch (err) {
                           setModalState(() => isSaving = false);
-                          messenger.showSnackBar(
-                            SnackBar(
-                              backgroundColor: const Color(0xFFEF4444),
-                              content: Text(err.toString().replaceAll('Exception: ', '')),
-                            ),
+                          AppToast.showError(
+                            context,
+                            'Errore salvataggio',
+                            err.toString().replaceAll('Exception: ', ''),
                           );
                         }
                       },
@@ -721,23 +713,10 @@ class _LoginViewState extends State<LoginView> {
                             }
                             _loginPasswordController.text = p1;
 
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFF10B981),
-                                duration: const Duration(seconds: 4),
-                                content: Row(
-                                  children: [
-                                    const Icon(Icons.check_circle, color: Colors.white),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: Text(
-                                        'Password aggiornata con successo! Ora puoi accedere.',
-                                        style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                            AppToast.showSuccess(
+                              context,
+                              'Password Aggiornata 🎉',
+                              'Password aggiornata con successo! Ora puoi accedere.',
                             );
                           } catch (e) {
                             setModalState(() {

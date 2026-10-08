@@ -169,65 +169,37 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
               bottom: MediaQuery.of(context).padding.bottom + 14,
             ),
             child: _currentPage == 4
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: ElevatedButton(
-                          onPressed: () => _chiudiGuida(startTutorial: widget.isFirstAccess),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFACC15),
-                            foregroundColor: const Color(0xFF0F172A),
-                            elevation: 4,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                widget.isFirstAccess
-                                    ? '🎮 INIZIA TUTORIAL GUIDATO (+100 XP)'
-                                    : 'HO CAPITO, ANDIAMO A GIOCARE!',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(widget.isFirstAccess ? '✨' : '🚀', style: const TextStyle(fontSize: 18)),
-                            ],
-                          ),
+                ? SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () => _chiudiGuida(startTutorial: widget.isFirstAccess),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFACC15),
+                        foregroundColor: const Color(0xFF0F172A),
+                        elevation: 4,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      if (!widget.isFirstAccess) ...[
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 44,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _chiudiGuida(startTutorial: true),
-                            icon: const Icon(Icons.sports_esports_rounded, color: Color(0xFFC084FC), size: 18),
-                            label: Text(
-                              'Riavvia Tutorial Guidato 🎮',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFFC084FC),
-                              ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFF9333EA), width: 1.2),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            widget.isFirstAccess
+                                ? '🎮 INIZIA TUTORIAL GUIDATO (+100 XP)'
+                                : 'HO CAPITO, ANDIAMO A GIOCARE!',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.3,
                             ),
                           ),
-                        ),
-                      ],
-                    ],
+                          const SizedBox(width: 8),
+                          Text(widget.isFirstAccess ? '✨' : '🚀', style: const TextStyle(fontSize: 18)),
+                        ],
+                      ),
+                    ),
                   )
                 : Row(
                     children: [
@@ -296,25 +268,25 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
       icon: '🎉',
       badge: 'BENVENUTO',
       title: 'Cos\'è FantaEventi?',
-      subtitle: 'Gamifica qualsiasi momento dal vivo con i tuoi amici!',
+      subtitle: 'Come trasformare qualsiasi serata in un gioco tra amici',
       items: [
         _buildInfoItem(
           icon: '🎮',
-          title: 'Un gioco a punti dal vivo',
+          title: 'Un gioco a punti tra amici dal vivo',
           description:
-              'Trasforma compleanni, lauree, serate tra amici, cene e vacanze in un gioco a punti dove tutti i partecipanti sono protagonisti! (Nessun premio fisico, solo gloria e divertimento tra amici).',
+              'FantaEventi trasforma qualsiasi momento reale (feste di compleanno, cene, lauree, serate o vacanze) in una sfida a punti entusiasmante. Tutti i partecipanti sono giocatori attivi e protagonisti!',
         ),
         _buildInfoItem(
-          icon: '🤝',
-          title: 'Crea o Partecipa agli Eventi',
+          icon: '📅',
+          title: 'Crea l\'Evento o Unisciti alla Festa',
           description:
-              'Entra negli eventi organizzati dai tuoi amici oppure creane uno tuo personalizzato in pochi secondi.',
+              'L\'organizzatore crea l\'evento in pochi secondi, seleziona il luogo (anche scegliendolo direttamente sulla mappa interattiva!) e invita gli amici.',
         ),
         _buildInfoItem(
           icon: '🏆',
-          title: 'Sfida gli amici in tempo reale',
+          title: 'Sfida dal vivo e Classifica Live',
           description:
-              'Durante la festa compi bonus, evita i malus e scala la Classifica Live per conquistare la vittoria!',
+              'Durante la festa compi bonus, evita i malus e segui la Classifica Live aggiornata in tempo reale per scoprire chi trionferà a fine serata!',
         ),
       ],
     );
@@ -326,33 +298,33 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
   Widget _buildSlide2() {
     return _buildSlideContainer(
       icon: '⚡',
-      badge: 'DINAMICA DI GIOCO',
+      badge: 'LE REGOLE DEL GIOCO',
       title: 'Bonus, Malus & Punti',
-      subtitle: 'Come funziona la convalida e l\'assegnazione',
+      subtitle: 'Cosa sono e come vengono convalidati democraticamente',
       items: [
         _buildInfoItem(
-          icon: '💡',
-          title: 'Proposte della Community',
+          icon: '🌟',
+          title: 'Cosa sono i Bonus (+)',
           description:
-              'Chiunque partecipa può proporre nuove idee divertenti di Bonus e Malus personalizzati per la serata.',
+              'Sono le azioni divertenti, eroiche o goliardiche della serata (es. cantare al karaoke, portare il dolce, fare un brindisi) che ti fanno guadagnare punti preziosi.',
+        ),
+        _buildInfoItem(
+          icon: '🚨',
+          title: 'Cosa sono i Malus (-)',
+          description:
+              'Sono le gaffe, le distrazioni o le penalità concordate (es. rovesciare un bicchiere, arrivare con 30 minuti di ritardo) che sottraggono punti dal punteggio.',
         ),
         _buildInfoItem(
           icon: '🗳️',
-          title: 'Votazione = Convalida',
+          title: 'La Proposta & Il Quorum Democratico',
           description:
-              'I voti dei partecipanti servono solo a convalidare e approvare la proposta tra le opzioni disponibili (non assegnano direttamente i punti ai giocatori!).',
+              'Chiunque partecipa all\'evento può proporre una nuova regola di Bonus o Malus. La community vota democraticamente a favore (PRO) o contro (CONTRO): se supera il Quorum, la regola diventa ufficiale!',
         ),
         _buildInfoItem(
           icon: '👑',
-          title: 'Assegnazione dall\'Organizzatore',
+          title: 'Chi assegna i punti ai giocatori?',
           description:
-              'È l\'Organizzatore dell\'evento che durante la serata assegna effettivamente il bonus o il malus a chi ha compiuto l\'azione.',
-        ),
-        _buildInfoItem(
-          icon: '📊',
-          title: 'Classifica Live & Livelli',
-          description:
-              'I punti accreditati aggiornano la classifica dal vivo e aumentano il tuo Livello Giocatore (da Recluta a Leggenda Suprema).',
+              'È l\'Organizzatore dell\'evento che, durante lo svolgimento della serata, assegna effettivamente il bonus o il malus a chi ha compiuto l\'azione!',
         ),
       ],
     );
@@ -366,94 +338,100 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
       icon: '📺',
       badge: 'GIUSTIZIA ARBITRALE',
       title: 'Il Tribunale del VAR',
-      subtitle: 'Prove fotografiche, denunce spia e testimonianze',
+      subtitle: 'La moviola ufficiale per chiarire ogni contestazione',
       items: [
+        _buildInfoItem(
+          icon: '⚖️',
+          title: 'Che cos\'è il Tribunale del VAR?',
+          description:
+              'È la "moviola" ufficiale di FantaEventi! Serve a risolvere pacificamente qualsiasi contestazione o dubbio durante la festa: se qualcuno nega un malus o richiede un bonus contestato, si ricorre al VAR senza discutere!',
+        ),
         _buildInfoItem(
           icon: '⏳',
           title: 'Attivo solo ad Evento "In Corso"',
           description:
-              'Il pulsante VAR si sblocca e diventa utilizzabile esclusivamente quando l\'evento è ufficialmente iniziato.',
+              'Il pulsante [ 📺 VAR ] si sblocca e può essere utilizzato dai partecipanti esclusivamente quando l\'evento è ufficialmente iniziato e in svolgimento.',
         ),
         _buildInfoItem(
-          icon: '📸',
-          title: 'Richiesta Bonus Personale',
+          icon: '👨‍⚖️',
+          title: 'Il Giudice Arbitro e i Testimoni',
           description:
-              'Hai compiuto un\'azione leggendaria? Richiedi l\'accredito del bonus allegando una foto prova reale e indicando un testimone che confermi.',
-        ),
-        _buildInfoItem(
-          icon: '🕵️',
-          title: 'Denuncia Malus ("Fare la Spia")',
-          description:
-              'Hai visto un amico commettere un\'infrazione o un malus? Denuncialo al VAR per fargli togliere punti!',
+              'Chi apre la chiamata al VAR sceglie chi segnalare, descrive l\'accaduto e può indicare un amico testimone presente. L\'Organizzatore (il Giudice di gara) esamina la situazione ed emette il verdetto definitivo.',
         ),
         _buildInfoItem(
           icon: '🚨',
-          title: 'Sanzione Falsa Testimonianza',
+          title: 'Attenzione alla Falsa Testimonianza!',
           description:
-              'Attenzione! Se fai una denuncia falsa e il Giudice del VAR la respinge con sanzione, perderai punti con un malus ufficiale e irrevocabile!',
+              'Non fare il furbetto! Se accusi ingiustamente un amico con una denuncia inventata e il Giudice la respinge, subirai una sanzione d\'ufficio per Falsa Testimonianza con perdita secca di punti!',
         ),
       ],
     );
   }
 
   // ==========================================
-  // SLIDE 4: TITOLI D\'ONORE & BACHECA
+  // SLIDE 4: IL CONSIGLIO PRO: LA FOTO-PROVA
   // ==========================================
   Widget _buildSlide4() {
     return _buildSlideContainer(
-      icon: '🎖️',
-      badge: 'RICONOSCIMENTI',
-      title: 'Titoli d\'Onore & Bacheca',
-      subtitle: 'I premi di fine evento e i trofei del tuo profilo',
+      icon: '📸',
+      badge: 'CONSIGLIO D\'ORO',
+      title: 'La Prova Fotografica',
+      subtitle: 'Scatta al momento giusto per vincere ogni contestazione!',
       items: [
         _buildInfoItem(
-          icon: '👑',
-          title: 'I 6 Titoli Ufficiali di Fine Evento',
+          icon: '🎯',
+          title: 'Scatta quando vedi un Bonus o un Malus',
           description:
-              '• 🥇 Campione Assoluto: 1° posto in classifica.\n'
-              '• 🤡 Re dei Malus: Chi ha collezionato più penalità.\n'
-              '• ⚖️ L\'Avvocato: Chi ha partecipato più attivamente in assoluto alle votazioni e proposte della community.\n'
-              '• 👻 Il Fantasma: Chi ha fatto il minimo indispensabile.\n'
-              '• 🕵️ Lo Sbirro: Chi ha fatto più denunce malus al VAR per fare la spia agli amici.\n'
-              '• ⚡ Il Giustiziere: Chi ha aperto più chiamate VAR convalidate e approvate (il giocatore più onesto e fidato!).',
+              'Quando tu o un tuo amico compiete un Bonus, oppure quando vedi qualcuno fare una figuraccia memorabile o compiere un Malus dell\'evento, tira subito fuori lo smartphone e scatta una foto!',
         ),
         _buildInfoItem(
           icon: '🛡️',
-          title: 'La Bacheca nel tuo Profilo',
+          title: 'Perché la foto è così importante?',
           description:
-              'Nel tuo profilo trovi il contatore delle partecipazioni agli eventi, tutti i titoli vinti e i badge pubblici (come il prestigioso Badge Fondatore) che tutti i tuoi amici possono ammirare.',
+              'Scattare la foto è opzionale, ma utilissimo: se qualcuno dovesse negare l\'episodio o contestare il punteggio, la foto sarà la prova schiacciante e inconfutabile che potrai allegare al Tribunale del VAR per togliere ogni dubbio al Giudice!',
+        ),
+        _buildInfoItem(
+          icon: '🕵️',
+          title: 'Bonus personale o Segnalazione Spia',
+          description:
+              'Puoi allegare la foto sia per richiedere l\'accredito di un tuo Bonus compiuto, sia per denunciare al VAR un Malus commesso da un altro giocatore.',
         ),
       ],
     );
   }
 
   // ==========================================
-  // SLIDE 5: CODICE AMICO & CONNESSIONI
+  // SLIDE 5: CLASSIFICA & TITOLI D'ONORE
   // ==========================================
   Widget _buildSlide5() {
     return _buildSlideContainer(
-      icon: '👥',
-      badge: 'COMMUNITY',
-      title: 'Codice Amico & Sfide',
-      subtitle: 'Connettiti con gli amici e fai squadra',
+      icon: '🎖️',
+      badge: 'GLORIA & BACHECA',
+      title: 'Classifica & Titoli d\'Onore',
+      subtitle: 'Come si vince e i trofei permanenti della tua bacheca',
       items: [
         _buildInfoItem(
+          icon: '🏆',
+          title: 'Il Podio e la Gloria Eterna',
+          description:
+              'A fine evento, chi ha totalizzato più punti vince la coppa e riceve il prestigioso Badge Vincitore permanente nella propria bacheca pubblica!',
+        ),
+        _buildInfoItem(
+          icon: '🎭',
+          title: 'I Titoli Speciali di Fine Evento',
+          description:
+              'Al termine dell\'evento l\'algoritmo incorona i protagonisti della serata:\n'
+              '• 🤡 Re dei Malus: Chi ha collezionato più penalità.\n'
+              '• ⚖️ L\'Avvocato: Chi ha partecipato a più votazioni e proposte.\n'
+              '• 👻 Il Fantasma: Chi ha fatto il minimo indispensabile.\n'
+              '• 🕵️ Lo Sbirro: Chi ha fatto più denunce malus al VAR.\n'
+              '• ⚡ Il Giustiziere: Chi ha aperto più chiamate VAR approvate con successo.',
+        ),
+        _buildInfoItem(
           icon: '🆔',
-          title: 'Il tuo Codice Amico Univoco',
+          title: 'Codice Amico nel Profilo',
           description:
-              'Nel tuo profilo trovi un codice personale esclusivo da condividere ai tuoi amici per farti trovare e aggiungere facilmente.',
-        ),
-        _buildInfoItem(
-          icon: '📋',
-          title: 'Incolla con 1 Singolo Tocco',
-          description:
-              'Hai ricevuto il codice di un amico? Usa il pulsante rapido "Incolla" nel profilo per collegarti all\'istante e sfidarlo nei prossimi eventi.',
-        ),
-        _buildInfoItem(
-          icon: '🚀',
-          title: 'Tutto Pronto per Iniziare!',
-          description:
-              'Ora conosci tutte le regole di FantaEventi. Crea la tua prima lega, unisciti alla festa e che vinca il migliore!',
+              'Nel tuo profilo trovi il tuo Codice Amico esclusivo da condividere ai tuoi compagni di avventure per creare la tua cerchia e sfidarli nei prossimi eventi!',
         ),
       ],
     );

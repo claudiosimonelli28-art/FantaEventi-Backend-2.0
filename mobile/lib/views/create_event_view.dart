@@ -9,6 +9,7 @@ import '../widgets/avatar_helper.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/map_location_picker_modal.dart';
+import '../widgets/app_toast.dart';
 
 class CreateEventView extends StatefulWidget {
   const CreateEventView({super.key});
@@ -273,17 +274,39 @@ class _CreateEventViewState extends State<CreateEventView> {
         penalitaFalsaTestimonianza: _penalitaFalsaTestimonianza,
       );
 
-      final bool isTutorial = TutorialController.instance.stage == TutorialStage.step3_in_create_event;
-      final savedEvento = await _apiService.creaEvento(nuovoEvento, awardXp: !isTutorial);
+      try {
+        final bool isTutorial = TutorialController.instance.stage == TutorialStage.step3_in_create_event;
+        final savedEvento = await _apiService.creaEvento(nuovoEvento, awardXp: !isTutorial);
 
-      if (isTutorial) {
-        TutorialController.instance.tutorialCreatedEventId = savedEvento.id;
-        TutorialController.instance.setStage(TutorialStage.step4_tap_event_card);
+        if (isTutorial) {
+          TutorialController.instance.tutorialCreatedEventId = savedEvento.id;
+          TutorialController.instance.setStage(TutorialStage.step4_tap_event_card);
+        }
+
+        if (!mounted) return;
+
+        AppToast.showSuccess(
+          context,
+          'Evento creato con successo! 🎉',
+          'L\'evento "${nuovoEvento.titolo}" è pronto!',
+        );
+
+        Navigator.pop(context);
+      } catch (e) {
+        if (mounted) {
+          AppToast.showError(
+            context,
+            'Errore creazione evento',
+            e.toString().replaceAll('Exception: ', ''),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
-
-      if (!mounted) return;
-
-      Navigator.pop(context);
     }
   }
 

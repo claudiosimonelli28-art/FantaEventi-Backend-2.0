@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'app_toast.dart';
 
 class LocationResult {
   final String displayName;
@@ -295,15 +296,10 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
       final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFFDC2626),
-              content: Text(
-                'Attiva il GPS del telefono per rilevare la tua posizione 📍',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
+          AppToast.showWarning(
+            context,
+            'GPS Disattivato 📍',
+            'Attiva il GPS del telefono per rilevare la tua posizione.',
           );
         }
         setState(() => _isLocating = false);
@@ -316,15 +312,10 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                backgroundColor: const Color(0xFFDC2626),
-                content: Text(
-                  'Permesso di localizzazione negato.',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
-                ),
-                behavior: SnackBarBehavior.floating,
-              ),
+            AppToast.showWarning(
+              context,
+              'Permesso Negato',
+              'Permesso di localizzazione non concesso.',
             );
           }
           setState(() => _isLocating = false);
@@ -334,15 +325,10 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
 
       if (permission == LocationPermission.deniedForever) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFFDC2626),
-              content: Text(
-                'Permesso GPS negato permanentemente. Abilitalo dalle impostazioni.',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
-              ),
-              behavior: SnackBarBehavior.floating,
-            ),
+          AppToast.showError(
+            context,
+            'Permesso GPS Negato',
+            'Permesso GPS negato permanentemente. Abilitalo dalle impostazioni.',
           );
         }
         setState(() => _isLocating = false);
@@ -370,15 +356,10 @@ class _MapLocationPickerModalState extends State<MapLocationPickerModal> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFDC2626),
-            content: Text(
-              'Impossibile rilevare la posizione GPS in questo momento.',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
-            ),
-            behavior: SnackBarBehavior.floating,
-          ),
+        AppToast.showError(
+          context,
+          'Errore GPS',
+          'Impossibile rilevare la posizione GPS in questo momento.',
         );
       }
     } finally {

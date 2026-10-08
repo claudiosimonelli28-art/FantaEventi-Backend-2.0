@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/evento.dart';
 import '../models/votazione.dart';
 import '../services/api_service.dart';
+import '../widgets/app_toast.dart';
 
 class VoteView extends StatefulWidget {
   final Votazione votazione;
@@ -60,11 +61,10 @@ class _VoteViewState extends State<VoteView> {
                                   iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
 
       if (!isPartecipante) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFEF4444),
-            content: Text('Non puoi votare perché non partecipi a questo evento!'),
-          ),
+        AppToast.showWarning(
+          context,
+          'Accesso Negato',
+          'Non puoi votare perché non partecipi a questo evento!',
         );
         return;
       }
@@ -82,11 +82,21 @@ class _VoteViewState extends State<VoteView> {
         _votazione = vAggiornata;
         _isSubmitting = false;
       });
+      AppToast.showSuccess(
+        context,
+        'Voto Registrato! 🗳️',
+        aFavore ? 'Hai votato a favore!' : 'Hai votato contro.',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isSubmitting = false;
       });
+      AppToast.showError(
+        context,
+        'Errore nel voto',
+        e.toString().replaceAll('Exception: ', ''),
+      );
     }
   }
 

@@ -5,6 +5,7 @@ import 'var_decision_modal.dart';
 import 'var_witness_modal.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
+import '../widgets/app_toast.dart';
 
 class NotificationsModal extends StatefulWidget {
   final VoidCallback onRefreshHome;
@@ -72,17 +73,21 @@ class _NotificationsModalState extends State<NotificationsModal> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: azione == 'accetta' ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-            content: Text(
-              tipo == 'richiesta_amicizia'
-                  ? (azione == 'accetta' ? 'Richiesta di amicizia accettata! 👥' : 'Richiesta di amicizia rifiutata.')
-                  : (azione == 'accetta' ? 'Invito accettato con successo! 🎉' : 'Invito rifiutato.'),
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
-        );
+        if (azione == 'accetta') {
+          AppToast.showSuccess(
+            context,
+            tipo == 'richiesta_amicizia' ? 'Amicizia Accettata! 👥' : 'Invito Accettato! 🎉',
+            tipo == 'richiesta_amicizia'
+                ? 'Ora siete amici su FantaEventi.'
+                : 'Sei ufficialmente iscritto all\'evento!',
+          );
+        } else {
+          AppToast.showInfo(
+            context,
+            'Notifica Rifiutata',
+            tipo == 'richiesta_amicizia' ? 'Richiesta di amicizia rifiutata.' : 'Invito rifiutato.',
+          );
+        }
       }
 
       widget.onRefreshHome();
@@ -95,14 +100,10 @@ class _NotificationsModalState extends State<NotificationsModal> {
           _respondingNotificaId = null;
           _respondingAction = null;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFFEF4444),
-            content: Text(
-              'Errore: ${e.toString().replaceAll("Exception: ", "")}',
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
+        AppToast.showError(
+          context,
+          'Errore Notifica',
+          e.toString().replaceAll("Exception: ", ""),
         );
       }
     }

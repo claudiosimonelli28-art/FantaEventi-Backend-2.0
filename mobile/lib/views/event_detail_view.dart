@@ -22,6 +22,7 @@ import 'add_bonus_malus_view.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../widgets/app_toast.dart';
 
 class EventDetailView extends StatefulWidget {
   final Evento evento;
@@ -609,16 +610,17 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       });
                                       widget.onRefresh();
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('Ti sei iscritto all\'evento! 🎉')),
+                                      AppToast.showSuccess(
+                                        context,
+                                        'Iscrizione completata! 🎉',
+                                        'Ti sei iscritto a "${_evento.titolo}".',
                                       );
                                     } catch (e) {
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          backgroundColor: const Color(0xFFEF4444),
-                                          content: Text(e.toString().replaceAll('Exception: ', '')),
-                                        ),
+                                      AppToast.showError(
+                                        context,
+                                        'Errore iscrizione',
+                                        e.toString().replaceAll('Exception: ', ''),
                                       );
                                     }
                                   },
@@ -1884,11 +1886,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 }
                               } catch (e) {
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: const Color(0xFFEF4444),
-                                      content: Text('Errore durante la condivisione: $e'),
-                                    ),
+                                  AppToast.showError(
+                                    context,
+                                    'Errore Condivisione',
+                                    e.toString().replaceAll('Exception: ', ''),
                                   );
                                 }
                               } finally {
@@ -1923,14 +1924,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: riepilogoTestuale));
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: const Color(0xFF10B981),
-                            content: Text(
-                              'Podio copiato negli appunti! 📋 Incollalo su WhatsApp o Instagram!',
-                              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-                            ),
-                          ),
+                        AppToast.showSuccess(
+                          context,
+                          'Podio Copiato 📋',
+                          'Incollalo su WhatsApp o Instagram!',
                         );
                       },
                       style: OutlinedButton.styleFrom(
@@ -2041,12 +2038,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                           await _apiService.aggiornaCopertinaEvento(_evento.id, b64);
                           widget.onRefresh();
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFF10B981),
-                                content: Text('Foto copertina aggiornata con successo! 📸',
-                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
-                              ),
+                            AppToast.showSuccess(
+                              context,
+                              'Foto Copertina Aggiornata 📸',
+                              'La foto copertina è stata salvata con successo!',
                             );
                           }
                         }
@@ -2084,12 +2079,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                           await _apiService.aggiornaCopertinaEvento(_evento.id, b64);
                           widget.onRefresh();
                           if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                backgroundColor: const Color(0xFF10B981),
-                                content: Text('Foto copertina aggiornata con successo! 📸',
-                                    style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
-                              ),
+                            AppToast.showSuccess(
+                              context,
+                              'Foto Copertina Aggiornata 📸',
+                              'La foto copertina dalla galleria è stata salvata!',
                             );
                           }
                         }
@@ -2136,12 +2129,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                       await _apiService.aggiornaCopertinaEvento(_evento.id, newUrl);
                       widget.onRefresh();
                       if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: const Color(0xFF10B981),
-                            content: Text('Tema copertina applicato! ✨',
-                                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white)),
-                          ),
+                        AppToast.showSuccess(
+                          context,
+                          'Tema Copertina Applicato ✨',
+                          'Nuovo tema impostato con successo!',
                         );
                       }
                     },
@@ -2385,14 +2376,10 @@ class _EventDetailViewState extends State<EventDetailView> {
     Navigator.of(context, rootNavigator: true).pop();
 
     if (amici.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFEAB308),
-          content: Text(
-            'Non hai ancora aggiunto amici sul tuo profilo!',
-            style: GoogleFonts.poppins(color: const Color(0xFF0F172A), fontWeight: FontWeight.bold),
-          ),
-        ),
+      AppToast.showWarning(
+        context,
+        'Nessun Amico',
+        'Non hai ancora aggiunto amici sul tuo profilo!',
       );
       return;
     }
@@ -2690,27 +2677,19 @@ class _EventDetailViewState extends State<EventDetailView> {
 
                                 if (context.mounted) {
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: const Color(0xFF10B981),
-                                      content: Text(
-                                        'Inviti inviati con successo a ${daInvitare.length} ${daInvitare.length == 1 ? 'amico' : 'amici'}! ✉️🎉',
-                                        style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
+                                  AppToast.showSuccess(
+                                    context,
+                                    'Inviti inviati con successo! ✉️🎉',
+                                    'Inviati a ${daInvitare.length} ${daInvitare.length == 1 ? 'amico' : 'amici'}.',
                                   );
                                 }
                               } catch (e) {
                                 setModalState(() => isInvioInCorso = false);
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: const Color(0xFFEF4444),
-                                      content: Text(
-                                        e.toString().replaceAll('Exception: ', ''),
-                                        style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
+                                  AppToast.showError(
+                                    context,
+                                    'Errore invio inviti',
+                                    e.toString().replaceAll('Exception: ', ''),
                                   );
                                 }
                               }
@@ -2886,15 +2865,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: ev.luogo));
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              backgroundColor: const Color(0xFF10B981),
-                              content: Text(
-                                'Indirizzo copiato negli appunti! 📋',
-                                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: Colors.white),
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                            ),
+                          AppToast.showSuccess(
+                            context,
+                            'Indirizzo Copiato 📋',
+                            'L\'indirizzo è stato copiato negli appunti.',
                           );
                         },
                       ),

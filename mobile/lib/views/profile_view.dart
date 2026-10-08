@@ -11,6 +11,7 @@ import '../widgets/founder_badge.dart';
 import 'login_view.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
+import '../widgets/app_toast.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -77,19 +78,17 @@ class _ProfileViewState extends State<ProfileView> {
       await _apiService.inviaRichiestaAmicizia(code);
       _codiceAmicoInputController.clear();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF10B981),
-          content: Text('Richiesta di amicizia inviata con successo! 👥', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
+      AppToast.showSuccess(
+        context,
+        'Richiesta Inviata 👥',
+        'Richiesta di amicizia inviata con successo!',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFEF4444),
-          content: Text(e.toString().replaceAll('Exception: ', ''), style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
+      AppToast.showError(
+        context,
+        'Errore invio richiesta',
+        e.toString().replaceAll('Exception: ', ''),
       );
     }
   }
@@ -822,21 +821,18 @@ class _ProfileViewState extends State<ProfileView> {
         });
         await _apiService.aggiornaAvatarUtente(_utente.nickname, base64String);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF10B981),
-            content: Text('Foto salvata permanentemente nel tuo profilo MongoDB! 📸',
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
+        AppToast.showSuccess(
+          context,
+          'Foto Salvata 📸',
+          'Foto avatar salvata con successo nel tuo profilo!',
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.redAccent,
-          content: Text('Errore apertura fotocamera: $e', style: const TextStyle(color: Colors.white)),
-        ),
+      AppToast.showError(
+        context,
+        'Errore Fotocamera',
+        'Impossibile scattare o salvare la foto: $e',
       );
     }
   }
@@ -860,21 +856,18 @@ class _ProfileViewState extends State<ProfileView> {
         });
         await _apiService.aggiornaAvatarUtente(_utente.nickname, base64String);
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF9333EA),
-            content: Text('Foto della tua Galleria salvata nel profilo MongoDB! 🖼️',
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
+        AppToast.showSuccess(
+          context,
+          'Foto Salvata 🖼️',
+          'Foto dalla galleria salvata nel tuo profilo!',
         );
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: Colors.redAccent,
-          content: Text('Errore apertura galleria: $e', style: const TextStyle(color: Colors.white)),
-        ),
+      AppToast.showError(
+        context,
+        'Errore Galleria',
+        'Impossibile caricare o salvare la foto: $e',
       );
     }
   }
@@ -1134,18 +1127,6 @@ class _ProfileViewState extends State<ProfileView> {
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           IconButton(
-            icon: const Icon(Icons.sports_esports_rounded, color: Color(0xFFFACC15)),
-            tooltip: 'Rivedi Tutorial Guidato',
-            onPressed: () {
-              Navigator.pop(context, true);
-              Future.delayed(const Duration(milliseconds: 320), () {
-                if (!TutorialController.instance.isActive) {
-                  TutorialController.instance.startTutorial(isReplay: true);
-                }
-              });
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             tooltip: 'Logout',
             onPressed: () async {
@@ -1323,13 +1304,12 @@ class _ProfileViewState extends State<ProfileView> {
                               ),
                               ElevatedButton.icon(
                                 onPressed: () async {
-                                  final messenger = ScaffoldMessenger.of(context);
                                   await Clipboard.setData(ClipboardData(text: _utente.codiceAmico));
-                                  messenger.showSnackBar(
-                                    SnackBar(
-                                      backgroundColor: const Color(0xFF10B981),
-                                      content: Text('Codice Amico ${_utente.codiceAmico} copiato negli appunti! 📲', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-                                    ),
+                                  if (!context.mounted) return;
+                                  AppToast.showSuccess(
+                                    context,
+                                    'Codice Copiato 📲',
+                                    'Codice Amico ${_utente.codiceAmico} copiato negli appunti!',
                                   );
                                 },
                                 icon: const Icon(Icons.copy_rounded, size: 16, color: Color(0xFF0F172A)),
@@ -1692,18 +1672,16 @@ class _ProfileViewState extends State<ProfileView> {
                                 icon: const Icon(Icons.paste_rounded, color: Color(0xFFFACC15), size: 20),
                                 tooltip: 'Incolla dagli appunti',
                                 onPressed: () async {
-                                  final messenger = ScaffoldMessenger.of(context);
                                   final data = await Clipboard.getData(Clipboard.kTextPlain);
                                   if (data?.text != null && data!.text!.trim().isNotEmpty) {
                                     setState(() {
                                       _codiceAmicoInputController.text = data.text!.trim();
                                     });
-                                    messenger.showSnackBar(
-                                      const SnackBar(
-                                        backgroundColor: Color(0xFF10B981),
-                                        duration: Duration(seconds: 1),
-                                        content: Text('Codice incollato dagli appunti! 📋', style: TextStyle(color: Colors.white)),
-                                      ),
+                                    if (!context.mounted) return;
+                                    AppToast.showSuccess(
+                                      context,
+                                      'Codice Incollato 📋',
+                                      'Codice incollato dagli appunti!',
                                     );
                                   }
                                 },

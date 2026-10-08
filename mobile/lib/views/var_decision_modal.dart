@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/richiesta_var.dart';
 import '../services/api_service.dart';
+import '../widgets/app_toast.dart';
 
 class VarDecisionModal extends StatefulWidget {
   final String varId;
@@ -124,26 +125,27 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
 
       if (success) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: approva ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-            content: Text(
-              approva
-                  ? '✅ Richiesta VAR approvata! Punti assegnati.'
-                  : (_sanzionaFalsaTestimonianza && _richiesta!.isMalus
-                      ? '❌ Denuncia respinta! Applicata sanzione per falsa testimonianza.'
-                      : '❌ Richiesta VAR respinta.'),
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
-        );
+        if (approva) {
+          AppToast.showSuccess(
+            context,
+            'Decisione VAR: Approvata ✅',
+            'Richiesta VAR approvata! Punti assegnati con successo.',
+          );
+        } else {
+          AppToast.showWarning(
+            context,
+            'Decisione VAR: Respinta ❌',
+            (_sanzionaFalsaTestimonianza && _richiesta!.isMalus)
+                ? 'Denuncia respinta! Applicata sanzione per falsa testimonianza.'
+                : 'Richiesta VAR respinta dal Giudice.',
+          );
+        }
         widget.onResolved();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFEF4444),
-            content: Text('Errore durante la registrazione della decisione.'),
-          ),
+        AppToast.showError(
+          context,
+          'Errore Decisione VAR',
+          'Errore durante la registrazione della decisione.',
         );
       }
     }

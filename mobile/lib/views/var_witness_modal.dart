@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/richiesta_var.dart';
 import '../services/api_service.dart';
+import '../widgets/app_toast.dart';
 
 class VarWitnessModal extends StatefulWidget {
   final String varId;
@@ -122,24 +123,19 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
 
       if (success) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF6366F1),
-            content: Text(
-              conferma
-                  ? '✅ Hai confermato l\'accaduto al VAR. Testimonianza registrata!'
-                  : '❌ Hai negato l\'accaduto al VAR. Testimonianza registrata!',
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
+        AppToast.showInfo(
+          context,
+          'Testimonianza Registrata ⚖️',
+          conferma
+              ? 'Hai confermato l\'accaduto al VAR.'
+              : 'Hai smentito l\'accaduto al VAR.',
         );
         widget.onVoted();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFEF4444),
-            content: Text('Impossibile registrare il voto: il caso potrebbe essere già stato chiuso dall\'arbitro.'),
-          ),
+        AppToast.showError(
+          context,
+          'Errore Testimonianza',
+          'Impossibile registrare il voto: il caso potrebbe essere già stato chiuso dall\'arbitro.',
         );
       }
     }

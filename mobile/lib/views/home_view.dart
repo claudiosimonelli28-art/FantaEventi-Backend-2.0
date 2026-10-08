@@ -19,6 +19,8 @@ import 'var_submission_modal.dart';
 import '../widgets/guida_regolamento_modal.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../services/tutorial_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/app_toast.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -100,9 +102,141 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     });
 
     _loadData(forceRefresh: true);
+    _checkLongTermInactivity();
     _liveSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       _loadData(silent: true, forceRefresh: false);
     });
+  }
+
+  Future<void> _checkLongTermInactivity() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastActiveMs = prefs.getInt('ultimo_accesso_effettivo_timestamp');
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+      if (lastActiveMs != null) {
+        final diffDays = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastActiveMs)).inDays;
+        if (diffDays >= 180 && mounted) {
+          final userNick = _apiService.currentUser?.nome ?? 'Campione';
+          _mostraModaleBentornato(userNick);
+        }
+      }
+
+      await prefs.setInt('ultimo_accesso_effettivo_timestamp', nowMs);
+    } catch (_) {}
+  }
+
+  void _mostraModaleBentornato(String userNick) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                  blurRadius: 25,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Text('👋', style: TextStyle(fontSize: 40)),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  'Bentornato, $userNick!',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Che bello rivederti su FantaEventi!\nÈ passato un bel po\' di tempo dall\'ultima volta che abbiamo giocato insieme (più di 6 mesi!).\n\nChe ne dici di fare un rapido ripasso guidato per rispolverare tutte le regole e le novità?',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFFCBD5E1),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(dialogCtx);
+                      TutorialController.instance.startTutorial(isReplay: true);
+                    },
+                    icon: const Icon(Icons.sports_esports_rounded, size: 20),
+                    label: Text(
+                      'SÌ, FACCIAMO IL RIPASSO 🎮',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFACC15),
+                      foregroundColor: const Color(0xFF0F172A),
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(dialogCtx),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF475569)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      foregroundColor: const Color(0xFF94A3B8),
+                    ),
+                    child: Text(
+                      'Mi ricordo tutto, andiamo a giocare! 🚀',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   final Set<String> _readNotificaIds = {};
@@ -353,14 +487,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                           setDialogState(() {
                             isDeleting = false;
                           });
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            SnackBar(
-                              backgroundColor: const Color(0xFFEF4444),
-                              content: Text(
-                                e.toString().replaceAll('Exception: ', ''),
-                                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-                              ),
-                            ),
+                          AppToast.showError(
+                            ctx,
+                            'Errore Eliminazione',
+                            e.toString().replaceAll('Exception: ', ''),
                           );
                         }
                       }
@@ -380,14 +510,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       });
       _loadData(forceRefresh: true, silent: true);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF10B981),
-            content: Text(
-              'Evento "${evento.titolo}" eliminato con successo. 🗑️',
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
+        AppToast.showSuccess(
+          context,
+          'Evento Eliminato 🗑️',
+          'Evento "${evento.titolo}" eliminato con successo.',
         );
       }
     }
@@ -399,16 +525,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     if (evento.isConcluso || evento.isInCorso) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFEF4444),
-          content: Text(
-            evento.isConcluso
-                ? 'Questo evento è già concluso!'
-                : 'Le iscrizioni sono chiuse: l\'evento è già in corso!',
-            style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-          ),
-        ),
+      AppToast.showWarning(
+        context,
+        'Attenzione',
+        evento.isConcluso
+            ? 'Questo evento è già concluso!'
+            : 'Le iscrizioni sono chiuse: l\'evento è già in corso!',
       );
       return;
     }
@@ -416,20 +538,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     try {
       await _apiService.partecipaAdEvento(evento.id, nick);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF10B981),
-          content: Text('Iscritto con successo a "${evento.titolo}"! 🎉', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
+      AppToast.showSuccess(
+        context,
+        'Iscritto con successo! 🎉',
+        'Ora partecipi a "${evento.titolo}".',
       );
       _loadData(forceRefresh: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFFEF4444),
-          content: Text(e.toString().replaceAll('Exception: ', ''), style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
+      AppToast.showError(
+        context,
+        'Errore Iscrizione',
+        e.toString().replaceAll('Exception: ', ''),
       );
     }
   }
@@ -1168,7 +1288,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             child: Theme(
               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
-                initiallyExpanded: true,
+                initiallyExpanded: false,
                 leading: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -1213,8 +1333,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                                     ? () async {
                                         await _apiService.eliminaBonusMalus(bm.id);
                                         if (!mounted) return;
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Proposta Bonus/Malus eliminata con successo! 🗑️')),
+                                        AppToast.showSuccess(
+                                          context,
+                                          'Proposta Eliminata 🗑️',
+                                          'Proposta Bonus/Malus eliminata con successo!',
                                         );
                                         _loadData();
                                       }
@@ -1261,22 +1383,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   void _apriRichiestaVar(Evento ev, BonusMalus bm) {
     if (!ev.isInCorso) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF3B82F6),
-          content: Row(
-            children: [
-              const Icon(Icons.info_outline, color: Colors.white, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '⏳ Il VAR è disponibile solo quando l\'evento è in corso!',
-                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ),
+      AppToast.showInfo(
+        context,
+        'VAR non disponibile ⏳',
+        'Il VAR è disponibile solo quando l\'evento è in corso!',
       );
       return;
     }
@@ -1295,24 +1405,12 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   void _apriSelettoreAssegnazione(Evento ev, BonusMalus bm) {
     if (!ev.isInCorso) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF3B82F6),
-          content: Row(
-            children: [
-              const Icon(Icons.info_outline, color: Colors.white, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  ev.isConcluso
-                      ? 'Questo evento è concluso: le assegnazioni sono chiuse!'
-                      : '⏳ L\'assegnazione dei punti è disponibile solo quando l\'evento è in corso!',
-                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-              ),
-            ],
-          ),
-        ),
+      AppToast.showInfo(
+        context,
+        'Evento non in corso ⏳',
+        ev.isConcluso
+            ? 'Questo evento è concluso: le assegnazioni sono chiuse!'
+            : 'L\'assegnazione dei punti è disponibile solo quando l\'evento è in corso!',
       );
       return;
     }
@@ -1463,14 +1561,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                                       _loadData(silent: true, forceRefresh: true);
 
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          backgroundColor: const Color(0xFF10B981),
-                                          content: Text(
-                                            '🏆 ${bm.punti >= 0 ? "Bonus" : "Malus"} "${bm.titolo}" (${bm.punti >= 0 ? "+${bm.punti}" : bm.punti} PT) assegnato con successo a $part!',
-                                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
-                                          ),
-                                        ),
+                                      AppToast.showSuccess(
+                                        context,
+                                        'Regola Assegnata! 🏆',
+                                        '${bm.punti >= 0 ? "Bonus" : "Malus"} "${bm.titolo}" (${bm.punti >= 0 ? "+${bm.punti}" : bm.punti} PT) assegnato con successo a $part!',
                                       );
                                       _loadData(forceRefresh: true);
                                     },
@@ -1549,8 +1643,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       return true;
     }).toList();
 
+    final activeEventsWithVotes = _eventi.where((ev) {
+      if (ev.isConcluso || DateTime.now().isAfter(ev.dataFine)) return false;
+      return activeVotazioni.any((v) {
+        final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+        return (evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId)) ||
+               (ev.titolo.isNotEmpty && v.titolo.toLowerCase().contains(ev.titolo.toLowerCase())) ||
+               (ev.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(ev.titolo.toLowerCase()));
+      });
+    }).toList();
+
     Widget child;
-    if (activeVotazioni.isEmpty) {
+    if (activeEventsWithVotes.isEmpty) {
       child = SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: SizedBox(
@@ -1567,18 +1671,64 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       child = ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        itemCount: activeVotazioni.length,
+        itemCount: activeEventsWithVotes.length,
         itemBuilder: (ctx, idx) {
-          final v = activeVotazioni[idx];
-          return VoteCard(
-            votazione: v,
-            currentUserNickname: _apiService.currentUser?.nome ?? 'Cloud',
-            onVotaTap: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => VoteView(votazione: v)),
-              );
-              _loadData(forceRefresh: true);
-            },
+          final ev = activeEventsWithVotes[idx];
+          final votesForEvent = activeVotazioni.where((v) {
+            final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
+            return (evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId)) ||
+                   (ev.titolo.isNotEmpty && v.titolo.toLowerCase().contains(ev.titolo.toLowerCase())) ||
+                   (ev.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(ev.titolo.toLowerCase()));
+          }).toList();
+
+          return Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: false,
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.how_to_vote_rounded, color: Color(0xFFFACC15), size: 24),
+                ),
+                title: Text(
+                  ev.titolo,
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                ),
+                subtitle: Text(
+                  '${votesForEvent.length} Votazioni attive • Org: ${ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa}',
+                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                ),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      children: votesForEvent.map((v) {
+                        return VoteCard(
+                          votazione: v,
+                          currentUserNickname: _apiService.currentUser?.nome ?? 'Cloud',
+                          onVotaTap: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => VoteView(votazione: v)),
+                            );
+                            _loadData(forceRefresh: true);
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       );

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../services/api_service.dart';
+import '../widgets/app_toast.dart';
 
 class VarSubmissionModal extends StatefulWidget {
   final Evento evento;
@@ -82,9 +83,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Impossibile caricare l\'immagine.')),
-        );
+        AppToast.showError(context, 'Errore Immagine', 'Impossibile caricare l\'immagine.');
       }
     }
   }
@@ -99,25 +98,19 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
 
     final String bersaglio = isBonus ? myNick : (_selectedCulprit ?? '');
     if (bersaglio.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seleziona il giocatore a cui si riferisce l\'infrazione!')),
-      );
+      AppToast.showWarning(context, 'Giocatore Mancante', 'Seleziona il giocatore a cui si riferisce l\'infrazione!');
       return;
     }
 
     final String judge = isOrganizer ? (_selectedJudge ?? '') : widget.evento.creatore;
     if (judge.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Seleziona un Co-Organizzatore che farà da Giudice!')),
-      );
+      AppToast.showWarning(context, 'Giudice Mancante', 'Seleziona un Co-Organizzatore che farà da Giudice!');
       return;
     }
 
     final descrizione = _descrizioneController.text.trim();
     if (descrizione.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inserisci una breve descrizione dell\'accaduto!')),
-      );
+      AppToast.showWarning(context, 'Descrizione Mancante', 'Inserisci una breve descrizione dell\'accaduto!');
       return;
     }
 
@@ -148,22 +141,17 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
 
       if (resId != null) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF10B981),
-            content: Text(
-              '📺 Richiesta VAR inoltrata al Giudice $judge! Testimoni allertati.',
-              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
+        AppToast.showSuccess(
+          context,
+          'Richiesta VAR Inoltrata 📺',
+          'Richiesta inviata al Giudice $judge! Testimoni allertati.',
         );
         widget.onSubmitted();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFEF4444),
-            content: Text('Errore durante l\'invio della richiesta VAR. Riprova.'),
-          ),
+        AppToast.showError(
+          context,
+          'Errore VAR',
+          'Errore durante l\'invio della richiesta VAR. Riprova.',
         );
       }
     }

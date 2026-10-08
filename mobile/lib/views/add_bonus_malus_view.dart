@@ -5,6 +5,7 @@ import '../models/bonus_malus.dart';
 import '../models/evento.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
+import '../widgets/app_toast.dart';
 
 class AddBonusMalusView extends StatefulWidget {
   final Evento? evento;
@@ -63,21 +64,19 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
 
     if (_formKey.currentState?.validate() ?? false) {
       if (_eventoSelezionato == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFEF4444),
-            content: Text('Seleziona un evento attivo a cui collegare il bonus/malus!'),
-          ),
+        AppToast.showWarning(
+          context,
+          'Evento Mancante',
+          'Seleziona un evento attivo a cui collegare il bonus/malus!',
         );
         return;
       }
 
       if (_eventoSelezionato!.isConcluso) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            backgroundColor: Color(0xFFEF4444),
-            content: Text('Questo evento è concluso. Non puoi proporre bonus/malus per eventi chiusi.'),
-          ),
+        AppToast.showWarning(
+          context,
+          'Evento Concluso',
+          'Questo evento è concluso. Non puoi proporre bonus/malus per eventi chiusi.',
         );
         return;
       }
@@ -118,14 +117,19 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
 
         if (!mounted) return;
 
+        AppToast.showSuccess(
+          context,
+          'Proposta inviata con successo! 🚀',
+          '${nuovoBonus.titolo} è stato inserito nelle Votazioni Live.',
+        );
+
         Navigator.pop(context);
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFFEF4444),
-              content: Text('Errore durante la proposta: ${e.toString().replaceAll("Exception: ", "")}'),
-            ),
+          AppToast.showError(
+            context,
+            'Errore durante la proposta',
+            e.toString().replaceAll("Exception: ", ""),
           );
         }
       } finally {
