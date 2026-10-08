@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
@@ -31,6 +32,12 @@ class _LoginViewState extends State<LoginView> {
   bool _obscureRegConfirmPassword = true;
   bool _rememberMe = false;
 
+  // Controllo disponibilità Nickname con debounce
+  Timer? _nicknameDebounceTimer;
+  bool _isCheckingNickname = false;
+  bool? _isNicknameAvailable;
+  List<String> _suggestedNicknames = [];
+  String? _nicknameStatusMessage;
 
   bool _isRegisterMode = false;
   bool _isLoading = false;
@@ -43,6 +50,80 @@ class _LoginViewState extends State<LoginView> {
       'Attenzione',
       message.replaceAll('Exception: ', ''),
     );
+  }
+
+  void _onNicknameChanged(String value) {
+    _nicknameDebounceTimer?.cancel();
+    final trimmed = value.trim();
+
+    if (trimmed.length < 3) {
+      setState(() {
+        _isCheckingNickname = false;
+        _isNicknameAvailable = null;
+        _suggestedNicknames = [];
+        _nicknameStatusMessage = trimmed.isNotEmpty ? 'Almeno 3 caratteri richiesti' : null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isCheckingNickname = true;
+      _nicknameStatusMessage = 'Controllo disponibilità...';
+    });
+
+    _nicknameDebounceTimer = Timer(const Duration(milliseconds: 1800), () async {
+      final currentNick = _nicknameController.text.trim();
+      if (currentNick.length < 3) return;
+
+      final res = await _apiService.verificaDisponibilitaNickname(currentNick);
+
+      if (!mounted) return;
+      if (_nicknameController.text.trim() == currentNick) {
+        setState(() {
+          _isCheckingNickname = false;
+          _isNicknameAvailable = res.disponibile;
+          _nicknameStatusMessage = res.messaggio;
+          _suggestedNicknames = res.suggerimenti;
+        });
+      }
+    });
+  }
+
+  void _applyNicknameSuggestion(String suggested) {
+    _nicknameDebounceTimer?.cancel();
+    setState(() {
+      _nicknameController.text = suggested;
+      _nicknameController.selection = TextSelection.fromPosition(
+        TextPosition(offset: suggested.length),
+      );
+      _isCheckingNickname = false;
+      _isNicknameAvailable = true;
+      _nicknameStatusMessage = 'Nome utente disponibile! ✨';
+      _suggestedNicknames = [];
+    });
+  }
+
+  Widget? _buildNicknameSuffix() {
+    if (_isCheckingNickname) {
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF9333EA)),
+          ),
+        ),
+      );
+    }
+    if (_isNicknameAvailable == true) {
+      return const Icon(Icons.check_circle_rounded, color: Color(0xFF22C55E), size: 22);
+    }
+    if (_isNicknameAvailable == false) {
+      return const Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 22);
+    }
+    return null;
   }
 
   // Handle Login Rigoroso con Password
@@ -90,6 +171,17 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _handleRegister() async {
     if (!(_registerFormKey.currentState?.validate() ?? false)) return;
 
+    final nick = _nicknameController.text.trim();
+    if (nick.length < 3) {
+      _showError('Il nickname deve contenere almeno 3 caratteri.');
+      return;
+    }
+
+    if (_isNicknameAvailable == false) {
+      _showError('Il nickname "$nick" non è disponibile. Scegline un altro o usa uno dei suggerimenti proposti!');
+      return;
+    }
+
     final pass = _regPasswordController.text.trim();
     final confirmPass = _regConfirmPasswordController.text.trim();
 
@@ -111,7 +203,7 @@ class _LoginViewState extends State<LoginView> {
       await _apiService.registrazione(
         nome: _nomeController.text.trim(),
         cognome: _cognomeController.text.trim(),
-        nickname: _nicknameController.text.trim(),
+        nickname: nick,
         email: _emailController.text.trim(),
         password: pass,
         rememberMe: _rememberMe,
@@ -126,6 +218,15 @@ class _LoginViewState extends State<LoginView> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeView()),
       );
+    } on NicknameAlreadyTakenException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _isNicknameAvailable = false;
+        _nicknameStatusMessage = 'Nome utente già in uso! Prova uno di questi:';
+        _suggestedNicknames = e.suggerimenti;
+      });
+      _showError('Il nickname "${e.nickname}" è già occupato! Scegli uno dei suggerimenti proposti.');
     } catch (e) {
       if (!mounted) return;
 
@@ -777,6 +878,7 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   void dispose() {
+    _nicknameDebounceTimer?.cancel();
     _identifierController.dispose();
     _loginPasswordController.dispose();
     _nomeController.dispose();
@@ -1106,22 +1208,135 @@ class _LoginViewState extends State<LoginView> {
 
                           TextFormField(
                             controller: _nicknameController,
+                            onChanged: _onNicknameChanged,
                             style: const TextStyle(color: Colors.white),
                             decoration: InputDecoration(
-                              labelText: 'Nickname di Gioco',
+                              labelText: 'Nickname di Gioco (min. 3 caratteri)',
                               hintText: 'Es. MarioRossi, Bomber99, SuperFanta...',
                               hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                               labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
                               prefixIcon: const Icon(Icons.stars_rounded, color: Color(0xFF9333EA)),
+                              suffixIcon: _buildNicknameSuffix(),
                               filled: true,
                               fillColor: const Color(0xFF0F172A),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(14),
                                 borderSide: BorderSide.none,
                               ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide(
+                                  color: _isNicknameAvailable == true
+                                      ? const Color(0xFF22C55E).withValues(alpha: 0.7)
+                                      : (_isNicknameAvailable == false
+                                          ? const Color(0xFFEF4444).withValues(alpha: 0.7)
+                                          : Colors.transparent),
+                                  width: 1.5,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(14),
+                                borderSide: BorderSide(
+                                  color: _isNicknameAvailable == true
+                                      ? const Color(0xFF22C55E)
+                                      : (_isNicknameAvailable == false
+                                          ? const Color(0xFFEF4444)
+                                          : const Color(0xFF9333EA)),
+                                  width: 1.8,
+                                ),
+                              ),
                             ),
-                            validator: (val) => val == null || val.trim().isEmpty ? 'Inserisci il nickname' : null,
+                            validator: (val) {
+                              if (val == null || val.trim().isEmpty) return 'Inserisci il nickname';
+                              if (val.trim().length < 3) return 'Il nickname deve contenere almeno 3 caratteri';
+                              if (_isNicknameAvailable == false) return 'Nome utente già in uso';
+                              return null;
+                            },
                           ),
+                          if (_nicknameStatusMessage != null) ...[
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _isNicknameAvailable == true
+                                        ? Icons.check_circle_outline
+                                        : (_isNicknameAvailable == false ? Icons.warning_amber_rounded : Icons.info_outline),
+                                    size: 15,
+                                    color: _isNicknameAvailable == true
+                                        ? const Color(0xFF22C55E)
+                                        : (_isNicknameAvailable == false ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8)),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      _nicknameStatusMessage!,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: _isNicknameAvailable == true
+                                            ? const Color(0xFF22C55E)
+                                            : (_isNicknameAvailable == false ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (_suggestedNicknames.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1E293B),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.35)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.auto_awesome, color: Color(0xFFFACC15), size: 15),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Suggeriti per te (tocca per scegliere):',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: const Color(0xFFFACC15),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: _suggestedNicknames.map((suggerito) {
+                                      return ActionChip(
+                                        backgroundColor: const Color(0xFF9333EA).withValues(alpha: 0.25),
+                                        side: const BorderSide(color: Color(0xFF9333EA)),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        avatar: const Icon(Icons.touch_app_outlined, size: 15, color: Color(0xFFD8B4FE)),
+                                        label: Text(
+                                          suggerito,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        onPressed: () => _applyNicknameSuggestion(suggerito),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 12),
 
                           TextFormField(
@@ -1280,6 +1495,11 @@ class _LoginViewState extends State<LoginView> {
                   onPressed: () {
                     setState(() {
                       _isRegisterMode = !_isRegisterMode;
+                      _nicknameDebounceTimer?.cancel();
+                      _isCheckingNickname = false;
+                      _isNicknameAvailable = null;
+                      _suggestedNicknames = [];
+                      _nicknameStatusMessage = null;
                     });
                   },
                   child: Text(

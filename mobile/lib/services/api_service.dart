@@ -21,6 +21,33 @@ class NeedsPasswordSetupException implements Exception {
   String toString() => 'Questo account non ha ancora una password impostata. Impostala ora per proteggere il profilo!';
 }
 
+class NicknameCheckResult {
+  final bool disponibile;
+  final String? messaggio;
+  final List<String> suggerimenti;
+
+  const NicknameCheckResult({
+    required this.disponibile,
+    this.messaggio,
+    this.suggerimenti = const [],
+  });
+}
+
+class NicknameAlreadyTakenException implements Exception {
+  final String nickname;
+  final List<String> suggerimenti;
+  final String message;
+
+  NicknameAlreadyTakenException({
+    required this.nickname,
+    required this.suggerimenti,
+    String? message,
+  }) : message = message ?? 'Nome utente "$nickname" già in uso. Prova uno dei suggerimenti!';
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   static List<String> filtraStorico(List<String> storico, {int maxGiorni = 7}) {
     final now = DateTime.now();
@@ -434,25 +461,48 @@ class ApiService {
   Future<Utente> login(String identifier, String password, {bool rememberMe = true}) async {
     clearUserSessionCache();
     _rememberMeSession = rememberMe;
-    final cleanIdentifier = identifier.trim().toLowerCase();
+    final rawIdentifier = identifier.trim();
+    final cleanIdentifier = rawIdentifier;
+    final cleanIdentifierLower = rawIdentifier.toLowerCase();
     final cleanPassword = password.trim();
 
-    if (cleanIdentifier.isEmpty) {
+    if (rawIdentifier.isEmpty) {
       throw Exception('Inserisci il tuo Nickname o la tua Email');
     }
+
+    final bool isEmailLogin = rawIdentifier.contains('@');
 
     // 1. Prova PRIMA la connessione DIRETTA a MongoDB Atlas (Istantanea <30ms)
     try {
       final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
         final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
+        bool casingMismatch = false;
+        String suggestedCasing = '';
+
         for (var d in docs) {
-          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
-          final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-          final isClaudioAlias = (cleanIdentifier == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
-          if (uName == cleanIdentifier || uEmail == cleanIdentifier || isClaudioAlias) {
-            final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente').toString();
-            final actualEmail = (d['email'] ?? '').toString();
+          final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim();
+          final actualEmail = (d['email'] ?? '').toString().trim();
+          final isClaudioAlias = (cleanIdentifierLower == 'claudio' && (actualUsername.toLowerCase() == 'cloud' || actualEmail.toLowerCase().contains('claudio.simonelli')));
+
+          bool isMatch = false;
+
+          if (isEmailLogin) {
+            // Accesso con Email: case-insensitive
+            if (actualEmail.toLowerCase() == cleanIdentifierLower) {
+              isMatch = true;
+            }
+          } else {
+            // Accesso con Nickname: case-sensitive esatto!
+            if (actualUsername == rawIdentifier || isClaudioAlias) {
+              isMatch = true;
+            } else if (actualUsername.toLowerCase() == cleanIdentifierLower) {
+              casingMismatch = true;
+              suggestedCasing = actualUsername;
+            }
+          }
+
+          if (isMatch) {
             final existingPasswordHash = (d['password'] ?? d['passwordHash'] ?? '').toString().trim();
 
             // Riconoscimento al primo accesso: utente esistente ma senza password impostata
@@ -502,12 +552,21 @@ class ApiService {
             return _currentUser!;
           }
         }
-        throw Exception('Nessun utente trovato nel database per "$cleanIdentifier". Registrati prima di accedere!');
+
+        if (casingMismatch) {
+          throw Exception('Attenzione alle maiuscole/minuscole! Il tuo nome utente è registrato come "$suggestedCasing".');
+        }
+
+        throw Exception(
+          isEmailLogin
+              ? 'Nessun utente trovato con l\'email "$rawIdentifier". Registrati prima di accedere!'
+              : 'Nessun utente trovato con il nickname "$rawIdentifier". Registrati prima di accedere!',
+        );
       }
     } catch (e) {
       markMongoDbDisconnected();
       if (e is NeedsPasswordSetupException) rethrow;
-      if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
+      if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password') || e.toString().contains('Attenzione alle maiuscole/minuscole'))) {
         rethrow;
       }
     }
@@ -661,6 +720,96 @@ class ApiService {
     throw Exception('Impossibile salvare la nuova password. Verifica la connessione di rete.');
   }
 
+  // Genera suggerimenti intelligenti e alternativi per un nickname occupato
+  List<String> generaSuggerimentiNickname(String baseNick, Set<String> existingLowerNicks) {
+    final clean = baseNick.trim();
+    final List<String> candidates = [];
+
+    // 1. Aggiunte numeriche comuni
+    candidates.add('${clean}1234');
+    candidates.add('${clean}2026');
+    candidates.add('${clean}99');
+    candidates.add('${clean}7');
+
+    // 2. Raddoppio ultima lettera se alfabetica (es. cloudd)
+    if (clean.isNotEmpty) {
+      final lastChar = clean[clean.length - 1];
+      if (RegExp(r'[a-zA-Z]').hasMatch(lastChar)) {
+        candidates.add('$clean$lastChar');
+      }
+    }
+
+    // 3. Prefissi e suffissi fanta / goliardici
+    candidates.add('${clean}_fanta');
+    candidates.add('il_$clean');
+    candidates.add('${clean}_pro');
+    candidates.add('${clean}_real');
+
+    // 4. Numeri casuali
+    final rnd = Random();
+    candidates.add('${clean}_${rnd.nextInt(899) + 100}');
+    candidates.add('$clean${rnd.nextInt(89) + 10}');
+
+    final List<String> results = [];
+    final Set<String> seenLower = {};
+
+    for (final cand in candidates) {
+      final candLower = cand.toLowerCase();
+      if (!existingLowerNicks.contains(candLower) && !seenLower.contains(candLower)) {
+        seenLower.add(candLower);
+        results.add(cand);
+        if (results.length >= 3) break;
+      }
+    }
+
+    return results;
+  }
+
+  // Verifica asincrona di disponibilità del nickname con generazione suggerimenti
+  Future<NicknameCheckResult> verificaDisponibilitaNickname(String nickname) async {
+    final cleanNick = nickname.trim();
+    if (cleanNick.length < 3) {
+      return const NicknameCheckResult(
+        disponibile: false,
+        messaggio: 'Il nickname deve contenere almeno 3 caratteri.',
+        suggerimenti: [],
+      );
+    }
+
+    try {
+      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+      if (db != null && db.isConnected) {
+        final docs = await db.collection('Utenti').find().toList();
+        final existingLower = <String>{};
+        for (var d in docs) {
+          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          if (uName.isNotEmpty) existingLower.add(uName);
+        }
+
+        if (existingLower.contains(cleanNick.toLowerCase())) {
+          final suggerimenti = generaSuggerimentiNickname(cleanNick, existingLower);
+          return NicknameCheckResult(
+            disponibile: false,
+            messaggio: 'Nome utente già in uso! Prova uno di questi:',
+            suggerimenti: suggerimenti,
+          );
+        } else {
+          return const NicknameCheckResult(
+            disponibile: true,
+            messaggio: 'Nome utente disponibile! ✨',
+            suggerimenti: [],
+          );
+        }
+      }
+    } catch (_) {}
+
+    return const NicknameCheckResult(
+      disponibile: true,
+      messaggio: null,
+      suggerimenti: [],
+    );
+  }
+
   // --- REGISTRAZIONE ESPLICITA DI UN NUOVO UTENTE SU MONGODB ATLAS (CON PASSWORD) ---
   Future<Utente> registrazione({
     required String nome,
@@ -676,8 +825,11 @@ class ApiService {
     if (cleanPass.length < 6) {
       throw Exception('La password deve contenere almeno 6 caratteri.');
     }
-    final hashedPassword = hashPassword(cleanPass);
     final cleanNick = nickname.trim();
+    if (cleanNick.length < 3) {
+      throw Exception('Il nickname deve contenere almeno 3 caratteri.');
+    }
+    final hashedPassword = hashPassword(cleanPass);
     final cleanEmail = email.trim();
 
     // 1. Inserimento DIRETTO in MongoDB Atlas (<30ms)
@@ -685,12 +837,24 @@ class ApiService {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
         final docs = await db.collection('Utenti').find().toList();
+        final existingLower = <String>{};
+
         for (var d in docs) {
           final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-          if (uName == cleanNick.toLowerCase() || (cleanEmail.isNotEmpty && uEmail == cleanEmail.toLowerCase())) {
-            throw Exception('Un account con questo Nickname o Email esiste già!');
+          if (uName.isNotEmpty) existingLower.add(uName);
+
+          if (cleanEmail.isNotEmpty && uEmail == cleanEmail.toLowerCase()) {
+            throw Exception('Un account con questa Email esiste già!');
           }
+        }
+
+        if (existingLower.contains(cleanNick.toLowerCase())) {
+          final suggerimenti = generaSuggerimentiNickname(cleanNick, existingLower);
+          throw NicknameAlreadyTakenException(
+            nickname: cleanNick,
+            suggerimenti: suggerimenti,
+          );
         }
 
         final newDoc = {
@@ -727,6 +891,7 @@ class ApiService {
         return _currentUser!;
       }
     } catch (e) {
+      if (e is NicknameAlreadyTakenException) rethrow;
       if (e is Exception && e.toString().contains('esiste già')) rethrow;
     }
 

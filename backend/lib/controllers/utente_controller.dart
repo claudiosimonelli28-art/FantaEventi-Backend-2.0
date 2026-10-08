@@ -106,18 +106,48 @@ class UtenteController {
         );
       }
 
-      final doc = await DbService.instance.utentiCollection.findOne(
-        where.eq('username', identifier)
-             .or(where.eq('nickname', identifier))
-             .or(where.eq('nome', identifier))
-             .or(where.eq('email', identifier)),
-      );
+      final rawIdentifier = identifier;
+      final cleanIdentifierLower = rawIdentifier.toLowerCase();
+      final isEmailLogin = rawIdentifier.contains('@');
+
+      final allDocs = await DbService.instance.utentiCollection.find().toList();
+      Map<String, dynamic>? doc;
+      bool casingMismatch = false;
+      String suggestedCasing = '';
+
+      for (var d in allDocs) {
+        final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim();
+        final actualEmail = (d['email'] ?? '').toString().trim();
+
+        if (isEmailLogin) {
+          if (actualEmail.toLowerCase() == cleanIdentifierLower) {
+            doc = d;
+            break;
+          }
+        } else {
+          if (actualUsername == rawIdentifier) {
+            doc = d;
+            break;
+          } else if (actualUsername.toLowerCase() == cleanIdentifierLower) {
+            casingMismatch = true;
+            suggestedCasing = actualUsername;
+          }
+        }
+      }
 
       if (doc == null) {
-        print('⚠️ Utente "$identifier" non trovato nel database MongoDB.');
+        print('⚠️ Utente "$rawIdentifier" non trovato nel database MongoDB.');
+        if (casingMismatch) {
+          return Response.badRequest(
+            body: jsonEncode({
+              'error': 'Attenzione alle maiuscole/minuscole! Il tuo nome utente è registrato come "$suggestedCasing".',
+            }),
+            headers: {'content-type': 'application/json'},
+          );
+        }
         return Response.notFound(
           jsonEncode({
-            'error': 'Nessun utente trovato per "$identifier"',
+            'error': 'Nessun utente trovato per "$rawIdentifier"',
             'notFound': true,
           }),
           headers: {'content-type': 'application/json'},
@@ -209,9 +239,9 @@ class UtenteController {
 
       print('📥 [HTTP POST /api/registrazione] Creazione utente "$username" ($email)...');
 
-      if (username.isEmpty) {
+      if (username.length < 3) {
         return Response.badRequest(
-          body: jsonEncode({'error': 'L\'Username o Nickname è obbligatorio'}),
+          body: jsonEncode({'error': 'Il Nickname deve contenere almeno 3 caratteri'}),
           headers: {'content-type': 'application/json'},
         );
       }
@@ -225,19 +255,41 @@ class UtenteController {
 
       final formattedEmail = email.isNotEmpty ? email : '${username.toLowerCase().replaceAll(' ', '')}@fantaeventi.it';
 
-      final esistente = await DbService.instance.utentiCollection.findOne(
-        where.eq('username', username)
-             .or(where.eq('nickname', username))
-             .or(where.eq('email', formattedEmail)),
-      );
+      final allDocs = await DbService.instance.utentiCollection.find().toList();
+      final existingLower = <String>{};
+      for (var d in allDocs) {
+        final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+        final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
+        if (uName.isNotEmpty) existingLower.add(uName);
+        if (formattedEmail.isNotEmpty && uEmail == formattedEmail.toLowerCase()) {
+          return Response.badRequest(
+            body: jsonEncode({'error': 'Un account con questa Email esiste già'}),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+      }
 
-      if (esistente != null) {
-        final utenteEsistente = Utente.fromMap(esistente);
-        print('ℹ️ Utente "$username" era già presente su MongoDB.');
-        return Response.ok(
-          jsonEncode({
-            'message': 'Utente già presente nel database',
-            'utente': utenteEsistente.toJson(),
+      if (existingLower.contains(username.toLowerCase())) {
+        final suggestions = <String>[];
+        final candidates = [
+          '${username}1234',
+          '${username}2026',
+          '${username}99',
+          '$username${username[username.length - 1]}',
+          '${username}_fanta',
+          'il_$username',
+        ];
+        for (var c in candidates) {
+          if (!existingLower.contains(c.toLowerCase()) && !suggestions.contains(c)) {
+            suggestions.add(c);
+            if (suggestions.length >= 3) break;
+          }
+        }
+
+        return Response.badRequest(
+          body: jsonEncode({
+            'error': 'Nome utente già utilizzato',
+            'suggerimenti': suggestions,
           }),
           headers: {'content-type': 'application/json'},
         );
