@@ -154,6 +154,15 @@ class ApiService {
     _db = null;
   }
 
+  Future<Db?> _getSafeMongoDb() async {
+    Db? db = await _getMongoDb();
+    if (db == null || !db.isConnected) {
+      markMongoDbDisconnected();
+      db = await _getMongoDb();
+    }
+    return db;
+  }
+
   final List<String> baseUrls = [
     'https://fantaeventi-backend-2-0.onrender.com/api',
   ];
@@ -1858,7 +1867,11 @@ class ApiService {
     if (nuoviInvitati.isEmpty) return;
     invalidateCache();
 
-    final db = await _getMongoDb();
+    Db? db = await _getSafeMongoDb();
+    if (db == null || !db.isConnected) {
+      markMongoDbDisconnected();
+      db = await _getSafeMongoDb();
+    }
     if (db == null || !db.isConnected) {
       throw Exception('Impossibile connettersi al database per inviare gli inviti.');
     }
@@ -1866,7 +1879,18 @@ class ApiService {
     ObjectId? objId;
     try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
     final evSelector = objId != null ? where.id(objId) : where.eq('_id', eventoId);
-    final evDoc = await db.collection('Evento').findOne(evSelector);
+    
+    Map<String, dynamic>? evDoc;
+    try {
+      evDoc = await db.collection('Evento').findOne(evSelector);
+    } catch (_) {
+      // Se c'è stato un drop di socket silente, riconnetti e riprova subito senza fallire
+      markMongoDbDisconnected();
+      db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        evDoc = await db.collection('Evento').findOne(evSelector);
+      }
+    }
 
     if (evDoc == null) {
       throw Exception('Evento non trovato nel database.');
@@ -1903,7 +1927,7 @@ class ApiService {
     if (aggiuntiEffettivi.isEmpty) return;
 
     // Aggiorna l'elenco invitati nell'Evento su MongoDB
-    await db.collection('Evento').update(
+    await db!.collection('Evento').update(
       evSelector,
       modify.set('invitati', currentInvitati),
     );
@@ -1918,8 +1942,20 @@ class ApiService {
         'eventoId': eventoId,
         'tipo': 'invito',
         'stato': 'in_attesa',
+        'letto': false,
         'data': DateTime.now().toIso8601String(),
       });
+    }
+
+    // Aggiorna istantaneamente anche lo stato in-memory di _eventi
+    final evIdx = _eventi.indexWhere((e) => e.id == eventoId);
+    if (evIdx != -1) {
+      final ev = _eventi[evIdx];
+      final updatedInv = List<String>.from(ev.invitati);
+      for (var a in aggiuntiEffettivi) {
+        if (!updatedInv.contains(a)) updatedInv.add(a);
+      }
+      _eventi[evIdx] = ev.copyWith(invitati: updatedInv);
     }
   }
 
@@ -2019,9 +2055,13 @@ class ApiService {
     final cleanNick = nickname.trim().toLowerCase();
     final List<Map<String, dynamic>> notificheList = [];
 
-    // 1. Prova prima la connessione DIRETTA a MongoDB Atlas (Istantanea <30ms)
+    // Connessione DIRETTA e ROBUSTA a MongoDB Atlas (Singola Fonte di Verità)
     try {
-      final db = await _getMongoDb();
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         // Recupera eventi, votazioni e bonus/malus per pulizia intelligente e controllo stato voto
         final eventiDocs = await db.collection('Evento').find().toList();
@@ -2219,26 +2259,6 @@ class ApiService {
       }
     } catch (_) {}
 
-    // 2. Fallback veloce su HTTP solo se MongoDB offline (max 1.5s)
-    for (String url in baseUrls) {
-      try {
-        final response = await http.get(Uri.parse('$url/notifiche?utente=$nickname'), headers: defaultHeaders).timeout(const Duration(milliseconds: 1500));
-        if (response.statusCode == 200 && !response.body.contains('<html>')) {
-          final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
-          final Set<String> seenKeys = {};
-          final List<Map<String, dynamic>> dedupedHttp = [];
-          for (var item in data) {
-            final m = item as Map<String, dynamic>;
-            final key = '${m['mittente']?.toString().toLowerCase()}|${m['destinatario']?.toString().toLowerCase()}|${m['titolo']?.toString().toLowerCase()}|${m['eventoId']?.toString().toLowerCase()}';
-            if (!seenKeys.contains(key)) {
-              seenKeys.add(key);
-              dedupedHttp.add(m);
-            }
-          }
-          return dedupedHttp;
-        }
-      } catch (_) {}
-    }
     return notificheList;
   }
 
@@ -2249,11 +2269,13 @@ class ApiService {
     final nuovoStato = isPro ? 'accettato' : 'rifiutato';
     final votoEspresso = isPro ? 'pro' : 'contro';
 
-    bool directSuccess = false;
-
     // Aggiornamento DIRETTO su MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         ObjectId? objId;
         try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}
@@ -2261,7 +2283,7 @@ class ApiService {
         
         await db.collection('Notifiche').update(
           selector,
-          modify.set('stato', nuovoStato).set('votoEspresso', votoEspresso),
+          modify.set('stato', nuovoStato).set('votoEspresso', votoEspresso).set('letto', true),
         );
 
         if (azione == 'accetta') {
@@ -2291,32 +2313,27 @@ class ApiService {
                   evSelector,
                   modify.set('partecipanti', part).set('invitati', inv),
                 );
+
+                // Aggiornamento ISTANTANEO in-memory di _eventi (zero latenza per le card eventi)
+                final evIdx = _eventi.indexWhere((e) => e.id == evId);
+                if (evIdx != -1) {
+                  final ev = _eventi[evIdx];
+                  final updatedPart = List<String>.from(ev.partecipanti);
+                  final updatedInv = List<String>.from(ev.invitati);
+                  updatedInv.removeWhere((i) => i.toLowerCase() == utente.toLowerCase());
+                  if (!updatedPart.any((p) => p.toLowerCase() == utente.toLowerCase())) {
+                    updatedPart.add(utente);
+                  }
+                  _eventi[evIdx] = ev.copyWith(partecipanti: updatedPart, invitati: updatedInv);
+                }
               }
             }
           }
         }
-        directSuccess = true;
       }
     } catch (e) {
       if (e is Exception && e.toString().contains('Questo evento è già iniziato')) {
         rethrow;
-      }
-    }
-
-    // Fallback su Render (solo se l'aggiornamento diretto non è riuscito)
-    if (!directSuccess) {
-      for (String url in baseUrls) {
-        try {
-          await http.post(
-            Uri.parse('$url/notifiche/rispondi'),
-            headers: defaultHeaders,
-            body: jsonEncode({
-              'notificaId': notificaId,
-              'azione': azione,
-              'utente': utente,
-            }),
-          ).timeout(const Duration(seconds: 2));
-        } catch (_) {}
       }
     }
   }
@@ -2864,7 +2881,11 @@ class ApiService {
 
   Future<void> segnaNotificheComeLette(String nickname) async {
     try {
-      final db = await _getMongoDb();
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         final cleanNick = nickname.trim().toLowerCase();
         final docs = await db.collection('Notifiche').find().toList();
@@ -2883,7 +2904,11 @@ class ApiService {
 
   Future<void> segnaSingolaNotificaComeLetta(String notificaId) async {
     try {
-      final db = await _getMongoDb();
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         ObjectId? objId;
         try {
@@ -2900,7 +2925,11 @@ class ApiService {
 
   Future<void> eliminaNotifica(String notificaId) async {
     try {
-      final db = await _getMongoDb();
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         ObjectId? objId;
         try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}

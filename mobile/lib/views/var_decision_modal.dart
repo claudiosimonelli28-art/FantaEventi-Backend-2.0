@@ -26,6 +26,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
   Uint8List? _cachedPhotoBytes;
   bool _isLoading = true;
   bool _isProcessing = false;
+  String? _decisioneScelta; // 'convalida' | 'respingi'
   bool _sanzionaFalsaTestimonianza = true;
 
   @override
@@ -109,43 +110,59 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
 
     setState(() {
       _isProcessing = true;
+      _decisioneScelta = approva ? 'convalida' : 'respingi';
     });
 
-    final success = await _apiService.decidiRichiestaVar(
-      varId: widget.varId,
-      giudiceNick: curUser.nickname,
-      approva: approva,
-      sanzionaFalsaTestimonianza: !approva && _sanzionaFalsaTestimonianza,
-    );
+    try {
+      final success = await _apiService.decidiRichiestaVar(
+        varId: widget.varId,
+        giudiceNick: curUser.nickname,
+        approva: approva,
+        sanzionaFalsaTestimonianza: !approva && _sanzionaFalsaTestimonianza,
+      );
 
-    if (mounted) {
-      setState(() {
-        _isProcessing = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _decisioneScelta = null;
+        });
 
-      if (success) {
-        Navigator.pop(context);
-        if (approva) {
-          AppToast.showSuccess(
-            context,
-            'Decisione VAR: Approvata ✅',
-            'Richiesta VAR approvata! Punti assegnati con successo.',
-          );
+        if (success) {
+          Navigator.pop(context);
+          if (approva) {
+            AppToast.showSuccess(
+              context,
+              'Decisione VAR: Approvata ✅',
+              'Richiesta VAR approvata! Punti assegnati con successo.',
+            );
+          } else {
+            AppToast.showWarning(
+              context,
+              'Decisione VAR: Respinta ❌',
+              (_sanzionaFalsaTestimonianza && _richiesta!.isMalus)
+                  ? 'Denuncia respinta! Applicata sanzione per falsa testimonianza.'
+                  : 'Richiesta VAR respinta dal Giudice.',
+            );
+          }
+          widget.onResolved();
         } else {
-          AppToast.showWarning(
+          AppToast.showError(
             context,
-            'Decisione VAR: Respinta ❌',
-            (_sanzionaFalsaTestimonianza && _richiesta!.isMalus)
-                ? 'Denuncia respinta! Applicata sanzione per falsa testimonianza.'
-                : 'Richiesta VAR respinta dal Giudice.',
+            'Errore Decisione VAR',
+            'Errore durante la registrazione della decisione.',
           );
         }
-        widget.onResolved();
-      } else {
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _decisioneScelta = null;
+        });
         AppToast.showError(
           context,
           'Errore Decisione VAR',
-          'Errore durante la registrazione della decisione.',
+          'Si è verificato un errore imprevisto durante la decisione.',
         );
       }
     }
@@ -552,14 +569,24 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _isProcessing ? null : () => _prendiDecisione(true),
-                      icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                      icon: (_isProcessing && _decisioneScelta == 'convalida')
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
                       label: Text(
-                        'CONVALIDA',
+                        (_isProcessing && _decisioneScelta == 'convalida')
+                            ? 'Convalida in corso...'
+                            : 'CONVALIDA',
                         style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF10B981),
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFF059669),
+                        disabledForegroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
@@ -569,14 +596,24 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                   Expanded(
                     child: ElevatedButton.icon(
                       onPressed: _isProcessing ? null : () => _prendiDecisione(false),
-                      icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
+                      icon: (_isProcessing && _decisioneScelta == 'respingi')
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
                       label: Text(
-                        'RESPINGI',
+                        (_isProcessing && _decisioneScelta == 'respingi')
+                            ? 'Rifiuto in corso...'
+                            : 'RESPINGI',
                         style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFEF4444),
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFFDC2626),
+                        disabledForegroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
