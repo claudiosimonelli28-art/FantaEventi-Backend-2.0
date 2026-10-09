@@ -109,7 +109,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         final bool isTutorial = TutorialController.instance.stage == TutorialStage.step6_in_add_bonus;
         await _apiService
             .proponiBonusMalusPerEvento(_eventoSelezionato!.id, nuovoBonus, awardXp: !isTutorial)
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 15));
 
         if (isTutorial) {
           TutorialController.instance.setStage(TutorialStage.step7_view_votazioni);

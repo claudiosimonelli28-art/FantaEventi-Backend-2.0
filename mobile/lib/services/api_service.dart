@@ -2020,17 +2020,31 @@ class ApiService {
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
-        // Recupera gli eventi e le votazioni per pulizia intelligente e controllo stato voto
+        // Recupera eventi, votazioni e bonus/malus per pulizia intelligente e controllo stato voto
         final eventiDocs = await db.collection('Evento').find().toList();
         final votazioniDocs = await db.collection('Votazioni').find().toList();
+        final bmDocs = await db.collection('BonusMalus').find().toList();
 
-        // Mappa degli eventi validi: ID/Titolo -> Doc
+        // Mappa degli eventi validi: Hex / String / Titolo -> Doc
         final Map<String, Map<String, dynamic>> validEvents = {};
         for (var ev in eventiDocs) {
-          final eId = ev['_id']?.toHexString() ?? ev['_id']?.toString() ?? ev['id']?.toString() ?? '';
-          if (eId.isNotEmpty) validEvents[eId.toLowerCase()] = ev;
+          final eIdHex = ev['_id'] is ObjectId ? (ev['_id'] as ObjectId).toHexString().toLowerCase() : '';
+          final eIdStr = (ev['_id']?.toString() ?? ev['id']?.toString() ?? '').toLowerCase();
+          final eClean = eIdStr.replaceAll(RegExp(r'[^a-f0-9]'), '');
+          if (eIdHex.isNotEmpty) validEvents[eIdHex] = ev;
+          if (eIdStr.isNotEmpty) validEvents[eIdStr] = ev;
+          if (eClean.isNotEmpty) validEvents[eClean] = ev;
           final eNome = (ev['nome'] ?? ev['titolo'] ?? '').toString().trim().toLowerCase();
           if (eNome.isNotEmpty) validEvents[eNome] = ev;
+        }
+
+        // Mappa dei BonusMalus per ID hex / Titolo
+        final Map<String, Map<String, dynamic>> bonusMalusMap = {};
+        for (var bm in bmDocs) {
+          final bmIdHex = bm['_id'] is ObjectId ? (bm['_id'] as ObjectId).toHexString().toLowerCase() : (bm['_id']?.toString() ?? '').toLowerCase();
+          if (bmIdHex.isNotEmpty) bonusMalusMap[bmIdHex] = bm;
+          final bmNome = (bm['nome'] ?? '').toString().trim().toLowerCase();
+          if (bmNome.isNotEmpty) bonusMalusMap[bmNome] = bm;
         }
 
         // Mappa delle votazioni per bonusId / votazioneId / titolo
@@ -2058,11 +2072,12 @@ class ApiService {
 
           final evId = (d['eventoId'] ?? '').toString().trim();
           final evIdLower = evId.toLowerCase();
+          final evClean = evIdLower.replaceAll(RegExp(r'[^a-f0-9]'), '');
           final tipo = (d['tipo'] ?? '').toString().toLowerCase();
 
           // Auto-eliminazione notifiche se l'evento collegato è stato cancellato o è già terminato
           if (evId.isNotEmpty) {
-            final evDoc = validEvents[evIdLower];
+            final evDoc = validEvents[evIdLower] ?? (evClean.isNotEmpty ? validEvents[evClean] : null);
             if (evDoc == null) {
               // L'evento NON esiste più nel DB (è stato eliminato): elimina notifica orfana
               if (d['_id'] is ObjectId) {
@@ -2072,11 +2087,12 @@ class ApiService {
               }
               continue;
             } else {
-              // Verifica se l'evento è concluso/terminato
+              // Verifica se l'evento è concluso/terminato (eventi in_programma o in_corso NON sono conclusi)
               final statoEv = (evDoc['stato'] ?? '').toString().toLowerCase();
               final dtFineStr = evDoc['dataFine']?.toString();
               DateTime? dtFine = dtFineStr != null ? DateTime.tryParse(dtFineStr) : null;
-              final bool isEvConcluso = statoEv == 'concluso' || (dtFine != null && DateTime.now().isAfter(dtFine));
+              final bool isEvConcluso = statoEv == 'concluso' ||
+                  (statoEv != 'in_corso' && statoEv != 'in_programma' && dtFine != null && DateTime.now().isAfter(dtFine));
 
               // Se l'evento è concluso, le notifiche operative pendenti (inviti, proposte di votazione) non servono più
               final bool isOperativa = tipo == 'invito' || tipo.contains('proposta') || tipo == 'bonus_malus' || tipo.contains('var_');
@@ -2101,33 +2117,76 @@ class ApiService {
           final notTitolo = (d['titolo'] ?? '').toString().toLowerCase();
           final notMsg = (d['messaggio'] ?? '').toString().toLowerCase();
 
-          Map<String, dynamic>? matchVotazione;
-          if (bonusId.isNotEmpty && votazioniMap.containsKey(bonusId)) {
-            matchVotazione = votazioniMap[bonusId];
-          } else if (votazioniMap.containsKey(idStr.toLowerCase())) {
-            matchVotazione = votazioniMap[idStr.toLowerCase()];
-          } else {
-            for (var entry in votazioniMap.entries) {
-              if (entry.key.isNotEmpty && (notTitolo.contains(entry.key) || notMsg.contains(entry.key))) {
-                matchVotazione = entry.value;
-                break;
-              }
+          // 1. Controllo su BonusMalus collection (proponente e stato approvato/respinto)
+          final matchedBm = bonusMalusMap[bonusId] ??
+              bonusMalusMap[notTitolo] ??
+              (idStr.isNotEmpty ? bonusMalusMap[idStr.toLowerCase()] : null);
+          if (matchedBm != null) {
+            final propDa = (matchedBm['propostoDa'] ?? '').toString().trim().toLowerCase();
+            if (propDa.isNotEmpty && propDa == cleanNick) {
+              haGiaVotato = true;
+              votoEspresso = 'pro';
+            }
+            final bmStato = (matchedBm['stato'] ?? '').toString().toLowerCase();
+            if (bmStato == 'approvato' || bmStato == 'respinto') {
+              votazioneChiusa = true;
+              esitoVotazione = bmStato;
             }
           }
 
-          if (matchVotazione != null) {
-            final votiMap = matchVotazione['votiUtenti'] as Map? ?? {};
-            for (var k in votiMap.keys) {
-              if (k.toString().trim().toLowerCase() == cleanNick) {
-                haGiaVotato = true;
-                votoEspresso = votiMap[k]?.toString() ?? 'votato';
-                break;
+          // 2. Controllo voti individuali da Votazioni collection
+          for (var vDoc in votazioniDocs) {
+            final vUser = (vDoc['utente'] ?? '').toString().trim().toLowerCase();
+            if (vUser != cleanNick) continue;
+
+            final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
+            final vTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+            final bool isMatch = (bonusId.isNotEmpty && (vId == bonusId || vTit == bonusId)) ||
+                (vId.isNotEmpty && vId == idStr.toLowerCase()) ||
+                (vTit.isNotEmpty && (notTitolo.contains(vTit) || notMsg.contains(vTit)));
+
+            if (isMatch) {
+              haGiaVotato = true;
+              votoEspresso = (vDoc['voto']?.toString() ?? 'pro').toLowerCase();
+              final vStato = (vDoc['stato'] ?? '').toString().toLowerCase();
+              if (vStato == 'approvato' || vStato == 'respinto') {
+                votazioneChiusa = true;
+                esitoVotazione = vStato;
+              }
+              break;
+            }
+          }
+
+          // 3. Fallback controllo matchVotazione generico
+          if (!haGiaVotato || !votazioneChiusa) {
+            Map<String, dynamic>? matchVotazione;
+            if (bonusId.isNotEmpty && votazioniMap.containsKey(bonusId)) {
+              matchVotazione = votazioniMap[bonusId];
+            } else if (votazioniMap.containsKey(idStr.toLowerCase())) {
+              matchVotazione = votazioniMap[idStr.toLowerCase()];
+            } else {
+              for (var entry in votazioniMap.entries) {
+                if (entry.key.isNotEmpty && (notTitolo.contains(entry.key) || notMsg.contains(entry.key))) {
+                  matchVotazione = entry.value;
+                  break;
+                }
               }
             }
-            final statoVot = (matchVotazione['stato'] ?? '').toString().toLowerCase();
-            if (statoVot == 'approvato' || statoVot == 'respinto' || statoVot == 'scaduto' || statoVot == 'concluso') {
-              votazioneChiusa = true;
-              esitoVotazione = statoVot;
+
+            if (matchVotazione != null) {
+              final votiMap = matchVotazione['votiUtenti'] as Map? ?? {};
+              for (var k in votiMap.keys) {
+                if (k.toString().trim().toLowerCase() == cleanNick) {
+                  haGiaVotato = true;
+                  votoEspresso = votiMap[k]?.toString() ?? 'votato';
+                  break;
+                }
+              }
+              final statoVot = (matchVotazione['stato'] ?? '').toString().toLowerCase();
+              if (statoVot == 'approvato' || statoVot == 'respinto' || statoVot == 'scaduto' || statoVot == 'concluso') {
+                votazioneChiusa = true;
+                esitoVotazione = statoVot;
+              }
             }
           }
 
@@ -2405,39 +2464,89 @@ class ApiService {
       ),
     );
 
-    // Scrittura DIRETTA della notifica e del bonus su MongoDB Atlas (Singola Scrittura Infallibile)
+    String bmHexId = 'bm_${DateTime.now().millisecondsSinceEpoch}';
     bool directSuccessBM = false;
+
+    // Scrittura DIRETTA della notifica e del bonus su MongoDB Atlas (Singola Scrittura Infallibile)
     try {
-      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+      final db = await _getMongoDb().timeout(const Duration(seconds: 8), onTimeout: () => null);
       if (db != null && db.isConnected) {
-        if (evMatch.partecipanti.isEmpty) {
-          ObjectId? evObjId;
-          try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
-          final evDoc = await db.collection('Evento').findOne(
-            evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId).or(where.eq('titolo', eventoId))
-          ).timeout(const Duration(seconds: 4));
-          if (evDoc != null) {
-            evMatch = evMatch.copyWith(
-              titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
-              propostoDa: evDoc['propostoDa'] ?? evDoc['creatore'] ?? evMatch.propostoDa,
-              partecipanti: (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? evMatch.partecipanti,
-              invitati: (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? evMatch.invitati,
-            );
+        // 1. Recupero SEMPRE fresco dell'evento da MongoDB Atlas per avere tutti i partecipanti reali
+        ObjectId? evObjId;
+        try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
+        final evDoc = await db.collection('Evento').findOne(
+          evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId).or(where.eq('titolo', eventoId))
+        ).timeout(const Duration(seconds: 4), onTimeout: () => null);
+
+        if (evDoc != null) {
+          evMatch = evMatch.copyWith(
+            titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
+            propostoDa: evDoc['propostoDa'] ?? evDoc['creatore'] ?? evMatch.propostoDa,
+            partecipanti: (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.partecipanti,
+            invitati: (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.invitati,
+          );
+        }
+
+        // 2. Controllo anti-duplicazione: verifica se esiste già una proposta identica per lo stesso evento
+        final existingBm = await db.collection('BonusMalus').findOne(
+          where.eq('eventoId', eventoId).and(where.eq('nome', nuovoBonus.titolo))
+        ).timeout(const Duration(seconds: 4), onTimeout: () => null);
+
+        if (existingBm != null) {
+          bmHexId = existingBm['_id'] is ObjectId
+              ? (existingBm['_id'] as ObjectId).toHexString()
+              : (existingBm['_id']?.toString() ?? bmHexId);
+
+          // Se per caso mancavano propostoDa o stato, aggiornali
+          if (existingBm['propostoDa'] == null || existingBm['stato'] == null) {
+            await db.collection('BonusMalus').update(
+              where.id(existingBm['_id'] as ObjectId),
+              modify
+                .set('propostoDa', curUserNick)
+                .set('stato', 'in_votazione')
+                .set('categoria', nuovoBonus.categoria)
+                .set('riassegnabileMoltepliciVolte', nuovoBonus.riassegnabileMoltepliciVolte),
+            ).timeout(const Duration(seconds: 3));
+          }
+        } else {
+          final insertRes = await db.collection('BonusMalus').insertOne({
+            'eventoId': eventoId,
+            'nome': nuovoBonus.titolo,
+            'descrizione': nuovoBonus.descrizione,
+            'punti': nuovoBonus.punti,
+            'categoria': nuovoBonus.categoria,
+            'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
+            'propostoDa': curUserNick,
+            'stato': 'in_votazione',
+            'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
+          }).timeout(const Duration(seconds: 4));
+
+          if (insertRes.id is ObjectId) {
+            bmHexId = (insertRes.id as ObjectId).toHexString();
           }
         }
 
-        await db.collection('BonusMalus').insertOne({
-          'eventoId': eventoId,
-          'nome': nuovoBonus.titolo,
-          'descrizione': nuovoBonus.descrizione,
-          'punti': nuovoBonus.punti,
-          'categoria': nuovoBonus.categoria,
-          'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
-          'propostoDa': curUserNick,
-          'stato': 'in_votazione',
-          'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
-        }).timeout(const Duration(seconds: 4));
+        // 3. Registra esplicitamente il voto 'pro' del proponente in Votazioni su MongoDB Atlas
+        try {
+          final existingVote = await db.collection('Votazioni').findOne(
+            where.eq('votazioneId', bmHexId).and(where.eq('utente', curUserNick))
+          ).timeout(const Duration(seconds: 3), onTimeout: () => null);
 
+          if (existingVote == null) {
+            await db.collection('Votazioni').insertOne({
+              'votazioneId': bmHexId,
+              'bonusId': bmHexId,
+              'eventoId': eventoId,
+              'bonusTitolo': nuovoBonus.titolo,
+              'utente': curUserNick,
+              'voto': 'pro',
+              'stato': 'in_votazione',
+              'data': DateTime.now().toIso8601String(),
+            }).timeout(const Duration(seconds: 3));
+          }
+        } catch (_) {}
+
+        // 4. Inserimento notifiche a TUTTI i partecipanti ed invitati dell'evento (escluso il proponente)
         final Map<String, String> uniqueDestMap = {};
         for (var d in [...evMatch.partecipanti, ...evMatch.invitati, evMatch.propostoDa, evMatch.creatore]) {
           final cleanD = d.trim().toLowerCase();
@@ -2445,19 +2554,28 @@ class ApiService {
             uniqueDestMap[cleanD] = d.trim();
           }
         }
+
         for (var destUser in uniqueDestMap.values) {
           try {
-            await db.collection('Notifiche').insertOne({
-              'mittente': curUserNick,
-              'destinatario': destUser,
-              'titolo': '⭐ Nuova Proposta Bonus/Malus',
-              'messaggio': '$curUserNick ha proposto il bonus "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) per l\'evento "${evMatch.titolo}"!',
-              'eventoId': eventoId,
-              'tipo': 'bonus_malus',
-              'stato': 'in_attesa',
-              'letto': false,
-              'data': DateTime.now().toIso8601String(),
-            }).timeout(const Duration(seconds: 3));
+            final existingNot = await db.collection('Notifiche').findOne(
+              where.eq('destinatario', destUser).and(where.eq('bonusId', bmHexId))
+            ).timeout(const Duration(seconds: 2), onTimeout: () => null);
+
+            if (existingNot == null) {
+              await db.collection('Notifiche').insertOne({
+                'mittente': curUserNick,
+                'destinatario': destUser,
+                'titolo': '⭐ Nuova Proposta: ${nuovoBonus.titolo}',
+                'messaggio': '$curUserNick ha proposto il ${nuovoBonus.punti >= 0 ? "bonus" : "malus"} "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) per l\'evento "${evMatch.titolo}"!',
+                'eventoId': eventoId,
+                'bonusId': bmHexId,
+                'bonusTitolo': nuovoBonus.titolo,
+                'tipo': 'bonus_malus',
+                'stato': 'in_attesa',
+                'letto': false,
+                'data': DateTime.now().toIso8601String(),
+              }).timeout(const Duration(seconds: 3));
+            }
           } catch (_) {}
         }
         directSuccessBM = true;
@@ -2480,7 +2598,10 @@ class ApiService {
               'nome': nuovoBonus.titolo,
               'descrizione': nuovoBonus.descrizione,
               'punti': nuovoBonus.punti,
+              'categoria': nuovoBonus.categoria,
               'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
+              'stato': 'in_votazione',
+              'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
             }),
           ).timeout(const Duration(seconds: 4));
         } catch (_) {}
@@ -2488,33 +2609,43 @@ class ApiService {
     }
 
     final index = _eventi.indexWhere((e) => e.id == eventoId);
+    final BonusMalus bonusConcluso = nuovoBonus.copyWith(
+      id: bmHexId,
+      propostoDa: curUserNick,
+      stato: 'in_votazione',
+      approvato: false,
+    );
+
     if (index != -1) {
       final ev = _eventi[index];
       final numPartecipanti = ev.partecipanti.length >= 2 ? ev.partecipanti.length : 3;
       final quorumCalcolato = (numPartecipanti / 2).floor() + 1;
-      final curUserNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
 
       final meVotazione = Votazione(
-        id: 'v_${DateTime.now().millisecondsSinceEpoch}',
+        id: bmHexId,
         titolo: 'Votazione per "${ev.titolo}": ${nuovoBonus.titolo}',
-        descrizione: 'Proposto da ${nuovoBonus.propostoDa}: ${nuovoBonus.descrizione} (${nuovoBonus.punti > 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} pt)',
-        bonusMalus: nuovoBonus.copyWith(stato: 'in_votazione', approvato: false),
+        descrizione: 'Proposto da $curUserNick: ${nuovoBonus.descrizione} (${nuovoBonus.punti > 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} pt)',
+        bonusMalus: bonusConcluso,
         votiFavorevoli: 1,
         votiContrari: 0,
         quorum: quorumCalcolato,
         stato: 'in_corso',
         scadenza: DateTime.now().add(const Duration(hours: 24)),
-        votiUtenti: {curUserNick: 'pro'},
+        votiUtenti: {curUserNick: 'pro', curUserNick.toLowerCase(): 'pro'},
       );
 
-      final votazioniAggiornate = [...ev.votazioniAttive, meVotazione];
+      final votazioniAggiornate = [
+        meVotazione,
+        ...ev.votazioniAttive.where((v) => v.id != bmHexId && v.titolo != meVotazione.titolo),
+      ];
       _eventi[index] = ev.copyWith(votazioniAttive: votazioniAggiornate);
+      _votazioniList.removeWhere((v) => v.id == bmHexId || v.titolo == meVotazione.titolo);
       _votazioniList.insert(0, meVotazione);
     }
 
     // Se approvato subito, inseriscilo in _bonusMalusList, altrimenti rimane solo nelle Votazioni Live
-    if (nuovoBonus.approvato || nuovoBonus.stato == 'approvato') {
-      _bonusMalusList.insert(0, nuovoBonus);
+    if (bonusConcluso.approvato || bonusConcluso.stato == 'approvato') {
+      _bonusMalusList.insert(0, bonusConcluso);
     }
 
     if (_currentUser != null && awardXp) {
@@ -2545,7 +2676,7 @@ class ApiService {
       }
     }
 
-    return nuovoBonus;
+    return bonusConcluso;
   }
 
   // --- ELIMINA PROPOSTA BONUS/MALUS DA MONGODB ATLAS ---
@@ -2809,21 +2940,27 @@ class ApiService {
           final puntiBM = (bm['punti'] as num?)?.toInt() ?? 0;
           final tipoBM = bm['tipo']?.toString() ?? (puntiBM >= 0 ? 'bonus' : 'malus');
           final propDa = (bm['propostoDa'] ?? '').toString().trim();
+          String effectivePropDa = propDa;
+          if (effectivePropDa.isEmpty && descBM.toLowerCase().contains('proposto da ')) {
+            final idx = descBM.toLowerCase().indexOf('proposto da ');
+            effectivePropDa = descBM.substring(idx + 'proposto da '.length).split(RegExp(r'[:\(\n,]'))[0].trim();
+          }
+
           final List<String> assList = (bm['assegnatoA'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
               [];
 
           // Conversione sicura in oggetto BonusMalus
-
           final Map<String, String> votiUtenti = {
-            if (propDa.isNotEmpty) propDa: 'pro',
+            if (effectivePropDa.isNotEmpty) effectivePropDa: 'pro',
+            if (effectivePropDa.isNotEmpty) effectivePropDa.toLowerCase(): 'pro',
           };
 
           for (var vDoc in votiDocs) {
             final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
             final bTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
-            final u = (vDoc['utente'] ?? '').toString().trim().toLowerCase();
+            final u = (vDoc['utente'] ?? '').toString().trim();
             final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
 
             final isMatch = (vId == bmId.toLowerCase()) ||
@@ -2831,7 +2968,9 @@ class ApiService {
                             (vId.isNotEmpty && vId == nomeBM.toLowerCase());
 
             if (isMatch && u.isNotEmpty) {
-              votiUtenti[u] = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
+              final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
+              votiUtenti[u] = voteStr;
+              votiUtenti[u.toLowerCase()] = voteStr;
             }
           }
 
@@ -2855,11 +2994,16 @@ class ApiService {
           final numPartecipanti = evMatch.partecipanti.length >= 2 ? evMatch.partecipanti.length : 3;
           final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
 
+          final Set<String> countedUsers = {};
           int fav = 0;
           int cont = 0;
           votiUtenti.forEach((user, vote) {
-            if (vote == 'pro') fav++;
-            if (vote == 'contro') cont++;
+            final uLow = user.trim().toLowerCase();
+            if (!countedUsers.contains(uLow)) {
+              countedUsers.add(uLow);
+              if (vote == 'pro') fav++;
+              if (vote == 'contro') cont++;
+            }
           });
 
           final bool giaApprovatoDaDb = bm['approvato'] == true ||
@@ -2890,7 +3034,7 @@ class ApiService {
                 isRespinto = true;
                 paritaDecisaDaOrganizzatore = true;
               }
-            } else if (cleanCreatore.isNotEmpty && cleanCreatore == propDa.trim().toLowerCase()) {
+            } else if (cleanCreatore.isNotEmpty && cleanCreatore == effectivePropDa.trim().toLowerCase()) {
               isApprovato = true;
               paritaDecisaDaOrganizzatore = true;
             }
@@ -2908,7 +3052,7 @@ class ApiService {
             descrizione: descBM,
             punti: puntiBM,
             categoria: catBM,
-            propostoDa: propDa,
+            propostoDa: effectivePropDa.isNotEmpty ? effectivePropDa : propDa,
             approvato: isApprovato,
             stato: statoVot,
             assegnatoA: assList,
@@ -2939,7 +3083,7 @@ class ApiService {
           final votazione = Votazione(
             id: bmId,
             titolo: nomeBM,
-            descrizione: descBM.isNotEmpty ? descBM : '$nomeBM (${puntiBM >= 0 ? "+$puntiBM" : puntiBM} PT) - Proposto da $propDa',
+            descrizione: descBM.isNotEmpty ? descBM : '$nomeBM (${puntiBM >= 0 ? "+$puntiBM" : puntiBM} PT) - Proposto da ${effectivePropDa.isNotEmpty ? effectivePropDa : propDa}',
             bonusMalus: bmObj,
             votiFavorevoli: fav,
             votiContrari: cont,
