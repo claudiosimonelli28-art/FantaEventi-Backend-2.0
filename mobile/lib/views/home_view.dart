@@ -287,13 +287,22 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     }
   }
 
-  bool _checkedGuidaIniziale = false;
+  String? _lastCheckedUserGuida;
 
   Future<void> _checkMostraGuidaIniziale() async {
-    if (_checkedGuidaIniziale) return;
-    _checkedGuidaIniziale = true;
-    final seen = await _apiService.haVistoGuidaRegole();
-    if (!seen && mounted) {
+    final curUser = _apiService.currentUser;
+    if (curUser == null) return;
+    final userKey = curUser.id.isNotEmpty ? curUser.id : curUser.nome.trim().toLowerCase();
+    if (_lastCheckedUserGuida == userKey) return;
+
+    final seen = await _apiService.haVistoGuidaRegole(userKey);
+    if (seen) {
+      _lastCheckedUserGuida = userKey;
+      return;
+    }
+
+    _lastCheckedUserGuida = userKey;
+    if (mounted) {
       await Future.delayed(const Duration(milliseconds: 600));
       if (mounted) {
         final startTutorial = await GuidaRegolamentoModal.mostra(context, isFirstAccess: true);

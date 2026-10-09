@@ -189,6 +189,7 @@ class ApiService {
 
   void clearUserSessionCache() {
     _lastFetchTime = null;
+    _cachedTutorialPremioRiscattato = null;
     _eventi.clear();
     _bonusMalusList.clear();
     _votazioniList.clear();
@@ -228,6 +229,7 @@ class ApiService {
   Future<void> logout() async {
     _currentUser = null;
     _rememberMeSession = false;
+    _cachedTutorialPremioRiscattato = null;
     clearUserSessionCache();
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -266,12 +268,47 @@ class ApiService {
     return null;
   }
 
-  // --- GUIDA & REGOLAMENTO ONBOARDING ---
-  Future<bool> haVistoGuidaRegole() async {
+  // --- GUIDA & REGOLAMENTO ONBOARDING (PROFILATO PER UTENTE) ---
+  Future<bool> haVistoGuidaRegole([String? userIdentifier]) async {
     try {
+      final curUser = _currentUser;
+      if (curUser != null && curUser.haVistoGuida) {
+        return true;
+      }
+
       final prefs = await SharedPreferences.getInstance();
-      final seenLocal = prefs.getBool('tutorial_interactive_v3_completato') ?? false;
-      return seenLocal;
+      final idKey = userIdentifier ?? curUser?.id ?? curUser?.nome ?? '';
+      final cleanKey = idKey.trim().toLowerCase();
+
+      if (cleanKey.isNotEmpty) {
+        if (prefs.getBool('guida_regole_completata_$cleanKey') == true) return true;
+        if (curUser != null && curUser.id.isNotEmpty && prefs.getBool('guida_regole_completata_${curUser.id}') == true) return true;
+        if (curUser != null && prefs.getBool('guida_regole_completata_${curUser.nome.toLowerCase()}') == true) return true;
+      }
+
+      if (curUser != null) {
+        final db = await _getSafeMongoDb();
+        if (db != null && db.isConnected) {
+          ObjectId? uObjId;
+          try {
+            if (curUser.id.isNotEmpty && curUser.id.length == 24) {
+              uObjId = ObjectId.fromHexString(curUser.id);
+            }
+          } catch (_) {}
+
+          final selector = uObjId != null ? where.id(uObjId) : where.eq('nome', curUser.nome);
+          final uDoc = await db.collection('Utenti').findOne(selector);
+          if (uDoc != null && (uDoc['haVistoGuida'] == true || uDoc['tutorialV3Completato'] == true)) {
+            await prefs.setBool('guida_regole_completata_${curUser.nome.toLowerCase()}', true);
+            if (curUser.id.isNotEmpty) {
+              await prefs.setBool('guida_regole_completata_${curUser.id}', true);
+            }
+            _currentUser = curUser.copyWith(haVistoGuida: true);
+            return true;
+          }
+        }
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -283,54 +320,49 @@ class ApiService {
     if (_cachedTutorialPremioRiscattato == true) return true;
     final cur = _currentUser;
     if (cur != null && cur.haVistoGuida) return true;
-    return _cachedTutorialPremioRiscattato ?? false;
+    return false;
   }
 
   Future<bool> haGiaRiscattatoPremioTutorial() async {
     try {
-      if (_cachedTutorialPremioRiscattato == true) return true;
       final curUser = _currentUser;
+      if (curUser == null) return false;
+      if (curUser.haVistoGuida) {
+        _cachedTutorialPremioRiscattato = true;
+        return true;
+      }
+      if (_cachedTutorialPremioRiscattato == true) return true;
+
       final prefs = await SharedPreferences.getInstance();
-      if (curUser != null) {
-        final localVal = prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome}') ??
-            prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}');
-        if (localVal == true) {
-          _cachedTutorialPremioRiscattato = true;
-          return true;
-        }
-      }
-      final globalLocal = prefs.getBool('tutorial_premio_riscattato_v3') ?? false;
-      if (globalLocal) {
-        _cachedTutorialPremioRiscattato = true;
-        return true;
-      }
-      final v3Done = prefs.getBool('tutorial_interactive_v3_completato') ?? false;
-      if (v3Done) {
+      final localVal = prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}') ??
+          prefs.getBool('tutorial_premio_riscattato_v3_${curUser.nome}') ??
+          (curUser.id.isNotEmpty ? prefs.getBool('tutorial_premio_riscattato_v3_${curUser.id}') : null);
+      if (localVal == true) {
         _cachedTutorialPremioRiscattato = true;
         return true;
       }
 
-      if (curUser != null) {
-        final db = await _getMongoDb();
-        if (db != null && db.isConnected) {
-          ObjectId? uObjId;
-          try {
-            if (curUser.id.isNotEmpty && curUser.id.length == 24) {
-              uObjId = ObjectId.fromHexString(curUser.id);
-            }
-          } catch (_) {}
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? uObjId;
+        try {
+          if (curUser.id.isNotEmpty && curUser.id.length == 24) {
+            uObjId = ObjectId.fromHexString(curUser.id);
+          }
+        } catch (_) {}
 
-          final selector = uObjId != null ? where.id(uObjId) : where.eq('nome', curUser.nome);
-          final uDoc = await db.collection('Utenti').findOne(selector);
-          if (uDoc != null) {
-            if (uDoc['tutorialPremioRiscattato'] == true ||
-                uDoc['tutorialV3Completato'] == true ||
-                uDoc['haVistoGuida'] == true) {
-              _cachedTutorialPremioRiscattato = true;
-              await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome}', true);
-              await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}', true);
-              return true;
+        final selector = uObjId != null ? where.id(uObjId) : where.eq('nome', curUser.nome);
+        final uDoc = await db.collection('Utenti').findOne(selector);
+        if (uDoc != null) {
+          if (uDoc['tutorialPremioRiscattato'] == true ||
+              uDoc['tutorialV3Completato'] == true ||
+              uDoc['haVistoGuida'] == true) {
+            _cachedTutorialPremioRiscattato = true;
+            await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}', true);
+            if (curUser.id.isNotEmpty) {
+              await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.id}', true);
             }
+            return true;
           }
         }
       }
@@ -342,19 +374,23 @@ class ApiService {
 
   Future<void> segnaGuidaRegoleCompletata({bool awardXp = true}) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('tutorial_interactive_v3_completato', true);
-      
       final curUser = _currentUser;
       if (curUser != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('guida_regole_completata_${curUser.nome.toLowerCase()}', true);
+        if (curUser.id.isNotEmpty) {
+          await prefs.setBool('guida_regole_completata_${curUser.id}', true);
+        }
+
         // Prevenzione totale farming: se ha già riscattato, non incrementare MAI più XP
         final bool alreadyRedeemed = await haGiaRiscattatoPremioTutorial();
         final bool shouldActuallyAward = awardXp && !alreadyRedeemed;
 
         _cachedTutorialPremioRiscattato = true;
-        await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome}', true);
         await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}', true);
-        await prefs.setBool('tutorial_premio_riscattato_v3', true);
+        if (curUser.id.isNotEmpty) {
+          await prefs.setBool('tutorial_premio_riscattato_v3_${curUser.id}', true);
+        }
 
         final badge = curUser.livello >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
         final newBadges = List<String>.from(curUser.badgeList);
@@ -368,8 +404,9 @@ class ApiService {
           xp: newXp,
           badgeList: newBadges,
         );
+        await _saveSession(_currentUser!);
 
-        final db = await _getMongoDb();
+        final db = await _getSafeMongoDb();
         if (db != null && db.state == State.open) {
           final uColl = db.collection('Utenti');
           var mod = modify
@@ -399,7 +436,22 @@ class ApiService {
   Future<void> resettaTutorialGuidato() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final curUser = _currentUser;
+      if (curUser != null) {
+        await prefs.remove('guida_regole_completata_${curUser.nome.toLowerCase()}');
+        if (curUser.id.isNotEmpty) {
+          await prefs.remove('guida_regole_completata_${curUser.id}');
+        }
+        await prefs.remove('tutorial_premio_riscattato_v3_${curUser.nome.toLowerCase()}');
+        if (curUser.id.isNotEmpty) {
+          await prefs.remove('tutorial_premio_riscattato_v3_${curUser.id}');
+        }
+        _currentUser = curUser.copyWith(haVistoGuida: false);
+        await _saveSession(_currentUser!);
+      }
+      _cachedTutorialPremioRiscattato = null;
       await prefs.remove('tutorial_interactive_v3_completato');
+      await prefs.remove('tutorial_premio_riscattato_v3');
       await prefs.remove('tutorial_spotlight_v2_completato');
       await prefs.remove('guida_regole_completata_v1');
     } catch (_) {}
@@ -557,6 +609,7 @@ class ApiService {
               'countFantasma': d['countFantasma'] ?? 0,
               'countSbirro': d['countSbirro'] ?? 0,
               'countGiustiziere': d['countGiustiziere'] ?? 0,
+              'haVistoGuida': d['haVistoGuida'] == true,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -697,6 +750,7 @@ class ApiService {
               'countFantasma': d['countFantasma'] ?? 0,
               'countSbirro': d['countSbirro'] ?? 0,
               'countGiustiziere': d['countGiustiziere'] ?? 0,
+              'haVistoGuida': d['haVistoGuida'] == true,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -890,6 +944,9 @@ class ApiService {
           'richiesteAmicizia': [],
           'badgeVincitore': [],
           'createdAt': DateTime.now().toIso8601String(),
+          'haVistoGuida': false,
+          'tutorialV3Completato': false,
+          'tutorialPremioRiscattato': false,
         };
 
         final insertResult = await db.collection('Utenti').insertOne(newDoc);
@@ -1353,6 +1410,7 @@ class ApiService {
           jsonMap['countFantasma'] = d['countFantasma'] ?? 0;
           jsonMap['countSbirro'] = d['countSbirro'] ?? 0;
           jsonMap['countGiustiziere'] = d['countGiustiziere'] ?? 0;
+          jsonMap['haVistoGuida'] = d['haVistoGuida'] == true;
 
           final uObj = Utente.fromJson(jsonMap);
           list.add(uObj);
