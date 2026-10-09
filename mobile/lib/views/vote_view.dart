@@ -141,8 +141,9 @@ class _VoteViewState extends State<VoteView> {
     }
 
     final propostoDa = (_votazione.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
-    final isProponente = propostoDa.isNotEmpty && propostoDa == cleanUser ||
-        _votazione.descrizione.toLowerCase().contains('proposto da $cleanUser');
+    final isProponente = (propostoDa.isNotEmpty && (propostoDa == cleanUser || (cleanNick.isNotEmpty && propostoDa == cleanNick) || (cleanId.isNotEmpty && propostoDa == cleanId))) ||
+        _votazione.descrizione.toLowerCase().contains('proposto da $cleanUser') ||
+        (cleanNick.isNotEmpty && _votazione.descrizione.toLowerCase().contains('proposto da $cleanNick'));
 
     final giaVotatoKey = _votazione.votiUtenti.keys.firstWhere(
       (k) => k.trim().toLowerCase() == cleanUser,
