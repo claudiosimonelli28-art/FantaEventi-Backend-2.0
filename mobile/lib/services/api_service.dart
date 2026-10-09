@@ -1397,7 +1397,11 @@ class ApiService {
     }
 
     try {
-      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
 
@@ -1867,95 +1871,100 @@ class ApiService {
     if (nuoviInvitati.isEmpty) return;
     invalidateCache();
 
-    Db? db = await _getSafeMongoDb();
-    if (db == null || !db.isConnected) {
-      markMongoDbDisconnected();
-      db = await _getSafeMongoDb();
-    }
-    if (db == null || !db.isConnected) {
-      throw Exception('Impossibile connettersi al database per inviare gli inviti.');
-    }
+    int maxAttempts = 2;
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        Db? db = await _getSafeMongoDb();
+        if (db == null || !db.isConnected) {
+          markMongoDbDisconnected();
+          db = await _getSafeMongoDb();
+        }
+        if (db == null || !db.isConnected) {
+          throw Exception('Impossibile connettersi al database per inviare gli inviti.');
+        }
 
-    ObjectId? objId;
-    try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
-    final evSelector = objId != null ? where.id(objId) : where.eq('_id', eventoId);
-    
-    Map<String, dynamic>? evDoc;
-    try {
-      evDoc = await db.collection('Evento').findOne(evSelector);
-    } catch (_) {
-      // Se c'è stato un drop di socket silente, riconnetti e riprova subito senza fallire
-      markMongoDbDisconnected();
-      db = await _getSafeMongoDb();
-      if (db != null && db.isConnected) {
-        evDoc = await db.collection('Evento').findOne(evSelector);
+        ObjectId? objId;
+        try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
+        final evSelector = objId != null ? where.id(objId) : where.eq('_id', eventoId);
+        
+        final evDoc = await db.collection('Evento').findOne(evSelector);
+        if (evDoc == null) {
+          throw Exception('Evento non trovato nel database.');
+        }
+
+        // Controllo sicurezza temporale e di stato: solo eventi IN PROGRAMMA
+        final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
+        final dateStr = evDoc['data']?.toString() ?? '';
+        final dtStart = DateTime.tryParse(dateStr);
+        final now = DateTime.now();
+
+        if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
+          throw Exception('Non è più possibile invitare amici: l\'evento è già in corso o concluso!');
+        }
+
+        final creatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? _currentUser?.nome ?? 'Cloud').toString();
+        final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
+
+        final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
+        final List<dynamic> currentPartecipanti = List.from(evDoc['partecipanti'] ?? []);
+
+        final List<String> aggiuntiEffettivi = [];
+        for (var amico in nuoviInvitati) {
+          final aNorm = amico.trim().toLowerCase();
+          final giaPart = currentPartecipanti.any((p) => p.toString().trim().toLowerCase() == aNorm);
+          final giaInv = currentInvitati.any((i) => i.toString().trim().toLowerCase() == aNorm);
+
+          if (!giaPart && !giaInv) {
+            currentInvitati.add(amico);
+            aggiuntiEffettivi.add(amico);
+          }
+        }
+
+        if (aggiuntiEffettivi.isEmpty) return;
+
+        // Aggiorna l'elenco invitati nell'Evento su MongoDB
+        await db.collection('Evento').update(
+          evSelector,
+          modify.set('invitati', currentInvitati),
+        );
+
+        // Invia notifiche individuali per ciascun nuovo amico invitato
+        for (var amico in aggiuntiEffettivi) {
+          await db.collection('Notifiche').insertOne({
+            'mittente': creatore,
+            'destinatario': amico,
+            'titolo': 'Invito ad Evento: $evTitolo',
+            'messaggio': '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
+            'eventoId': eventoId,
+            'tipo': 'invito',
+            'stato': 'in_attesa',
+            'letto': false,
+            'data': DateTime.now().toIso8601String(),
+          });
+        }
+
+        // Aggiorna istantaneamente anche lo stato in-memory di _eventi
+        final evIdx = _eventi.indexWhere((e) => e.id == eventoId);
+        if (evIdx != -1) {
+          final ev = _eventi[evIdx];
+          final updatedInv = List<String>.from(ev.invitati);
+          for (var a in aggiuntiEffettivi) {
+            if (!updatedInv.contains(a)) updatedInv.add(a);
+          }
+          _eventi[evIdx] = ev.copyWith(invitati: updatedInv);
+        }
+
+        break;
+      } catch (e) {
+        if (e is Exception && e.toString().contains('Non è più possibile invitare')) {
+          rethrow;
+        }
+        markMongoDbDisconnected();
+        if (attempt >= maxAttempts) {
+          throw Exception('Impossibile connettersi al database per inviare gli inviti: $e');
+        }
+        await Future.delayed(const Duration(milliseconds: 300));
       }
-    }
-
-    if (evDoc == null) {
-      throw Exception('Evento non trovato nel database.');
-    }
-
-    // Controllo sicurezza temporale e di stato: solo eventi IN PROGRAMMA
-    final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
-    final dateStr = evDoc['data']?.toString() ?? '';
-    final dtStart = DateTime.tryParse(dateStr);
-    final now = DateTime.now();
-
-    if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
-      throw Exception('Non è più possibile invitare amici: l\'evento è già in corso o concluso!');
-    }
-
-    final creatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? _currentUser?.nome ?? 'Cloud').toString();
-    final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
-
-    final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
-    final List<dynamic> currentPartecipanti = List.from(evDoc['partecipanti'] ?? []);
-
-    final List<String> aggiuntiEffettivi = [];
-    for (var amico in nuoviInvitati) {
-      final aNorm = amico.trim().toLowerCase();
-      final giaPart = currentPartecipanti.any((p) => p.toString().trim().toLowerCase() == aNorm);
-      final giaInv = currentInvitati.any((i) => i.toString().trim().toLowerCase() == aNorm);
-
-      if (!giaPart && !giaInv) {
-        currentInvitati.add(amico);
-        aggiuntiEffettivi.add(amico);
-      }
-    }
-
-    if (aggiuntiEffettivi.isEmpty) return;
-
-    // Aggiorna l'elenco invitati nell'Evento su MongoDB
-    await db!.collection('Evento').update(
-      evSelector,
-      modify.set('invitati', currentInvitati),
-    );
-
-    // Invia notifiche individuali per ciascun nuovo amico invitato
-    for (var amico in aggiuntiEffettivi) {
-      await db.collection('Notifiche').insertOne({
-        'mittente': creatore,
-        'destinatario': amico,
-        'titolo': 'Invito ad Evento: $evTitolo',
-        'messaggio': '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
-        'eventoId': eventoId,
-        'tipo': 'invito',
-        'stato': 'in_attesa',
-        'letto': false,
-        'data': DateTime.now().toIso8601String(),
-      });
-    }
-
-    // Aggiorna istantaneamente anche lo stato in-memory di _eventi
-    final evIdx = _eventi.indexWhere((e) => e.id == eventoId);
-    if (evIdx != -1) {
-      final ev = _eventi[evIdx];
-      final updatedInv = List<String>.from(ev.invitati);
-      for (var a in aggiuntiEffettivi) {
-        if (!updatedInv.contains(a)) updatedInv.add(a);
-      }
-      _eventi[evIdx] = ev.copyWith(invitati: updatedInv);
     }
   }
 
@@ -2355,12 +2364,20 @@ class ApiService {
     payloadMap['invitati'] = invitati;
     payloadMap['partecipanti'] = [creatore, ...invitati];
 
-    // Scrittura DIRETTA dell'evento e delle notifiche su MongoDB Atlas (Singola Scrittura Infallibile)
-    bool directSuccess = false;
+    // Scrittura DIRETTA e RESILIENTE dell'evento e delle notifiche su MongoDB Atlas (Singola Scrittura Infallibile)
     String realEvId = eventPayload.id;
-    try {
-      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
-      if (db != null && db.isConnected) {
+    int maxAttempts = 2;
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        Db? db = await _getSafeMongoDb();
+        if (db == null || !db.isConnected) {
+          markMongoDbDisconnected();
+          db = await _getSafeMongoDb();
+        }
+        if (db == null || !db.isConnected) {
+          throw Exception('Impossibile connettersi al database per creare l\'evento.');
+        }
+
         final evRes = await db.collection('Evento').insertOne({
           'titolo': nuovoEvento.titolo,
           'nome': nuovoEvento.titolo,
@@ -2377,12 +2394,13 @@ class ApiService {
           'invitati': invitati,
           'copertinaUrl': nuovoEvento.copertinaUrl,
           'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
-        }).timeout(const Duration(seconds: 4));
+        }).timeout(const Duration(seconds: 5));
 
         final insertedEvId = evRes.id?.toHexString() ?? '';
         if (insertedEvId.isNotEmpty) {
           realEvId = insertedEvId;
         }
+
         for (var invUser in invitati) {
           try {
             await db.collection('Notifiche').insertOne({
@@ -2390,28 +2408,22 @@ class ApiService {
               'destinatario': invUser,
               'titolo': 'Invito ad Evento: ${nuovoEvento.titolo}',
               'messaggio': '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
-              'eventoId': insertedEvId,
+              'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
               'tipo': 'invito',
               'stato': 'in_attesa',
+              'letto': false,
               'data': DateTime.now().toIso8601String(),
-            }).timeout(const Duration(seconds: 3));
+            }).timeout(const Duration(seconds: 4));
           } catch (_) {}
         }
-        directSuccess = true;
-      }
-    } catch (_) {
-      markMongoDbDisconnected();
-    }
 
-    if (!directSuccess) {
-      for (String url in baseUrls) {
-        try {
-          await http.post(
-            Uri.parse('$url/eventi/crea'),
-            headers: defaultHeaders,
-            body: jsonEncode(payloadMap),
-          ).timeout(const Duration(seconds: 4));
-        } catch (_) {}
+        break;
+      } catch (e) {
+        markMongoDbDisconnected();
+        if (attempt >= maxAttempts) {
+          throw Exception('Errore di connessione a MongoDB durante la creazione dell\'evento: $e');
+        }
+        await Future.delayed(const Duration(milliseconds: 300));
       }
     }
 
@@ -2486,136 +2498,150 @@ class ApiService {
 
     String bmHexId = 'bm_${DateTime.now().millisecondsSinceEpoch}';
 
-    // Scrittura DIRETTA e INFALLIBILE su MongoDB Atlas (Singola Fonte di Verità)
-    Db? db = await _getMongoDb();
-    if (db == null || !db.isConnected) {
-      markMongoDbDisconnected();
-      db = await _getMongoDb();
-    }
-
-    if (db != null && db.isConnected) {
-      // 1. Recupero SEMPRE fresco dell'evento da MongoDB Atlas per avere tutti i partecipanti reali
-      ObjectId? evObjId;
-      try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
-      final evDoc = await db.collection('Evento').findOne(
-        evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId).or(where.eq('titolo', eventoId))
-      ).timeout(const Duration(seconds: 5), onTimeout: () => null);
-
-      if (evDoc != null) {
-        evMatch = evMatch.copyWith(
-          titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
-          propostoDa: evDoc['propostoDa'] ?? evDoc['creatore'] ?? evMatch.propostoDa,
-          partecipanti: (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.partecipanti,
-          invitati: (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.invitati,
-        );
-      }
-
-      // 2. Controllo anti-duplicazione: verifica se esiste già una proposta identica per lo stesso evento
-      final existingBm = await db.collection('BonusMalus').findOne(
-        where.eq('eventoId', eventoId).and(where.eq('nome', nuovoBonus.titolo))
-      ).timeout(const Duration(seconds: 5), onTimeout: () => null);
-
-      if (existingBm != null) {
-        bmHexId = existingBm['_id'] is ObjectId
-            ? (existingBm['_id'] as ObjectId).toHexString()
-            : (existingBm['_id']?.toString() ?? bmHexId);
-
-        // Assicura che propostoDa, stato e categoria siano aggiornati
-        await db.collection('BonusMalus').update(
-          where.id(existingBm['_id'] as ObjectId),
-          modify
-            .set('propostoDa', curUserNick)
-            .set('stato', 'in_votazione')
-            .set('categoria', nuovoBonus.categoria)
-            .set('riassegnabileMoltepliciVolte', nuovoBonus.riassegnabileMoltepliciVolte),
-        ).timeout(const Duration(seconds: 4));
-      } else {
-        final insertRes = await db.collection('BonusMalus').insertOne({
-          'eventoId': eventoId,
-          'nome': nuovoBonus.titolo,
-          'descrizione': nuovoBonus.descrizione,
-          'punti': nuovoBonus.punti,
-          'categoria': nuovoBonus.categoria,
-          'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
-          'propostoDa': curUserNick,
-          'stato': 'in_votazione',
-          'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
-        }).timeout(const Duration(seconds: 5));
-
-        if (insertRes.id is ObjectId) {
-          bmHexId = (insertRes.id as ObjectId).toHexString();
-        }
-      }
-
-      // 3. Registra esplicitamente il voto 'pro' del proponente in Votazioni su MongoDB Atlas
+    // Scrittura DIRETTA e RESILIENTE su MongoDB Atlas con Transient Failure Retry
+    int maxAttempts = 2;
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        final existingVote = await db.collection('Votazioni').findOne(
-          where.eq('votazioneId', bmHexId).and(where.eq('utente', curUserNick))
-        ).timeout(const Duration(seconds: 4), onTimeout: () => null);
+        Db? db = await _getSafeMongoDb();
+        if (db == null || !db.isConnected) {
+          markMongoDbDisconnected();
+          db = await _getSafeMongoDb();
+        }
 
-        if (existingVote == null) {
-          await db.collection('Votazioni').insertOne({
-            'votazioneId': bmHexId,
-            'bonusId': bmHexId,
+        if (db == null || !db.isConnected) {
+          throw Exception('Impossibile connettersi al database per inviare la proposta.');
+        }
+
+        // 1. Recupero SEMPRE fresco dell'evento da MongoDB Atlas per avere tutti i partecipanti reali
+        ObjectId? evObjId;
+        try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
+        final evDoc = await db.collection('Evento').findOne(
+          evObjId != null ? where.id(evObjId) : where.eq('_id', eventoId).or(where.eq('titolo', eventoId))
+        ).timeout(const Duration(seconds: 5), onTimeout: () => null);
+
+        if (evDoc != null) {
+          evMatch = evMatch.copyWith(
+            titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
+            propostoDa: evDoc['propostoDa'] ?? evDoc['creatore'] ?? evMatch.propostoDa,
+            partecipanti: (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.partecipanti,
+            invitati: (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.invitati,
+          );
+        }
+
+        // 2. Controllo anti-duplicazione: verifica se esiste già una proposta identica per lo stesso evento
+        final existingBm = await db.collection('BonusMalus').findOne(
+          where.eq('eventoId', eventoId).and(where.eq('nome', nuovoBonus.titolo))
+        ).timeout(const Duration(seconds: 5), onTimeout: () => null);
+
+        if (existingBm != null) {
+          bmHexId = existingBm['_id'] is ObjectId
+              ? (existingBm['_id'] as ObjectId).toHexString()
+              : (existingBm['_id']?.toString() ?? bmHexId);
+
+          // Assicura che propostoDa, stato e categoria siano aggiornati
+          await db.collection('BonusMalus').update(
+            where.id(existingBm['_id'] as ObjectId),
+            modify
+              .set('propostoDa', curUserNick)
+              .set('stato', 'in_votazione')
+              .set('categoria', nuovoBonus.categoria)
+              .set('riassegnabileMoltepliciVolte', nuovoBonus.riassegnabileMoltepliciVolte),
+          ).timeout(const Duration(seconds: 4));
+        } else {
+          final insertRes = await db.collection('BonusMalus').insertOne({
             'eventoId': eventoId,
-            'bonusTitolo': nuovoBonus.titolo,
-            'utente': curUserNick,
-            'voto': 'pro',
+            'nome': nuovoBonus.titolo,
+            'descrizione': nuovoBonus.descrizione,
+            'punti': nuovoBonus.punti,
+            'categoria': nuovoBonus.categoria,
+            'tipo': nuovoBonus.punti >= 0 ? 'bonus' : 'malus',
+            'propostoDa': curUserNick,
             'stato': 'in_votazione',
-            'data': DateTime.now().toIso8601String(),
-          }).timeout(const Duration(seconds: 4));
+            'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
+          }).timeout(const Duration(seconds: 5));
+
+          if (insertRes.id is ObjectId) {
+            bmHexId = (insertRes.id as ObjectId).toHexString();
+          }
         }
-      } catch (_) {}
 
-      // 4. Inserimento notifiche a TUTTI i partecipanti ed invitati dell'evento (escluso il proponente)
-      final Map<String, String> uniqueDestMap = {};
-      final List<String> allCandidates = [
-        ...evMatch.partecipanti,
-        ...evMatch.invitati,
-        evMatch.propostoDa,
-        evMatch.creatore,
-      ];
-      if (evDoc != null) {
-        final docParts = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
-        final docInvs = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
-        final docCreator = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '').toString().trim();
-        allCandidates.addAll(docParts);
-        allCandidates.addAll(docInvs);
-        if (docCreator.isNotEmpty) allCandidates.add(docCreator);
-      }
-
-      for (var d in allCandidates) {
-        final cleanD = d.trim().toLowerCase();
-        if (cleanD.isNotEmpty && cleanD != curUserNick.trim().toLowerCase()) {
-          uniqueDestMap[cleanD] = d.trim();
-        }
-      }
-
-      for (var destUser in uniqueDestMap.values) {
+        // 3. Registra esplicitamente il voto 'pro' del proponente in Votazioni su MongoDB Atlas
         try {
-          final existingNot = await db.collection('Notifiche').findOne(
-            where.eq('destinatario', destUser).and(where.eq('bonusId', bmHexId))
-          ).timeout(const Duration(seconds: 3), onTimeout: () => null);
+          final existingVote = await db.collection('Votazioni').findOne(
+            where.eq('votazioneId', bmHexId).and(where.eq('utente', curUserNick))
+          ).timeout(const Duration(seconds: 4), onTimeout: () => null);
 
-          if (existingNot == null) {
-            await db.collection('Notifiche').insertOne({
-              'mittente': curUserNick,
-              'destinatario': destUser,
-              'titolo': '⭐ Nuova Proposta: ${nuovoBonus.titolo}',
-              'messaggio': '$curUserNick ha proposto il ${nuovoBonus.punti >= 0 ? "bonus" : "malus"} "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) per l\'evento "${evMatch.titolo}"!',
-              'eventoId': eventoId,
+          if (existingVote == null) {
+            await db.collection('Votazioni').insertOne({
+              'votazioneId': bmHexId,
               'bonusId': bmHexId,
+              'eventoId': eventoId,
               'bonusTitolo': nuovoBonus.titolo,
-              'tipo': 'bonus_malus',
-              'stato': 'in_attesa',
-              'letto': false,
+              'utente': curUserNick,
+              'voto': 'pro',
+              'stato': 'in_votazione',
               'data': DateTime.now().toIso8601String(),
             }).timeout(const Duration(seconds: 4));
           }
         } catch (_) {}
+
+        // 4. Inserimento notifiche a TUTTI i partecipanti ed invitati dell'evento (escluso il proponente)
+        final Map<String, String> uniqueDestMap = {};
+        final List<String> allCandidates = [
+          ...evMatch.partecipanti,
+          ...evMatch.invitati,
+          evMatch.propostoDa,
+          evMatch.creatore,
+        ];
+        if (evDoc != null) {
+          final docParts = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+          final docInvs = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+          final docCreator = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '').toString().trim();
+          allCandidates.addAll(docParts);
+          allCandidates.addAll(docInvs);
+          if (docCreator.isNotEmpty) allCandidates.add(docCreator);
+        }
+
+        for (var d in allCandidates) {
+          final cleanD = d.trim().toLowerCase();
+          if (cleanD.isNotEmpty && cleanD != curUserNick.trim().toLowerCase()) {
+            uniqueDestMap[cleanD] = d.trim();
+          }
+        }
+
+        for (var destUser in uniqueDestMap.values) {
+          try {
+            final existingNot = await db.collection('Notifiche').findOne(
+              where.eq('destinatario', destUser).and(where.eq('bonusId', bmHexId))
+            ).timeout(const Duration(seconds: 3), onTimeout: () => null);
+
+            if (existingNot == null) {
+              await db.collection('Notifiche').insertOne({
+                'mittente': curUserNick,
+                'destinatario': destUser,
+                'titolo': '⭐ Nuova Proposta: ${nuovoBonus.titolo}',
+                'messaggio': '$curUserNick ha proposto il ${nuovoBonus.punti >= 0 ? "bonus" : "malus"} "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) per l\'evento "${evMatch.titolo}"!',
+                'eventoId': eventoId,
+                'bonusId': bmHexId,
+                'bonusTitolo': nuovoBonus.titolo,
+                'tipo': 'bonus_malus',
+                'stato': 'in_attesa',
+                'letto': false,
+                'data': DateTime.now().toIso8601String(),
+              }).timeout(const Duration(seconds: 4));
+            }
+          } catch (_) {}
+        }
+
+        // Operazione completata con successo, esce dal loop di retry
+        break;
+      } catch (e) {
+        markMongoDbDisconnected();
+        if (attempt >= maxAttempts) {
+          throw Exception('Impossibile connettersi al database per inviare la proposta. Controlla la connessione internet e riprova.');
+        }
+        await Future.delayed(const Duration(milliseconds: 300));
       }
-    } else {
-      throw Exception('Impossibile connettersi al database per inviare la proposta. Controlla la connessione internet e riprova.');
     }
 
     final index = _eventi.indexWhere((e) => e.id == eventoId);
@@ -2946,7 +2972,11 @@ class ApiService {
 
   Future<List<Votazione>> getVotazioni() async {
     try {
-      final db = await _getMongoDb().timeout(const Duration(seconds: 8), onTimeout: () => null);
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         final bmDocs = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 6));
         final votiDocs = await db.collection('Votazioni').find().toList().timeout(const Duration(seconds: 6));
@@ -3259,7 +3289,11 @@ class ApiService {
 
     // Scrittura DIRETTA del voto su MongoDB Atlas E aggiornamento sincronizzato Notifiche
     try {
-      final db = await _getMongoDb();
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
         final targetBmId = v.bonusMalus?.id ?? v.id;
         final targetBmTitle = v.bonusMalus?.titolo ?? v.titolo;
@@ -3288,7 +3322,7 @@ class ApiService {
           if (dest == userNick.toLowerCase() && (evId == idOrEventoId.toLowerCase() || bId == idOrEventoId.toLowerCase() || notId == idOrEventoId)) {
             await db.collection('Notifiche').update(
               where.id(notDoc['_id'] as ObjectId),
-              modify.set('stato', aFavore ? 'accettato' : 'rifiutato').set('votoEspresso', aFavore ? 'pro' : 'contro'),
+              modify.set('stato', aFavore ? 'accettato' : 'rifiutato').set('votoEspresso', aFavore ? 'pro' : 'contro').set('letto', true),
             );
           }
         }
