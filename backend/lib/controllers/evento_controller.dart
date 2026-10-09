@@ -112,7 +112,9 @@ class EventoController {
       }
 
       await DbService.instance.eventiCollection.remove(selector);
-      print('✅ Evento "$eventoId" eliminato con successo da MongoDB Atlas per conto di "$utente"!');
+      await DbService.instance.db.collection('Notifiche').remove(where.eq('eventoId', eventoId));
+      await DbService.instance.db.collection('BonusMalus').remove(where.eq('eventoId', eventoId));
+      print('✅ Evento "$eventoId", relative notifiche e bonus eliminati con successo da MongoDB Atlas per conto di "$utente"!');
 
       return Response.ok(
         jsonEncode({'message': 'Evento eliminato con successo dal database'}),

@@ -367,21 +367,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     if (TutorialController.instance.stage == TutorialStage.step8_tap_notification) {
       TutorialController.instance.setStage(TutorialStage.step9_tap_profile);
     }
-    final userNick = _apiService.currentUser?.nome ?? 'Cloud';
-    try {
-      final nots = await _apiService.getNotifiche(userNick);
-      for (var n in nots) {
-        final nId = (n['id'] ?? '').toString();
-        if (nId.isNotEmpty) _readNotificaIds.add(nId);
-      }
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        _numeroNotifiche = 0;
-      });
-    }
-    _apiService.segnaNotificheComeLette(userNick);
 
     if (!mounted) return;
     showModalBottomSheet(
@@ -401,9 +386,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       ),
     ).then((_) {
       if (mounted) {
-        setState(() {
-          _numeroNotifiche = 0;
-        });
         _loadData(silent: true, forceRefresh: true);
       }
     });

@@ -2020,6 +2020,30 @@ class ApiService {
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
+        // Recupera gli eventi e le votazioni per pulizia intelligente e controllo stato voto
+        final eventiDocs = await db.collection('Evento').find().toList();
+        final votazioniDocs = await db.collection('Votazioni').find().toList();
+
+        // Mappa degli eventi validi: ID/Titolo -> Doc
+        final Map<String, Map<String, dynamic>> validEvents = {};
+        for (var ev in eventiDocs) {
+          final eId = ev['_id']?.toHexString() ?? ev['_id']?.toString() ?? ev['id']?.toString() ?? '';
+          if (eId.isNotEmpty) validEvents[eId.toLowerCase()] = ev;
+          final eNome = (ev['nome'] ?? ev['titolo'] ?? '').toString().trim().toLowerCase();
+          if (eNome.isNotEmpty) validEvents[eNome] = ev;
+        }
+
+        // Mappa delle votazioni per bonusId / votazioneId / titolo
+        final Map<String, Map<String, dynamic>> votazioniMap = {};
+        for (var vot in votazioniDocs) {
+          final vId = vot['_id']?.toHexString() ?? vot['_id']?.toString() ?? vot['id']?.toString() ?? vot['votazioneId']?.toString() ?? '';
+          if (vId.isNotEmpty) votazioniMap[vId.toLowerCase()] = vot;
+          final bmId = vot['bonusMalus']?['id']?.toString() ?? vot['bonusId']?.toString() ?? '';
+          if (bmId.isNotEmpty) votazioniMap[bmId.toLowerCase()] = vot;
+          final vTitolo = (vot['titolo'] ?? vot['bonusMalus']?['titolo'] ?? '').toString().trim().toLowerCase();
+          if (vTitolo.isNotEmpty) votazioniMap[vTitolo] = vot;
+        }
+
         final docs = await db.collection('Notifiche').find().toList();
 
         final matchDocs = docs.where((d) {
@@ -2030,26 +2054,103 @@ class ApiService {
         final Set<String> seenKeys = {};
         for (var d in matchDocs) {
           final idStr = d['_id']?.toHexString() ?? d['_id']?.toString() ?? d['notificaId']?.toString() ?? '';
+          if (idStr.isEmpty || seenKeys.contains(idStr)) continue;
 
-          if (idStr.isNotEmpty && !seenKeys.contains(idStr)) {
-            seenKeys.add(idStr);
-            notificheList.add({
-              'id': idStr,
-              'mittente': d['mittente'] ?? 'FantaEventi',
-              'destinatario': d['destinatario'] ?? '',
-              'titolo': d['titolo'] ?? 'Nuova Notifica',
-              'messaggio': d['messaggio'] ?? '',
-              'eventoId': d['eventoId'] ?? '',
-              'bonusId': d['bonusId'] ?? '',
-              'bonusTitolo': d['bonusTitolo'] ?? '',
-              'tipo': d['tipo'] ?? 'invito',
-              'varId': d['varId'] ?? '',
-              'stato': d['stato'] ?? 'in_attesa',
-              'letto': d['letto'] == true,
-              'votoEspresso': d['votoEspresso'] ?? '',
-              'data': d['data']?.toString() ?? DateTime.now().toIso8601String(),
-            });
+          final evId = (d['eventoId'] ?? '').toString().trim();
+          final evIdLower = evId.toLowerCase();
+          final tipo = (d['tipo'] ?? '').toString().toLowerCase();
+
+          // Auto-eliminazione notifiche se l'evento collegato è stato cancellato o è già terminato
+          if (evId.isNotEmpty) {
+            final evDoc = validEvents[evIdLower];
+            if (evDoc == null) {
+              // L'evento NON esiste più nel DB (è stato eliminato): elimina notifica orfana
+              if (d['_id'] is ObjectId) {
+                try {
+                  await db.collection('Notifiche').remove(where.id(d['_id'] as ObjectId));
+                } catch (_) {}
+              }
+              continue;
+            } else {
+              // Verifica se l'evento è concluso/terminato
+              final statoEv = (evDoc['stato'] ?? '').toString().toLowerCase();
+              final dtFineStr = evDoc['dataFine']?.toString();
+              DateTime? dtFine = dtFineStr != null ? DateTime.tryParse(dtFineStr) : null;
+              final bool isEvConcluso = statoEv == 'concluso' || (dtFine != null && DateTime.now().isAfter(dtFine));
+
+              // Se l'evento è concluso, le notifiche operative pendenti (inviti, proposte di votazione) non servono più
+              final bool isOperativa = tipo == 'invito' || tipo.contains('proposta') || tipo == 'bonus_malus' || tipo.contains('var_');
+              if (isEvConcluso && isOperativa) {
+                if (d['_id'] is ObjectId) {
+                  try {
+                    await db.collection('Notifiche').remove(where.id(d['_id'] as ObjectId));
+                  } catch (_) {}
+                }
+                continue;
+              }
+            }
           }
+
+          // Controllo dello stato di voto per proposte / votazioni live
+          bool haGiaVotato = false;
+          String votoEspresso = (d['votoEspresso'] ?? '').toString();
+          bool votazioneChiusa = false;
+          String esitoVotazione = '';
+
+          final bonusId = (d['bonusId'] ?? '').toString().toLowerCase();
+          final notTitolo = (d['titolo'] ?? '').toString().toLowerCase();
+          final notMsg = (d['messaggio'] ?? '').toString().toLowerCase();
+
+          Map<String, dynamic>? matchVotazione;
+          if (bonusId.isNotEmpty && votazioniMap.containsKey(bonusId)) {
+            matchVotazione = votazioniMap[bonusId];
+          } else if (votazioniMap.containsKey(idStr.toLowerCase())) {
+            matchVotazione = votazioniMap[idStr.toLowerCase()];
+          } else {
+            for (var entry in votazioniMap.entries) {
+              if (entry.key.isNotEmpty && (notTitolo.contains(entry.key) || notMsg.contains(entry.key))) {
+                matchVotazione = entry.value;
+                break;
+              }
+            }
+          }
+
+          if (matchVotazione != null) {
+            final votiMap = matchVotazione['votiUtenti'] as Map? ?? {};
+            for (var k in votiMap.keys) {
+              if (k.toString().trim().toLowerCase() == cleanNick) {
+                haGiaVotato = true;
+                votoEspresso = votiMap[k]?.toString() ?? 'votato';
+                break;
+              }
+            }
+            final statoVot = (matchVotazione['stato'] ?? '').toString().toLowerCase();
+            if (statoVot == 'approvato' || statoVot == 'respinto' || statoVot == 'scaduto' || statoVot == 'concluso') {
+              votazioneChiusa = true;
+              esitoVotazione = statoVot;
+            }
+          }
+
+          seenKeys.add(idStr);
+          notificheList.add({
+            'id': idStr,
+            'mittente': d['mittente'] ?? 'FantaEventi',
+            'destinatario': d['destinatario'] ?? '',
+            'titolo': d['titolo'] ?? 'Nuova Notifica',
+            'messaggio': d['messaggio'] ?? '',
+            'eventoId': d['eventoId'] ?? '',
+            'bonusId': d['bonusId'] ?? '',
+            'bonusTitolo': d['bonusTitolo'] ?? '',
+            'tipo': d['tipo'] ?? 'invito',
+            'varId': d['varId'] ?? '',
+            'stato': d['stato'] ?? 'in_attesa',
+            'letto': d['letto'] == true,
+            'votoEspresso': votoEspresso,
+            'haGiaVotato': haGiaVotato,
+            'votazioneChiusa': votazioneChiusa,
+            'esitoVotazione': esitoVotazione,
+            'data': d['data']?.toString() ?? DateTime.now().toIso8601String(),
+          });
         }
 
         return notificheList;
@@ -2652,6 +2753,23 @@ class ApiService {
             );
           }
         }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> segnaSingolaNotificaComeLetta(String notificaId) async {
+    try {
+      final db = await _getMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? objId;
+        try {
+          objId = ObjectId.fromHexString(notificaId);
+        } catch (_) {}
+        final selector = objId != null ? where.id(objId) : where.eq('notificaId', notificaId);
+        await db.collection('Notifiche').update(
+          selector,
+          modify.set('letto', true),
+        );
       }
     } catch (_) {}
   }
