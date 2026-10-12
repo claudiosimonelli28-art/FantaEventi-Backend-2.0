@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 
 enum TutorialStage {
@@ -37,6 +38,54 @@ class TutorialController extends ChangeNotifier {
   bool isReplay = false;
   String? tutorialCreatedEventId;
 
+  String? _getUserKey() {
+    final u = ApiService().currentUser;
+    if (u == null) return null;
+    return u.id.isNotEmpty ? u.id : u.nome.trim().toLowerCase();
+  }
+
+  Future<void> _persistState() async {
+    final userKey = _getUserKey();
+    if (userKey == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_stage == TutorialStage.idle) {
+        await prefs.remove('tutorial_saved_stage_$userKey');
+        await prefs.remove('tutorial_saved_event_id_$userKey');
+      } else {
+        await prefs.setString('tutorial_saved_stage_$userKey', _stage.name);
+        if (tutorialCreatedEventId != null && tutorialCreatedEventId!.isNotEmpty) {
+          await prefs.setString('tutorial_saved_event_id_$userKey', tutorialCreatedEventId!);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<TutorialStage?> getSavedStage() async {
+    final userKey = _getUserKey();
+    if (userKey == null) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final stageStr = prefs.getString('tutorial_saved_stage_$userKey');
+      if (stageStr != null && stageStr.isNotEmpty) {
+        for (final s in TutorialStage.values) {
+          if (s.name == stageStr) return s;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String?> getSavedEventId() async {
+    final userKey = _getUserKey();
+    if (userKey == null) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString('tutorial_saved_event_id_$userKey');
+    } catch (_) {}
+    return null;
+  }
+
   void startTutorial({bool? isReplay}) {
     _stage = TutorialStage.step1_tap_plus;
     final user = ApiService().currentUser;
@@ -46,6 +95,7 @@ class TutorialController extends ChangeNotifier {
     this.isReplay = isReplay ?? alreadyDone;
     tutorialCreatedEventId = null;
 
+    _persistState();
     ApiService().assicuraNotificaBenvenuto(nick);
     notifyListeners();
   }
@@ -53,13 +103,24 @@ class TutorialController extends ChangeNotifier {
   void setStage(TutorialStage newStage) {
     if (_stage != newStage) {
       _stage = newStage;
+      _persistState();
       notifyListeners();
     }
+  }
+
+  void restoreStage(TutorialStage stage, {String? eventId}) {
+    _stage = stage;
+    if (eventId != null && eventId.isNotEmpty) {
+      tutorialCreatedEventId = eventId;
+    }
+    _persistState();
+    notifyListeners();
   }
 
   void rollbackFromEventDetail() {
     if (_stage == TutorialStage.step5_in_event_detail) {
       _stage = TutorialStage.step4_tap_event_card;
+      _persistState();
       notifyListeners();
     }
   }
@@ -80,6 +141,7 @@ class TutorialController extends ChangeNotifier {
     final bool isTitleMatch = evTitolo.contains('festa di benvenuto');
     if (isTitleMatch && evId.isNotEmpty && (tutorialCreatedEventId == null || tutorialCreatedEventId!.isEmpty)) {
       tutorialCreatedEventId = evId;
+      _persistState();
     }
     return isTitleMatch;
   }
@@ -88,6 +150,8 @@ class TutorialController extends ChangeNotifier {
     _stage = TutorialStage.idle;
     tutorialCreatedEventId = null;
     isReplay = false;
+    _persistState();
+    ApiService().segnaGuidaRegoleCompletata(awardXp: false);
     notifyListeners();
   }
 
@@ -95,6 +159,7 @@ class TutorialController extends ChangeNotifier {
     _stage = TutorialStage.idle;
     tutorialCreatedEventId = null;
     isReplay = false;
+    _persistState();
     notifyListeners();
   }
 }

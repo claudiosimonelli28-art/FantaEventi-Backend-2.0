@@ -144,34 +144,40 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: Text(
-          'Proponi Bonus / Malus',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+    final bool isTutorial = TutorialController.instance.stage == TutorialStage.step6_in_add_bonus;
+    return PopScope(
+      canPop: !isTutorial,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        appBar: AppBar(
+          automaticallyImplyLeading: !isTutorial,
+          backgroundColor: const Color(0xFF1E293B),
+          title: Text(
+            'Proponi Bonus / Malus',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          iconTheme: const IconThemeData(color: Colors.white),
         ),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus)
-                  TutorialStepBanner(
-                    stepTag: 'Tappa 2 di 4 • Proposta Regola',
-                    title: 'Proponi una Regola Goliardica!',
-                    description: 'Siccome questa regola la stai proponendo tu, il tuo voto è già automaticamente a favore (PRO)! Quando giocherai con i tuoi amici, la proposta apparirà a tutti loro nelle Votazioni Live per essere convalidata.',
-                    onSkip: () {
-                      TutorialController.instance.skipTutorial();
-                      setState(() {});
-                    },
-                  ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus)
+                    TutorialStepBanner(
+                      stepTag: 'Tappa 2 di 4 • Proposta Regola',
+                      title: 'Proponi una Regola Goliardica!',
+                      description: 'Siccome questa regola la stai proponendo tu, il tuo voto è già automaticamente a favore (PRO)! Quando giocherai con i tuoi amici, la proposta apparirà a tutti loro nelle Votazioni Live per essere convalidata.',
+                      onSkip: () {
+                        TutorialController.instance.skipTutorial();
+                        if (mounted) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    ),
                 // Event Banner
                 if (_eventoSelezionato != null)
                   Container(
@@ -539,6 +545,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

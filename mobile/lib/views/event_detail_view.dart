@@ -135,8 +135,11 @@ class _EventDetailViewState extends State<EventDetailView> {
     final giaPartecipa = _partecipantiConfermati.contains(currentUserNick) ||
         _partecipantiConfermati.contains(_apiService.currentUser?.id);
 
+    final bool isTutorial = TutorialController.instance.stage == TutorialStage.step5_in_event_detail &&
+        TutorialController.instance.isTutorialEvent(_evento);
+
     return PopScope(
-      canPop: true,
+      canPop: !isTutorial,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           TutorialController.instance.rollbackFromEventDetail();
@@ -148,6 +151,7 @@ class _EventDetailViewState extends State<EventDetailView> {
         slivers: [
           // Slivers AppBar con Copertina dell'Evento
           SliverAppBar(
+            automaticallyImplyLeading: !isTutorial,
             expandedHeight: 240,
             pinned: true,
             backgroundColor: const Color(0xFF1E293B),
@@ -246,7 +250,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                       description: 'Scorri fino in fondo a questa pagina e tocca "PROPONI BONUS" per proporre una regola per questa serata!',
                       onSkip: () {
                         TutorialController.instance.skipTutorial();
-                        setState(() {});
+                        if (mounted) {
+                          Navigator.of(context).pop();
+                        }
                       },
                     ),
                   // Info Organizzatore e Stato

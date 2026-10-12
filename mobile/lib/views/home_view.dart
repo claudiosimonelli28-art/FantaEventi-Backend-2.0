@@ -301,6 +301,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       return;
     }
 
+    // Se l'utente ha già avviato il tutorial ed è rimasto a metà, non ripresentare la modale delle regole
+    final savedStage = await TutorialController.instance.getSavedStage();
+    if (savedStage != null && savedStage != TutorialStage.idle) {
+      _lastCheckedUserGuida = userKey;
+      return;
+    }
+
     _lastCheckedUserGuida = userKey;
     if (mounted) {
       await Future.delayed(const Duration(milliseconds: 600));
@@ -363,12 +370,89 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
     if (restartedTutorial == true) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        TutorialController.instance.startTutorial();
+        _riprendiTutorialDaHome();
       });
     }
     if (mounted) {
       setState(() {});
       _loadData(silent: true, forceRefresh: true);
+    }
+  }
+
+  Future<void> _riprendiTutorialDaHome() async {
+    final savedStage = await TutorialController.instance.getSavedStage();
+    final savedEvId = await TutorialController.instance.getSavedEventId();
+    if (savedEvId != null && savedEvId.isNotEmpty) {
+      TutorialController.instance.tutorialCreatedEventId = savedEvId;
+    }
+
+    if (savedStage == null || savedStage == TutorialStage.idle || savedStage == TutorialStage.step1_tap_plus) {
+      TutorialController.instance.startTutorial();
+      return;
+    }
+
+    if (savedStage == TutorialStage.step2_tap_crea_evento) {
+      TutorialController.instance.setStage(TutorialStage.step2_tap_crea_evento);
+      if (!_isFabMenuOpen) _toggleFabMenu();
+      return;
+    }
+
+    if (savedStage == TutorialStage.step3_in_create_event) {
+      _apriCreaEvento();
+      return;
+    }
+
+    if (savedStage == TutorialStage.step4_tap_event_card) {
+      TutorialController.instance.setStage(TutorialStage.step4_tap_event_card);
+      return;
+    }
+
+    if (savedStage == TutorialStage.step5_in_event_detail || savedStage == TutorialStage.step6_in_add_bonus) {
+      Evento? targetEvent;
+      if (_eventi.isNotEmpty) {
+        targetEvent = _eventi.firstWhere(
+          (e) => TutorialController.instance.isTutorialEvent(e),
+          orElse: () => _eventi.first,
+        );
+      }
+      if (targetEvent != null) {
+        if (!mounted) return;
+        if (savedStage == TutorialStage.step5_in_event_detail) {
+          TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => EventDetailView(evento: targetEvent!, onRefresh: () => _loadData(forceRefresh: true))),
+          );
+        } else {
+          TutorialController.instance.setStage(TutorialStage.step6_in_add_bonus);
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => AddBonusMalusView(evento: targetEvent)),
+          );
+        }
+      } else {
+        TutorialController.instance.startTutorial();
+      }
+      return;
+    }
+
+    if (savedStage == TutorialStage.step7_view_votazioni) {
+      TutorialController.instance.setStage(TutorialStage.step7_view_votazioni);
+      if (_tabController.index != 2) _tabController.animateTo(2);
+      return;
+    }
+
+    if (savedStage == TutorialStage.step8_tap_notification) {
+      TutorialController.instance.setStage(TutorialStage.step8_tap_notification);
+      return;
+    }
+
+    if (savedStage == TutorialStage.step9_tap_profile) {
+      TutorialController.instance.setStage(TutorialStage.step9_tap_profile);
+      return;
+    }
+
+    if (savedStage == TutorialStage.step10_in_profile) {
+      _apriProfilo();
+      return;
     }
   }
 
@@ -679,46 +763,72 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           ),
           const SizedBox(width: 2),
 
-          // Profile User Chip (Foto Profilo reale + Livello)
-          InkWell(
-            key: TutorialController.instance.keyProfilo,
-            onTap: _apriProfilo,
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A),
+          // Profile User Chip (Foto Profilo reale + Livello) + Pallino rosso tutorial incompleto
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              InkWell(
+                key: TutorialController.instance.keyProfilo,
+                onTap: _apriProfilo,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.6)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundImage: _getStableAvatarProvider(curUser?.avatarUrl),
-                    backgroundColor: const Color(0xFF334155),
+                child: Container(
+                  margin: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.6)),
                   ),
-                  const SizedBox(width: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF9333EA),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Lvl ${curUser?.livello ?? 1}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircleAvatar(
+                        radius: 12,
+                        backgroundImage: _getStableAvatarProvider(curUser?.avatarUrl),
+                        backgroundColor: const Color(0xFF334155),
                       ),
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF9333EA),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Lvl ${curUser?.livello ?? 1}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (curUser != null && !curUser.haVistoGuida)
+                Positioned(
+                  top: -2,
+                  right: 8,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF1E293B), width: 1.8),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0xAAEF4444),
+                          blurRadius: 4,
+                          spreadRadius: 1,
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
         ],
         bottom: TabBar(

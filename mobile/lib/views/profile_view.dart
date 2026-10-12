@@ -259,6 +259,139 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
+  Widget _buildTutorialIncompletoCard() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.8), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+            blurRadius: 16,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('🎓', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'TUTORIAL NON COMPLETATO',
+                  style: GoogleFonts.poppins(
+                    color: const Color(0xFFFACC15),
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFEF4444)),
+                ),
+                child: Text(
+                  'IN SOSPESO',
+                  style: GoogleFonts.poppins(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFFEF4444),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Non hai ancora terminato il tutorial guidato! Completalo per scoprire tutte le funzionalità di gioco e ritirare subito il tuo premio di +100 XP e il badge Pioniero.',
+            style: GoogleFonts.inter(
+              fontSize: 12.5,
+              color: const Color(0xFFCBD5E1),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _riprendiTutorial,
+                  icon: const Icon(Icons.play_arrow_rounded, color: Color(0xFF0F172A), size: 22),
+                  label: Text(
+                    'RIPRENDI IL TUTORIAL',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFACC15),
+                    foregroundColor: const Color(0xFF0F172A),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    elevation: 4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Center(
+            child: TextButton(
+              onPressed: () async {
+                TutorialController.instance.skipTutorial();
+                await _apiService.segnaGuidaRegoleCompletata(awardXp: false);
+                if (mounted) {
+                  setState(() {
+                    _utente = _utente.copyWith(haVistoGuida: true);
+                  });
+                }
+              },
+              child: Text(
+                'Salta tutorial definitivamente',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: const Color(0xFF94A3B8),
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _riprendiTutorial() async {
+    final savedStage = await TutorialController.instance.getSavedStage();
+    if (savedStage == TutorialStage.step10_in_profile) {
+      TutorialController.instance.setStage(TutorialStage.step10_in_profile);
+      if (mounted) setState(() {});
+    } else {
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
+    }
+  }
+
   // MODALE CON LA LISTA COMPLETA DEGLI AMICI
   void _mostraModalAmici() {
     showModalBottomSheet(
@@ -1116,71 +1249,78 @@ class _ProfileViewState extends State<ProfileView> {
         ? FileImage(_fotoLocaleFile!)
         : getAvatarImageProvider(_utente.avatarUrl);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: Text(
-          'Profilo Giocatore',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
-            tooltip: 'Logout',
-            onPressed: () async {
-              await _apiService.logout();
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginView()),
-                (route) => false,
-              );
-            },
+    final bool isTutorialStep10 = TutorialController.instance.stage == TutorialStage.step10_in_profile;
+
+    return PopScope(
+      canPop: !isTutorialStep10,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        appBar: AppBar(
+          automaticallyImplyLeading: !isTutorialStep10,
+          backgroundColor: const Color(0xFF1E293B),
+          title: Text(
+            'Profilo Giocatore',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
           ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Column(
-            children: [
-              if (TutorialController.instance.stage == TutorialStage.step10_in_profile) ...[
-                TutorialStepBanner(
-                  stepTag: 'Tappa 4 di 4 • Profilo & Codice Amico',
-                  title: 'Personalizza il tuo Profilo & Connettiti!',
-                  description: '1) FOTO: Tocca la fotocamera qui sotto per scattare un selfie reale con la fotocamera, caricare dalla galleria o scegliere un avatar!\n2) CODICE AMICO: È il tuo codice personale univoco. Copialo per inviarlo agli amici su WhatsApp, e incolla il loro codice per aggiungerli!',
-                  onSkip: () {
-                    TutorialController.instance.skipTutorial();
-                    setState(() {});
-                  },
-                ),
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 20),
-                  child: ElevatedButton.icon(
-                    onPressed: _concludiTutorial,
-                    icon: Text(_haGiaRiscattatoPremio ? '✅' : '🏆', style: const TextStyle(fontSize: 22)),
-                    label: Text(
-                      _haGiaRiscattatoPremio
-                          ? 'COMPLETA IL TUTORIAL (PREMIO GIÀ RISCATTATO)'
-                          : 'COMPLETA IL TUTORIAL E RITIRA +100 XP',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 12.5),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _haGiaRiscattatoPremio ? const Color(0xFF334155) : const Color(0xFFFACC15),
-                      foregroundColor: _haGiaRiscattatoPremio ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: _haGiaRiscattatoPremio ? const BorderSide(color: Color(0xFF64748B), width: 1.2) : BorderSide.none,
+          iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              tooltip: 'Logout',
+              onPressed: () async {
+                await _apiService.logout();
+                if (!context.mounted) return;
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const LoginView()),
+                  (route) => false,
+                );
+              },
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              children: [
+                if (isTutorialStep10) ...[
+                  TutorialStepBanner(
+                    stepTag: 'Tappa 4 di 4 • Profilo & Codice Amico',
+                    title: 'Personalizza il tuo Profilo & Connettiti!',
+                    description: '1) FOTO: Tocca la fotocamera qui sotto per scattare un selfie reale con la fotocamera, caricare dalla galleria o scegliere un avatar!\n2) CODICE AMICO: È il tuo codice personale univoco. Copialo per inviarlo agli amici su WhatsApp, e incolla il loro codice per aggiungerli!',
+                    onSkip: () {
+                      TutorialController.instance.skipTutorial();
+                      setState(() {});
+                    },
+                  ),
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 20),
+                    child: ElevatedButton.icon(
+                      onPressed: _concludiTutorial,
+                      icon: Text(_haGiaRiscattatoPremio ? '✅' : '🏆', style: const TextStyle(fontSize: 22)),
+                      label: Text(
+                        _haGiaRiscattatoPremio
+                            ? 'COMPLETA IL TUTORIAL (PREMIO GIÀ RISCATTATO)'
+                            : 'COMPLETA IL TUTORIAL E RITIRA +100 XP',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 12.5),
                       ),
-                      elevation: 6,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _haGiaRiscattatoPremio ? const Color(0xFF334155) : const Color(0xFFFACC15),
+                        foregroundColor: _haGiaRiscattatoPremio ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: _haGiaRiscattatoPremio ? const BorderSide(color: Color(0xFF64748B), width: 1.2) : BorderSide.none,
+                        ),
+                        elevation: 6,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ] else if (!_utente.haVistoGuida) ...[
+                  _buildTutorialIncompletoCard(),
+                ],
               // Avatar & Basic Info Card
               Container(
                 width: double.infinity,
@@ -1814,8 +1954,9 @@ class _ProfileViewState extends State<ProfileView> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildBachecaTitoli() {
     return Container(

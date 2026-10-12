@@ -313,34 +313,39 @@ class _CreateEventViewState extends State<CreateEventView> {
   @override
   Widget build(BuildContext context) {
     final bool isTutorial = TutorialController.instance.stage == TutorialStage.step3_in_create_event;
-    return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1E293B),
-        title: Text(
-          'Nuovo Evento Fanta',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+    return PopScope(
+      canPop: !isTutorial,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0F172A),
+        appBar: AppBar(
+          automaticallyImplyLeading: !isTutorial,
+          backgroundColor: const Color(0xFF1E293B),
+          title: Text(
+            'Nuovo Evento Fanta',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          iconTheme: const IconThemeData(color: Colors.white),
         ),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (TutorialController.instance.stage == TutorialStage.step3_in_create_event)
-                  TutorialStepBanner(
-                    stepTag: 'Tappa 1 di 4 • Creazione Evento',
-                    title: 'Crea il tuo Evento di Prova!',
-                    description: 'I campi sono già precompilati per questa prova. Puoi selezionare i tuoi amici dalla lista oppure procedere da solo. Tocca "CREA EVENTO" in fondo per confermare!',
-                    onSkip: () {
-                      TutorialController.instance.skipTutorial();
-                      setState(() {});
-                    },
-                  ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (TutorialController.instance.stage == TutorialStage.step3_in_create_event)
+                    TutorialStepBanner(
+                      stepTag: 'Tappa 1 di 4 • Creazione Evento',
+                      title: 'Crea il tuo Evento di Prova!',
+                      description: 'I campi sono già precompilati per questa prova. Puoi selezionare i tuoi amici dalla lista oppure procedere da solo. Tocca "CREA EVENTO" in fondo per confermare!',
+                      onSkip: () {
+                        TutorialController.instance.skipTutorial();
+                        if (mounted) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                    ),
                 Text(
                   'Crea una nuova esperienza',
                   style: GoogleFonts.poppins(
@@ -885,6 +890,7 @@ class _CreateEventViewState extends State<CreateEventView> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
