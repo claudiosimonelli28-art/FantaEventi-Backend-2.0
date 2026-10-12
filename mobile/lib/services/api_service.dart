@@ -1878,17 +1878,33 @@ class ApiService {
             throw Exception('Le iscrizioni per questo evento sono chiuse (evento già in corso o concluso)!');
           }
 
-          final List<dynamic> part = List.from(evDoc['partecipanti'] ?? []);
-          final List<dynamic> inv = List.from(evDoc['invitati'] ?? []);
-          inv.removeWhere((i) => i.toString().trim().toLowerCase() == nicknameOrId.trim().toLowerCase());
-          if (!part.any((p) => p.toString().trim().toLowerCase() == nicknameOrId.trim().toLowerCase())) {
-            part.add(nicknameOrId);
-          }
+          final pullList = {
+            nicknameOrId,
+            nicknameOrId.toLowerCase(),
+            nicknameOrId.toUpperCase(),
+            nicknameOrId.trim(),
+            nicknameOrId.trim().toLowerCase(),
+          }.toList();
 
           await db.collection('Evento').update(
             evSelector,
-            modify.set('partecipanti', part).set('invitati', inv),
+            modify
+              .addToSet('partecipanti', nicknameOrId)
+              .pullAll('invitati', pullList),
           );
+
+          // Aggiornamento ISTANTANEO in-memory di _eventi (zero latenza per le card eventi)
+          final evIdx = _eventi.indexWhere((e) => e.id == eventoId);
+          if (evIdx != -1) {
+            final ev = _eventi[evIdx];
+            final updatedPart = List<String>.from(ev.partecipanti);
+            final updatedInv = List<String>.from(ev.invitati);
+            updatedInv.removeWhere((i) => i.trim().toLowerCase() == nicknameOrId.trim().toLowerCase());
+            if (!updatedPart.any((p) => p.trim().toLowerCase() == nicknameOrId.trim().toLowerCase())) {
+              updatedPart.add(nicknameOrId);
+            }
+            _eventi[evIdx] = ev.copyWith(partecipanti: updatedPart, invitati: updatedInv);
+          }
 
           // Se c'era una notifica di invito per questo utente, segnalala come accettata
           try {
@@ -2370,15 +2386,19 @@ class ApiService {
                   throw Exception('Questo evento è già iniziato! L\'iscrizione è ormai chiusa.');
                 }
 
-                final List<dynamic> part = List.from(evDoc['partecipanti'] ?? []);
-                final List<dynamic> inv = List.from(evDoc['invitati'] ?? []);
-                inv.removeWhere((i) => i.toString().toLowerCase() == utente.toLowerCase());
-                if (!part.any((p) => p.toString().toLowerCase() == utente.toLowerCase())) {
-                  part.add(utente);
-                }
+                final pullList = {
+                  utente,
+                  utente.toLowerCase(),
+                  utente.toUpperCase(),
+                  utente.trim(),
+                  utente.trim().toLowerCase(),
+                }.toList();
+
                 await db.collection('Evento').update(
                   evSelector,
-                  modify.set('partecipanti', part).set('invitati', inv),
+                  modify
+                    .addToSet('partecipanti', utente)
+                    .pullAll('invitati', pullList),
                 );
 
                 // Aggiornamento ISTANTANEO in-memory di _eventi (zero latenza per le card eventi)

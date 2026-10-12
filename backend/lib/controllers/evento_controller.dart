@@ -167,18 +167,21 @@ class EventoController {
           );
         }
 
-        final List<dynamic> partecipanti = List.from(doc['partecipanti'] ?? []);
-        final List<dynamic> invitati = List.from(doc['invitati'] ?? []);
-        invitati.removeWhere((i) => i.toString().trim().toLowerCase() == utenteName.trim().toLowerCase());
+        final pullList = {
+          utenteName,
+          utenteName.toLowerCase(),
+          utenteName.toUpperCase(),
+          utenteName.trim(),
+          utenteName.trim().toLowerCase(),
+        }.toList();
 
-        if (!partecipanti.contains(utenteName)) {
-          partecipanti.add(utenteName);
-          await DbService.instance.eventiCollection.update(
-            selector,
-            modify.set('partecipanti', partecipanti).set('invitati', invitati),
-          );
-          print('✅ Utente "$utenteName" aggiunto con successo ai partecipanti dell\'evento su MongoDB!');
-        }
+        await DbService.instance.eventiCollection.update(
+          selector,
+          modify
+            .addToSet('partecipanti', utenteName)
+            .pullAll('invitati', pullList),
+        );
+        print('✅ Utente "$utenteName" aggiunto atomicamente ai partecipanti dell\'evento su MongoDB!');
       }
 
       return Response.ok(

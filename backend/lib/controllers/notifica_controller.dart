@@ -83,18 +83,21 @@ class NotificaController {
           final evDoc = await DbService.instance.eventiCollection.findOne(evSelector);
 
           if (evDoc != null) {
-            final List<dynamic> part = List.from(evDoc['partecipanti'] ?? []);
-            final List<dynamic> inv = List.from(evDoc['invitati'] ?? []);
-            inv.removeWhere((i) => i.toString().toLowerCase() == utente.toLowerCase());
-            
-            if (!part.any((p) => p.toString().toLowerCase() == utente.toLowerCase())) {
-              part.add(utente);
-            }
+            final pullList = {
+              utente,
+              utente.toLowerCase(),
+              utente.toUpperCase(),
+              utente.trim(),
+              utente.trim().toLowerCase(),
+            }.toList();
+
             await DbService.instance.eventiCollection.update(
               evSelector,
-              modify.set('partecipanti', part).set('invitati', inv),
+              modify
+                .addToSet('partecipanti', utente)
+                .pullAll('invitati', pullList),
             );
-            print('✅ Utente "$utente" iscritto all\'evento ed rimosso dagli inviti in sospeso!');
+            print('✅ Utente "$utente" iscritto atomicamente all\'evento ed rimosso dagli inviti in sospeso!');
           }
         }
       }

@@ -1023,6 +1023,7 @@ class _ProfileViewState extends State<ProfileView> {
           bottom: MediaQuery.of(ctx).viewInsets.bottom + 24.0,
         ),
         child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1280,6 +1281,7 @@ class _ProfileViewState extends State<ProfileView> {
         ),
         body: SafeArea(
           child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: const EdgeInsets.all(20.0),
             child: Column(
               children: [

@@ -57,6 +57,11 @@ class FantaEventiApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
+      builder: (context, child) => GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
       home: isLoggedIn ? const HomeView() : const LoginView(),
     );
   }

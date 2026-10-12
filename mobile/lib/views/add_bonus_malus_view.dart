@@ -160,6 +160,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         ),
         body: SafeArea(
           child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             padding: const EdgeInsets.all(20.0),
             child: Form(
               key: _formKey,
