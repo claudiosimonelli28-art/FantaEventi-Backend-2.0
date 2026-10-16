@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: Build Releases (APK & IPA)
 
 on:
   workflow_dispatch:
@@ -11,6 +11,40 @@ permissions:
   contents: write
 
 jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Flutter Dependencies
+        run: |
+          cd mobile
+          flutter pub get
+
+      - name: Build Android APK
+        run: |
+          cd mobile
+          flutter build apk --release
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+
   build-ios:
     runs-on: macos-14
     steps:
@@ -48,15 +82,31 @@ jobs:
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FantaEventi-iOS-IPA
+          name: ios-ipa
           path: mobile/build/ios/iphoneos/FantaEventi.ipa
 
-      - name: Publish Direct Download Release
+  publish-release:
+    needs: [build-android, build-ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub Release (APK & IPA)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0-ios
-          name: "FantaEventi iOS Release (v1.0.0)"
-          body: "File IPA per installazione diretta su iPhone tramite Sideloadly / AltStore."
-          files: mobile/build/ios/iphoneos/FantaEventi.ipa
+          tag_name: v1.0.0
+          name: "FantaEventi Release v1.0.0 (APK & IPA)"
+          body: |
+            ## 🎉 FantaEventi Release v1.0.0
+            Aggiornamento con il **nuovo logo circolare** integrato nell'AppBar della Home!
+            
+            ### 📥 Download Diretti:
+            - 🤖 **Android**: Scarica e installa `app-release.apk` direttamente sul tuo smartphone.
+            - 🍏 **iOS (iPhone)**: Scarica `FantaEventi.ipa` e installalo tramite Sideloadly o AltStore.
+          files: release_artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

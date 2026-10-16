@@ -673,9 +673,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 32,
-              height: 32,
-              padding: const EdgeInsets.all(2),
+              width: 34,
+              height: 34,
+              padding: const EdgeInsets.all(1.5),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: const LinearGradient(
@@ -692,7 +692,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               ),
               child: ClipOval(
                 child: Image.asset(
-                  'assets/icon/app_icon.jpg',
+                  'assets/icon/fantaeventi_header_logo.jpg',
                   fit: BoxFit.cover,
                 ),
               ),
