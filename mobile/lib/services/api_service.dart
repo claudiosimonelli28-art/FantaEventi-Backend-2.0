@@ -11,6 +11,7 @@ import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
 import '../models/richiesta_var.dart';
+import 'push_notification_service.dart';
 
 class NeedsPasswordSetupException implements Exception {
   final String username;
@@ -226,7 +227,66 @@ class ApiService {
     } catch (_) {}
   }
 
+  // --- GESTIONE TOKEN NOTIFICHE PUSH FCM ---
+  String _fcmServerKey = '';
+  String get fcmServerKey => _fcmServerKey;
+
+  void impostaFcmServerKey(String key) {
+    _fcmServerKey = key.trim();
+  }
+
+  Future<void> salvaFcmToken(String token) async {
+    final cur = _currentUser;
+    if (cur == null || token.trim().isEmpty) return;
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        await db.collection('Utenti').update(
+          where.eq('nome', cur.nome),
+          modify.addToSet('fcmTokens', token.trim()),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> rimuoviFcmToken(String token) async {
+    final cur = _currentUser;
+    if (cur == null || token.trim().isEmpty) return;
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        await db.collection('Utenti').update(
+          where.eq('nome', cur.nome),
+          modify.pull('fcmTokens', token.trim()),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<List<String>> getFcmTokensPerUtenti(List<String> nicknames) async {
+    if (nicknames.isEmpty) return [];
+    final List<String> allTokens = [];
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final cleanNicks = nicknames.map((n) => n.trim().toLowerCase()).toList();
+        final users = await db.collection('Utenti').find().toList();
+        for (var u in users) {
+          final uName = (u['nome'] ?? '').toString().trim().toLowerCase();
+          if (cleanNicks.contains(uName)) {
+            final tokens = List<String>.from(u['fcmTokens'] ?? []);
+            allTokens.addAll(tokens);
+          }
+        }
+      }
+    } catch (_) {}
+    return allTokens.toSet().toList();
+  }
+
   Future<void> logout() async {
+    try {
+      await PushNotificationService.instance.unregisterCurrentDeviceToken();
+    } catch (_) {}
     _currentUser = null;
     _rememberMeSession = false;
     _cachedTutorialPremioRiscattato = null;
@@ -2017,6 +2077,17 @@ class ApiService {
           });
         }
 
+        // Invia notifica push reale per la tendina di sistema
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          aggiuntiEffettivi,
+          titolo: '🎉 Invito ad Evento: $evTitolo',
+          messaggio: '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
+          data: {
+            'tipo': 'invito',
+            'eventoId': eventoId,
+          },
+        ));
+
         // Aggiorna istantaneamente anche lo stato in-memory di _eventi
         final evIdx = _eventi.indexWhere((e) => e.id == eventoId);
         if (evIdx != -1) {
@@ -2709,6 +2780,20 @@ class ApiService {
               }).timeout(const Duration(seconds: 4));
             }
           } catch (_) {}
+        }
+
+        // Invia notifica push reale per la tendina di sistema a tutti i partecipanti
+        if (uniqueDestMap.isNotEmpty) {
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            uniqueDestMap.values.toList(),
+            titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
+            messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
+            data: {
+              'tipo': 'votazione',
+              'eventoId': eventoId,
+              'bonusId': bmHexId,
+            },
+          ));
         }
 
         // Operazione completata con successo, esce dal loop di retry
@@ -3590,6 +3675,13 @@ class ApiService {
         'codiceAmico': curUser.codiceAmico,
         'data': DateTime.now().toIso8601String(),
       });
+
+      unawaited(PushNotificationService.instance.inviaPushAUtenti(
+        [targetUser.nickname],
+        titolo: '👥 Nuova Richiesta di Amicizia',
+        messaggio: '${curUser.nickname} vuole aggiungerti agli amici!',
+        data: {'tipo': 'amicizia'},
+      ));
     }
   }
 
@@ -3650,6 +3742,13 @@ class ApiService {
           'stato': 'consegnato',
           'data': DateTime.now().toIso8601String(),
         });
+
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [mittente],
+          titolo: '👥 Richiesta di Amicizia Accettata!',
+          messaggio: '${curUser.nickname} ha accettato la tua richiesta di amicizia! Ora siete amici.',
+          data: {'tipo': 'amicizia'},
+        ));
       }
     }
   }
@@ -3748,6 +3847,22 @@ class ApiService {
           'letto': false,
           'data': now.toIso8601String(),
         });
+      }
+
+      // Invia notifiche push per la tendina al Giudice e ai Testimoni
+      unawaited(PushNotificationService.instance.inviaPushAUtenti(
+        [giudice],
+        titolo: '📺 VAR: Richiesta da Esaminare!',
+        messaggio: msgGiudice,
+        data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
+      ));
+      if (testimoni.isNotEmpty) {
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          testimoni,
+          titolo: '👀 Chiamata a Testimoniare al VAR',
+          messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
+          data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
+        ));
       }
 
       invalidateCache();
@@ -3920,6 +4035,13 @@ class ApiService {
           'letto': false,
           'data': now.toIso8601String(),
         });
+
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [richiesta.richiedente],
+          titolo: '📺 VAR: Richiesta Approvata! ✅',
+          messaggio: 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
+          data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+        ));
       } else {
         // Rigettata
         final bool doSanzione = sanzionaFalsaTestimonianza && richiesta.tipo == 'malus';
@@ -4111,6 +4233,13 @@ class ApiService {
             'letto': false,
             'data': now.toIso8601String(),
           });
+
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            [richiesta.richiedente],
+            titolo: '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
+            messaggio: 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
+            data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+          ));
         } else {
           // Rifiutata senza sanzione (es. bonus non confermato)
           await db.collection('Notifiche').insertOne({
@@ -4126,6 +4255,13 @@ class ApiService {
             'letto': false,
             'data': now.toIso8601String(),
           });
+
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            [richiesta.richiedente],
+            titolo: '📺 VAR: Richiesta Non Convalidata ❌',
+            messaggio: 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
+            data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+          ));
         }
 
         // Aggiorna stato ed ELIMINA la foto dal DB

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
+import '../services/push_notification_service.dart';
 import 'home_view.dart';
 import '../widgets/app_toast.dart';
 
@@ -147,9 +148,19 @@ class _LoginViewState extends State<LoginView> {
         _isLoading = false;
       });
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeView()),
-      );
+      // Sincronizza il token FCM per il nuovo login
+      unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+
+      if (PushNotificationService.hasPendingRoute) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeView()),
+        );
+        PushNotificationService.consumePendingRoute();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeView()),
+        );
+      }
     } on NeedsPasswordSetupException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -215,9 +226,18 @@ class _LoginViewState extends State<LoginView> {
         _isLoading = false;
       });
 
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeView()),
-      );
+      unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+
+      if (PushNotificationService.hasPendingRoute) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeView()),
+        );
+        PushNotificationService.consumePendingRoute();
+      } else {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => const HomeView()),
+        );
+      }
     } on NicknameAlreadyTakenException catch (e) {
       if (!mounted) return;
       setState(() {

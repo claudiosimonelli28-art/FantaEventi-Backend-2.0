@@ -1,12 +1,25 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'views/login_view.dart';
 import 'views/home_view.dart';
 import 'services/api_service.dart';
+import 'services/push_notification_service.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Inizializza notifiche push Firebase e canali di sistema
+  await PushNotificationService.instance.initialize();
+
   final initialUser = await ApiService().tryAutoLogin();
-  runApp(FantaEventiApp(isLoggedIn: initialUser != null));
+  final bool isLoggedIn = initialUser != null;
+
+  if (isLoggedIn) {
+    unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+  }
+
+  runApp(FantaEventiApp(isLoggedIn: isLoggedIn));
 }
 
 class FantaEventiApp extends StatelessWidget {
@@ -21,6 +34,7 @@ class FantaEventiApp extends StatelessWidget {
     const darkSurface = Color(0xFF1E293B);
 
     return MaterialApp(
+      navigatorKey: PushNotificationService.navigatorKey,
       title: 'FantaEventi',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "525807124499",
+    "project_id": "fantaeventi-dd26a",
+    "storage_bucket": "fantaeventi-dd26a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:525807124499:android:0c0e1885d87039dbc7bfe6",
+        "android_client_info": {
+          "package_name": "com.fantaeventi.mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBkrZcx99Z1gpeUPnOUB_PF0I8DiXYgafM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
