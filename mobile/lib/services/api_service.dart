@@ -2579,6 +2579,19 @@ class ApiService {
           } catch (_) {}
         }
 
+        // Invia notifica push reale per la tendina di sistema a tutti gli invitati
+        if (invitati.isNotEmpty) {
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            invitati,
+            titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
+            messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
+            data: {
+              'tipo': 'invito',
+              'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
+            },
+          ));
+        }
+
         break;
       } catch (e) {
         markMongoDbDisconnected();
@@ -3076,6 +3089,18 @@ class ApiService {
             'votoEspresso': 'pro',
             'data': now.toIso8601String(),
           });
+        }
+
+        if (destList.isNotEmpty) {
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            destList,
+            titolo: '🏆 Bonus/Malus Assegnato!',
+            messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+            data: {
+              'tipo': 'assegnazione_bonus',
+              'eventoId': eventoId,
+            },
+          ));
         }
       }
     } catch (_) {}
