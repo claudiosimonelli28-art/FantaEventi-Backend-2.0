@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'views/login_view.dart';
 import 'views/home_view.dart';
@@ -9,14 +10,29 @@ import 'services/push_notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Inizializza Firebase con tolleranza d'errore (non blocca mai l'avvio della UI)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint('Firebase initializeApp notice: $e');
+  }
+
   // Inizializza notifiche push Firebase e canali di sistema
-  await PushNotificationService.instance.initialize();
+  try {
+    await PushNotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('PushNotificationService initialize notice: $e');
+  }
 
-  final initialUser = await ApiService().tryAutoLogin();
-  final bool isLoggedIn = initialUser != null;
-
-  if (isLoggedIn) {
-    unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+  bool isLoggedIn = false;
+  try {
+    final initialUser = await ApiService().tryAutoLogin();
+    isLoggedIn = initialUser != null;
+    if (isLoggedIn) {
+      unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+    }
+  } catch (e) {
+    debugPrint('AutoLogin notice: $e');
   }
 
   runApp(FantaEventiApp(isLoggedIn: isLoggedIn));

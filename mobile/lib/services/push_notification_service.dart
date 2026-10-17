@@ -30,7 +30,7 @@ class PushNotificationService {
   /// Dati della notifica cliccata quando l'utente non era ancora autenticato (in attesa di login)
   static Map<String, dynamic>? pendingNotificationData;
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  FirebaseMessaging? _messaging;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
@@ -55,10 +55,26 @@ class PushNotificationService {
     if (_isInitialized) return;
 
     try {
-      await Firebase.initializeApp();
+      try {
+        await Firebase.initializeApp();
+      } catch (e) {
+        debugPrint('Firebase initializeApp notice: $e');
+      }
 
-      // Registra il gestore in background
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      try {
+        _messaging = FirebaseMessaging.instance;
+      } catch (e) {
+        debugPrint('FirebaseMessaging instance notice: $e');
+      }
+
+      // Registra il gestore in background se messaging è disponibile
+      if (_messaging != null) {
+        try {
+          FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+        } catch (e) {
+          debugPrint('Notice onBackgroundMessage: $e');
+        }
+      }
 
       // Crea il canale di notifica su Android
       await _localNotifications
@@ -95,25 +111,31 @@ class PushNotificationService {
       await requestPermissions();
 
       // 1. Notifiche in PRIMO PIANO (App aperta e attiva)
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        _showForegroundNotification(message);
-      });
+      try {
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          _showForegroundNotification(message);
+        });
 
-      // 2. Notifica cliccata con App in BACKGROUND
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        handleNotificationClick(message.data);
-      });
+        // 2. Notifica cliccata con App in BACKGROUND
+        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+          handleNotificationClick(message.data);
+        });
 
-      // 3. Notifica cliccata con App CHIUSA / TERMINATA
-      final initialMessage = await _messaging.getInitialMessage();
-      if (initialMessage != null) {
-        handleNotificationClick(initialMessage.data);
+        // 3. Notifica cliccata con App CHIUSA / TERMINATA
+        if (_messaging != null) {
+          final initialMessage = await _messaging!.getInitialMessage();
+          if (initialMessage != null) {
+            handleNotificationClick(initialMessage.data);
+          }
+
+          // Ascolta eventuali rinnovi del token FCM
+          _messaging!.onTokenRefresh.listen((newToken) {
+            syncCurrentDeviceToken(overrideToken: newToken);
+          });
+        }
+      } catch (e) {
+        debugPrint('Notice ascoltatori FirebaseMessaging: $e');
       }
-
-      // Ascolta eventuali rinnovi del token FCM
-      _messaging.onTokenRefresh.listen((newToken) {
-        syncCurrentDeviceToken(overrideToken: newToken);
-      });
 
       // Precarica il service account in memoria
       unawaited(_loadServiceAccount());
@@ -128,17 +150,21 @@ class PushNotificationService {
   /// Richiede all'utente i permessi di notifica
   Future<void> requestPermissions() async {
     try {
-      await _messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-        provisional: false,
-      );
+      if (_messaging != null) {
+        await _messaging!.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+          provisional: false,
+        );
+      }
 
       await _localNotifications
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
           ?.requestNotificationsPermission();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Notice richiesta permessi push: $e');
+    }
   }
 
   /// Mostra la notifica heads-up nella tendina quando l'app è in primo piano
@@ -178,7 +204,12 @@ class PushNotificationService {
   /// Sincronizza il token FCM dell'utente loggato su MongoDB Atlas
   Future<void> syncCurrentDeviceToken({String? overrideToken}) async {
     try {
-      final token = overrideToken ?? await _messaging.getToken();
+      if (_messaging == null) {
+        try {
+          _messaging = FirebaseMessaging.instance;
+        } catch (_) {}
+      }
+      final token = overrideToken ?? await _messaging?.getToken();
       if (token != null && token.isNotEmpty) {
         await ApiService().salvaFcmToken(token);
         debugPrint('FCM Token registrato per l\'utente corrente: $token');
@@ -191,7 +222,7 @@ class PushNotificationService {
   /// Rimuove il token FCM corrente dal profilo MongoDB Atlas (chiamato al Logout)
   Future<void> unregisterCurrentDeviceToken() async {
     try {
-      final token = await _messaging.getToken();
+      final token = await _messaging?.getToken();
       if (token != null && token.isNotEmpty) {
         await ApiService().rimuoviFcmToken(token);
       }
