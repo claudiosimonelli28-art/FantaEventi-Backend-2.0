@@ -59,6 +59,7 @@ jobs:
 
       - name: Install Flutter Dependencies
         run: |
+          mkdir -p mobile/build/ios/SourcePackages
           cd mobile
           flutter pub get
 
@@ -88,6 +89,7 @@ jobs:
   publish-release:
     needs: [build-android, build-ios]
     runs-on: ubuntu-latest
+    if: always() && (needs.build-android.result == 'success' || needs.build-ios.result == 'success')
     steps:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
@@ -101,12 +103,19 @@ jobs:
           tag_name: v1.0.0
           name: "FantaEventi Release v1.0.0 (APK & IPA)"
           body: |
-            ## 🎉 FantaEventi Release v1.0.0
-            Aggiornamento con il **nuovo logo circolare** integrato nell'AppBar della Home!
-            
+            ## 🚀 FantaEventi Release v1.0.0 (Notifiche Push & Guide Contestuali)
+            Nuova versione con supporto completo per notifiche push di sistema e guide contestuali interattive!
+
+            ### ✨ Novità principali:
+            - 🔔 **Notifiche Push a Tendina (FCM v1)**: Ricezione notifiche in tempo reale anche con app chiusa/terminata, con suono e vibrazione.
+            - 🎯 **Routing Intelligente**: Toccando la notifica atterri direttamente nella schermata corretta (o subito dopo il login se disconnesso).
+            - ℹ️ **Pannelli Informativi Contestuali**: Dettagli completi in ogni schermata (Crea Evento, Dettaglio Evento con Quorum dinamico e storico bonus/malus con storno per organizzatore, Proposta Bonus, Profilo Giocatore e Richiesta VAR).
+            - 🛡️ **Miglioramenti Creazione Evento**: Organizzatore protetto dalla rimozione e penalità VAR di default a -10pt evidenziata.
+
             ### 📥 Download Diretti:
             - 🤖 **Android**: Scarica e installa `app-release.apk` direttamente sul tuo smartphone.
             - 🍏 **iOS (iPhone)**: Scarica `FantaEventi.ipa` e installalo tramite Sideloadly o AltStore.
           files: release_artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
