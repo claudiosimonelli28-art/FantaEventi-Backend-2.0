@@ -292,7 +292,7 @@ class ContextInfoModal extends StatelessWidget {
               description:
                   'Definisce l\'identità visiva della festa. Puoi impostare la copertina in due modalità:',
               bulletPoints: [
-                'Temi Preimpostati: Seleziona rapidamente tra Cena, Party, Discoteca/Club, Viaggio, Laurea o Weekend.',
+                'Temi Preimpostati: Seleziona rapidamente tra Concerto, Cena, Party, Club / DJ o Viaggio.',
                 'Foto Personalizzata: Puoi scattare una foto al momento con la fotocamera del tuo smartphone oppure scegliere un\'immagine direttamente dalla tua galleria!',
               ],
             ),
@@ -373,9 +373,9 @@ class ContextInfoModal extends StatelessWidget {
             ),
             InfoSectionData(
               icon: '⚡',
-              title: 'Pulsanti Azione: Proponi Bonus e Richiesta VAR',
+              title: 'Pulsante Azione: Proponi Bonus / Regola',
               description:
-                  'Consentono di lanciare al volo una nuova regola goliardica da sottoporre al voto democratico, oppure di interpellare il Giudice dell\'evento tramite il sistema VAR.',
+                  'Ti permette di lanciare al volo una nuova proposta di regola goliardica da sottoporre immediatamente al voto democratico di tutti i partecipanti.',
             ),
             InfoSectionData(
               icon: '🥇',
@@ -403,9 +403,9 @@ class ContextInfoModal extends StatelessWidget {
             ),
             InfoSectionData(
               icon: '🎯',
-              title: 'Assegnazione: Generale vs Bersaglio Singolo',
+              title: 'Validità della Regola per Tutti',
               description:
-                  'Puoi decidere se la regola è aperta (valida per chiunque la compia durante la festa) oppure indirizzata specificamente a un singolo partecipante designato fin dal momento della proposta.',
+                  'Tutti i Bonus e i Malus approvati dal Quorum sono validi per tutti i partecipanti all\'evento. Chiunque compia l\'azione durante la festa potrà vedersi assegnata la regola con i relativi punti.',
             ),
             InfoSectionData(
               icon: '👍',

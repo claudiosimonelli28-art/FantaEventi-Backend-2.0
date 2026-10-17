@@ -58,6 +58,7 @@ class _CreateEventViewState extends State<CreateEventView> {
   DateTime _selectedStartDate = DateTime.now().add(const Duration(hours: 1));
   DateTime _selectedEndDate = DateTime.now().add(const Duration(days: 1, hours: 1));
   final List<String> _partecipantiSelezionati = [];
+  String _creatorNick = 'Cloud';
   int _penalitaFalsaTestimonianza = -10;
   List<Utente> _utentiMongoDB = [];
   List<Utente> _utentiFiltrati = [];
@@ -161,9 +162,11 @@ class _CreateEventViewState extends State<CreateEventView> {
   void initState() {
     super.initState();
     final curUser = _apiService.currentUser;
-    if (curUser != null) {
-      final nick = curUser.nome.isNotEmpty ? curUser.nome : 'Cloud';
-      _partecipantiSelezionati.add(nick);
+    if (curUser != null && curUser.nome.isNotEmpty) {
+      _creatorNick = curUser.nome;
+    }
+    if (!_partecipantiSelezionati.contains(_creatorNick)) {
+      _partecipantiSelezionati.add(_creatorNick);
     }
     if (TutorialController.instance.stage == TutorialStage.step3_in_create_event) {
       _titoloController.text = 'Festa di Benvenuto 🎉';
@@ -208,6 +211,7 @@ class _CreateEventViewState extends State<CreateEventView> {
   }
 
   void _togglePartecipante(String nickname) {
+    if (nickname == _creatorNick) return;
     setState(() {
       if (_partecipantiSelezionati.contains(nickname)) {
         _partecipantiSelezionati.remove(nickname);
@@ -719,25 +723,15 @@ class _CreateEventViewState extends State<CreateEventView> {
                                 width: isSel ? 2 : 1,
                               ),
                             ),
-                            child: Column(
-                              children: [
-                                Text(
-                                  '$val PT',
-                                  style: GoogleFonts.poppins(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: Colors.white,
-                                  ),
+                            child: Center(
+                              child: Text(
+                                '$val PT',
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.white,
                                 ),
-                                if (val == -10)
-                                  Text(
-                                    'Default',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 9,
-                                      color: isSel ? Colors.white70 : const Color(0xFF94A3B8),
-                                    ),
-                                  ),
-                              ],
+                              ),
                             ),
                           ),
                         ),
@@ -747,13 +741,13 @@ class _CreateEventViewState extends State<CreateEventView> {
                 ),
                 const SizedBox(height: 28),
 
-                // SEZIONE INVITO PARTECEPATI CON BARRA DI RICERCA REALE DA MONGODB
+                // SEZIONE INVITO PARTECIPANTI CON BARRA DI RICERCA
                 Row(
                   children: [
                     const Icon(Icons.group_add, color: Color(0xFFFACC15), size: 22),
                     const SizedBox(width: 8),
                     Text(
-                      'Invita Partecipanti dal Database',
+                      'Invita Amici',
                       style: GoogleFonts.poppins(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -764,7 +758,7 @@ class _CreateEventViewState extends State<CreateEventView> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Cerca gli utenti registrati per Nickname ed aggiungili con un tap:',
+                  'Cerca tra i tuoi amici per Nickname ed aggiungili con un tap:',
                   style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 12),
@@ -775,7 +769,7 @@ class _CreateEventViewState extends State<CreateEventView> {
                   onChanged: _filtraUtenti,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'Cerca per Nickname (es. Ziogab, Lore8, AleM8...)',
+                    hintText: 'Cerca per Nickname (es. Marco, Giulia, Bomber99...)',
                     hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                     prefixIcon: const Icon(Icons.search, color: Color(0xFFFACC15)),
                     filled: true,
@@ -799,12 +793,27 @@ class _CreateEventViewState extends State<CreateEventView> {
                     spacing: 8,
                     runSpacing: 8,
                     children: _partecipantiSelezionati.map((p) {
+                      final isCreator = p == _creatorNick;
                       return Chip(
-                        label: Text(p, style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
-                        backgroundColor: const Color(0xFF9333EA).withValues(alpha: 0.3),
-                        side: const BorderSide(color: Color(0xFF9333EA)),
-                        deleteIcon: const Icon(Icons.close, size: 16, color: Colors.white),
-                        onDeleted: () => _togglePartecipante(p),
+                        avatar: isCreator
+                            ? const Icon(Icons.star_rounded, size: 18, color: Color(0xFFFACC15))
+                            : null,
+                        label: Text(
+                          isCreator ? '$p (Organizzatore)' : p,
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                        backgroundColor: isCreator
+                            ? const Color(0xFFFACC15).withValues(alpha: 0.15)
+                            : const Color(0xFF9333EA).withValues(alpha: 0.3),
+                        side: BorderSide(
+                          color: isCreator ? const Color(0xFFFACC15) : const Color(0xFF9333EA),
+                        ),
+                        deleteIcon: isCreator ? null : const Icon(Icons.close, size: 16, color: Colors.white),
+                        onDeleted: isCreator ? null : () => _togglePartecipante(p),
                       );
                     }).toList(),
                   ),
@@ -835,14 +844,15 @@ class _CreateEventViewState extends State<CreateEventView> {
                           : ListView.separated(
                               shrinkWrap: true,
                               itemCount: _utentiFiltrati.length,
-                              separatorBuilder: (_, __) => const Divider(color: Color(0xFF334155), height: 1),
+                              separatorBuilder: (ctx, idx) => const Divider(color: Color(0xFF334155), height: 1),
                               itemBuilder: (ctx, idx) {
                                 final user = _utentiFiltrati[idx];
                                 final nick = user.nome.isNotEmpty ? user.nome : 'Utente';
                                 final isSelected = _partecipantiSelezionati.contains(nick);
+                                final isCreator = nick == _creatorNick;
 
                                 return ListTile(
-                                  onTap: () => _togglePartecipante(nick),
+                                  onTap: isCreator ? null : () => _togglePartecipante(nick),
                                   leading: CircleAvatar(
                                     backgroundColor: isSelected ? const Color(0xFFFACC15) : const Color(0xFF334155),
                                     child: Text(
@@ -854,16 +864,18 @@ class _CreateEventViewState extends State<CreateEventView> {
                                     ),
                                   ),
                                   title: Text(
-                                    nick,
+                                    isCreator ? '$nick (Tu)' : nick,
                                     style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 14),
                                   ),
                                   subtitle: Text(
-                                    user.email,
+                                    isCreator ? 'Organizzatore dell\'evento' : user.email,
                                     style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
                                   ),
                                   trailing: Icon(
-                                    isSelected ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded,
-                                    color: isSelected ? const Color(0xFFFACC15) : const Color(0xFF64748B),
+                                    isCreator
+                                        ? Icons.star_rounded
+                                        : (isSelected ? Icons.check_circle_rounded : Icons.add_circle_outline_rounded),
+                                    color: (isCreator || isSelected) ? const Color(0xFFFACC15) : const Color(0xFF64748B),
                                   ),
                                 );
                               },
