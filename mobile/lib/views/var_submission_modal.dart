@@ -6,6 +6,7 @@ import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../services/api_service.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/context_info_modal.dart';
 
 class VarSubmissionModal extends StatefulWidget {
   final Evento evento;
@@ -225,6 +226,11 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 22),
+                  tooltip: 'Guida Richiesta VAR',
+                  onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.varSubmission),
                 ),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.white70),

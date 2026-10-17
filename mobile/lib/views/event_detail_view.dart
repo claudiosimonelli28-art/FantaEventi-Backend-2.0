@@ -23,6 +23,7 @@ import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/context_info_modal.dart';
 
 class EventDetailView extends StatefulWidget {
   final Evento evento;
@@ -156,6 +157,13 @@ class _EventDetailViewState extends State<EventDetailView> {
             pinned: true,
             backgroundColor: const Color(0xFF1E293B),
             iconTheme: const IconThemeData(color: Colors.white),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+                tooltip: 'Guida Dettagli Evento',
+                onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.dettaglioEvento),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
                 _evento.titolo,
@@ -192,7 +200,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                   if (isCreatore && !isConcluso)
                     Positioned(
                       top: 40,
-                      right: 14,
+                      right: 62,
                       child: SafeArea(
                         child: InkWell(
                           onTap: _mostraModalCambiaCopertina,
@@ -475,6 +483,10 @@ class _EventDetailViewState extends State<EventDetailView> {
 
                   // SEZIONE CLASSIFICA DINAMICA LIVE EVENTO
                   _buildLeaderboardSection(),
+                  const SizedBox(height: 24),
+
+                  // SEZIONE QUORUM VOTAZIONI DINAMICO IN TEMPO REALE
+                  _buildQuorumLiveCard(),
                   const SizedBox(height: 28),
 
                   // SEZIONE TRACCIAMENTO STATO INVITI PARTECIPANTI (Coerenza Rigorosa)
@@ -708,6 +720,149 @@ class _EventDetailViewState extends State<EventDetailView> {
     ),
   );
 }
+
+  Widget _buildQuorumLiveCard() {
+    final int totalePartecipanti = _partecipantiConfermati.length;
+    // Formula maggioranza assoluta: (N / 2).floor() + 1
+    final int quorumCalcolato = totalePartecipanti <= 0 ? 1 : (totalePartecipanti / 2).floor() + 1;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF6366F1).withValues(alpha: 0.15),
+            const Color(0xFF1E293B),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.5), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF818CF8)),
+                ),
+                child: const Icon(Icons.how_to_vote_rounded, color: Color(0xFFFACC15), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'QUORUM VOTAZIONI LIVE',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF818CF8),
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    Text(
+                      'Maggioranza Assoluta Evento',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: const Color(0xFF94A3B8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.dettaglioEvento),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF334155).withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Info Regole',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFFFACC15),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$quorumCalcolato',
+                style: GoogleFonts.poppins(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFFFACC15),
+                ),
+              ),
+              Text(
+                ' su $totalePartecipanti',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'partecipanti',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF94A3B8),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            totalePartecipanti <= 1
+                ? 'Con 1 solo partecipante, le proposte si convalidano con il tuo voto.'
+                : 'Per approvare o respingere un bonus servono almeno $quorumCalcolato voti concordi. La soglia si ricalcola in tempo reale all\'ingresso di nuovi partecipanti!',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: const Color(0xFFCBD5E1),
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildLeaderboardSection() {
     final now = DateTime.now();

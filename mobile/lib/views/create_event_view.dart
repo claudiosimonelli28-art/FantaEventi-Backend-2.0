@@ -10,6 +10,7 @@ import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/map_location_picker_modal.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/context_info_modal.dart';
 
 class CreateEventView extends StatefulWidget {
   const CreateEventView({super.key});
@@ -325,6 +326,13 @@ class _CreateEventViewState extends State<CreateEventView> {
             style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+              tooltip: 'Guida Creazione Evento',
+              onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.creazioneEvento),
+            ),
+          ],
         ),
         body: SafeArea(
           child: SingleChildScrollView(

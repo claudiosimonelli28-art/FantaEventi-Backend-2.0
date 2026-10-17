@@ -4,6 +4,7 @@ import '../models/evento.dart';
 import '../models/votazione.dart';
 import '../services/api_service.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/context_info_modal.dart';
 
 class VoteView extends StatefulWidget {
   final Votazione votazione;
@@ -178,6 +179,13 @@ class _VoteViewState extends State<VoteView> {
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+            tooltip: 'Guida Votazioni Live',
+            onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.votazioniLive),
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(

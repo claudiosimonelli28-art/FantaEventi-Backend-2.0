@@ -6,6 +6,7 @@ import '../models/evento.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/context_info_modal.dart';
 
 class AddBonusMalusView extends StatefulWidget {
   final Evento? evento;
@@ -157,6 +158,13 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
             style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
           ),
           iconTheme: const IconThemeData(color: Colors.white),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+              tooltip: 'Guida Proposta Regole',
+              onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.propostaBonusMalus),
+            ),
+          ],
         ),
         body: SafeArea(
           child: SingleChildScrollView(

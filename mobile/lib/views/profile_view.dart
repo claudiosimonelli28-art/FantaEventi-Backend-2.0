@@ -12,6 +12,7 @@ import 'login_view.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/context_info_modal.dart';
 
 class ProfileView extends StatefulWidget {
   const ProfileView({super.key});
@@ -1265,6 +1266,11 @@ class _ProfileViewState extends State<ProfileView> {
           ),
           iconTheme: const IconThemeData(color: Colors.white),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+              tooltip: 'Guida Profilo',
+              onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.profilo),
+            ),
             IconButton(
               icon: const Icon(Icons.logout, color: Colors.redAccent),
               tooltip: 'Logout',
