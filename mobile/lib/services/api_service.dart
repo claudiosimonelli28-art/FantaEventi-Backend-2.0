@@ -283,6 +283,19 @@ class ApiService {
     return allTokens.toSet().toList();
   }
 
+  Future<Map<String, dynamic>?> getFirebaseServiceAccountConfig() async {
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final doc = await db.collection('AppConfig').findOne(where.eq('chiave', 'firebase_service_account'));
+        if (doc != null && doc['config'] != null) {
+          return Map<String, dynamic>.from(doc['config'] as Map);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> logout() async {
     try {
       await PushNotificationService.instance.unregisterCurrentDeviceToken();
