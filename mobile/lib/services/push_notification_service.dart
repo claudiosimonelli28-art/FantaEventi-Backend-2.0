@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:googleapis_auth/auth_io.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import '../models/evento.dart';
 import '../views/event_detail_view.dart';
@@ -374,10 +375,26 @@ class PushNotificationService {
 
   static Future<Map<String, dynamic>?> _loadServiceAccount() async {
     if (_serviceAccountMap != null) return _serviceAccountMap;
+    // 1. Prova prima dalla cache locale super-veloce su disco (0 ms)
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedJson = prefs.getString('cached_firebase_service_account_v1');
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        _serviceAccountMap = jsonDecode(cachedJson) as Map<String, dynamic>;
+        return _serviceAccountMap;
+      }
+    } catch (_) {}
+
+    // 2. Se non presente in cache locale, carica da MongoDB Atlas
     try {
       final config = await ApiService().getFirebaseServiceAccountConfig();
       if (config != null) {
         _serviceAccountMap = config;
+        // Salva in cache locale per i successivi utilizzi
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('cached_firebase_service_account_v1', jsonEncode(config));
+        } catch (_) {}
         return _serviceAccountMap;
       }
     } catch (e) {
@@ -429,6 +446,7 @@ class PushNotificationService {
         return;
       }
 
+      debugPrint('Inizio invio push a ${tokens.length} token per $destinatariNicknames: $titolo');
       for (final token in tokens) {
         await _sendFcmV1(
           token: token,
@@ -484,7 +502,8 @@ class PushNotificationService {
               'sound': 'default',
               'default_sound': true,
               'default_vibrate_timings': true,
-              'notification_priority': 'PRIORITY_HIGH',
+              'notification_priority': 'PRIORITY_MAX',
+              'visibility': 'PUBLIC',
             },
           },
         },
@@ -500,9 +519,9 @@ class PushNotificationService {
       );
 
       if (response.statusCode == 200) {
-        debugPrint('Push FCM v1 inviata con successo a $token');
+        debugPrint('✅ Push FCM v1 inviata con successo a $token ($titolo)');
       } else {
-        debugPrint('Esito risposta FCM v1 (${response.statusCode}): ${response.body}');
+        debugPrint('❌ Esito risposta FCM v1 (${response.statusCode}): ${response.body}');
       }
     } catch (e) {
       debugPrint('Errore durante la chiamata HTTP a FCM v1: $e');

@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 import 'package:mongo_dart/mongo_dart.dart';
-
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/utente.dart';
 import '../models/evento.dart';
@@ -266,20 +266,24 @@ class ApiService {
   Future<List<String>> getFcmTokensPerUtenti(List<String> nicknames) async {
     if (nicknames.isEmpty) return [];
     final List<String> allTokens = [];
+    final cleanNicks = nicknames.map((n) => n.trim().toLowerCase()).toSet();
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
-        final cleanNicks = nicknames.map((n) => n.trim().toLowerCase()).toList();
-        final users = await db.collection('Utenti').find().toList();
+        final users = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
         for (var u in users) {
-          final uName = (u['nome'] ?? '').toString().trim().toLowerCase();
-          if (cleanNicks.contains(uName)) {
+          final uNome = (u['nome'] ?? '').toString().trim().toLowerCase();
+          final uNick = (u['nickname'] ?? '').toString().trim().toLowerCase();
+          final uUser = (u['username'] ?? '').toString().trim().toLowerCase();
+          if (cleanNicks.contains(uNome) || cleanNicks.contains(uNick) || cleanNicks.contains(uUser)) {
             final tokens = List<String>.from(u['fcmTokens'] ?? []);
             allTokens.addAll(tokens);
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('Errore getFcmTokensPerUtenti: $e');
+    }
     return allTokens.toSet().toList();
   }
 
@@ -2091,15 +2095,17 @@ class ApiService {
         }
 
         // Invia notifica push reale per la tendina di sistema
-        unawaited(PushNotificationService.instance.inviaPushAUtenti(
-          aggiuntiEffettivi,
-          titolo: '🎉 Invito ad Evento: $evTitolo',
-          messaggio: '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
-          data: {
-            'tipo': 'invito',
-            'eventoId': eventoId,
-          },
-        ));
+        try {
+          await PushNotificationService.instance.inviaPushAUtenti(
+            aggiuntiEffettivi,
+            titolo: '🎉 Invito ad Evento: $evTitolo',
+            messaggio: '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
+            data: {
+              'tipo': 'invito',
+              'eventoId': eventoId,
+            },
+          ).timeout(const Duration(seconds: 4));
+        } catch (_) {}
 
         // Aggiorna istantaneamente anche lo stato in-memory di _eventi
         final evIdx = _eventi.indexWhere((e) => e.id == eventoId);
@@ -2581,15 +2587,17 @@ class ApiService {
 
         // Invia notifica push reale per la tendina di sistema a tutti gli invitati
         if (invitati.isNotEmpty) {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
-            invitati,
-            titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
-            messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
-            data: {
-              'tipo': 'invito',
-              'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
-            },
-          ));
+          try {
+            await PushNotificationService.instance.inviaPushAUtenti(
+              invitati,
+              titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
+              messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
+              data: {
+                'tipo': 'invito',
+                'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
+              },
+            ).timeout(const Duration(seconds: 4));
+          } catch (_) {}
         }
 
         break;
@@ -2810,16 +2818,18 @@ class ApiService {
 
         // Invia notifica push reale per la tendina di sistema a tutti i partecipanti
         if (uniqueDestMap.isNotEmpty) {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
-            uniqueDestMap.values.toList(),
-            titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
-            messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
-            data: {
-              'tipo': 'votazione',
-              'eventoId': eventoId,
-              'bonusId': bmHexId,
-            },
-          ));
+          try {
+            await PushNotificationService.instance.inviaPushAUtenti(
+              uniqueDestMap.values.toList(),
+              titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
+              messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
+              data: {
+                'tipo': 'votazione',
+                'eventoId': eventoId,
+                'bonusId': bmHexId,
+              },
+            ).timeout(const Duration(seconds: 4));
+          } catch (_) {}
         }
 
         // Operazione completata con successo, esce dal loop di retry
@@ -3092,15 +3102,17 @@ class ApiService {
         }
 
         if (destList.isNotEmpty) {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
-            destList,
-            titolo: '🏆 Bonus/Malus Assegnato!',
-            messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
-            data: {
-              'tipo': 'assegnazione_bonus',
-              'eventoId': eventoId,
-            },
-          ));
+          try {
+            await PushNotificationService.instance.inviaPushAUtenti(
+              destList,
+              titolo: '🏆 Bonus/Malus Assegnato!',
+              messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+              data: {
+                'tipo': 'assegnazione_bonus',
+                'eventoId': eventoId,
+              },
+            ).timeout(const Duration(seconds: 4));
+          } catch (_) {}
         }
       }
     } catch (_) {}
@@ -3714,12 +3726,14 @@ class ApiService {
         'data': DateTime.now().toIso8601String(),
       });
 
-      unawaited(PushNotificationService.instance.inviaPushAUtenti(
-        [targetUser.nickname],
-        titolo: '👥 Nuova Richiesta di Amicizia',
-        messaggio: '${curUser.nickname} vuole aggiungerti agli amici!',
-        data: {'tipo': 'amicizia'},
-      ));
+      try {
+        await PushNotificationService.instance.inviaPushAUtenti(
+          [targetUser.nickname],
+          titolo: '👥 Nuova Richiesta di Amicizia',
+          messaggio: '${curUser.nickname} vuole aggiungerti agli amici!',
+          data: {'tipo': 'amicizia'},
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
   }
 
@@ -3781,12 +3795,14 @@ class ApiService {
           'data': DateTime.now().toIso8601String(),
         });
 
-        unawaited(PushNotificationService.instance.inviaPushAUtenti(
-          [mittente],
-          titolo: '👥 Richiesta di Amicizia Accettata!',
-          messaggio: '${curUser.nickname} ha accettato la tua richiesta di amicizia! Ora siete amici.',
-          data: {'tipo': 'amicizia'},
-        ));
+        try {
+          await PushNotificationService.instance.inviaPushAUtenti(
+            [mittente],
+            titolo: '👥 Richiesta di Amicizia Accettata!',
+            messaggio: '${curUser.nickname} ha accettato la tua richiesta di amicizia! Ora siete amici.',
+            data: {'tipo': 'amicizia'},
+          ).timeout(const Duration(seconds: 4));
+        } catch (_) {}
       }
     }
   }
@@ -3888,19 +3904,23 @@ class ApiService {
       }
 
       // Invia notifiche push per la tendina al Giudice e ai Testimoni
-      unawaited(PushNotificationService.instance.inviaPushAUtenti(
-        [giudice],
-        titolo: '📺 VAR: Richiesta da Esaminare!',
-        messaggio: msgGiudice,
-        data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
-      ));
+      try {
+        await PushNotificationService.instance.inviaPushAUtenti(
+          [giudice],
+          titolo: '📺 VAR: Richiesta da Esaminare!',
+          messaggio: msgGiudice,
+          data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
       if (testimoni.isNotEmpty) {
-        unawaited(PushNotificationService.instance.inviaPushAUtenti(
-          testimoni,
-          titolo: '👀 Chiamata a Testimoniare al VAR',
-          messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
-          data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
-        ));
+        try {
+          await PushNotificationService.instance.inviaPushAUtenti(
+            testimoni,
+            titolo: '👀 Chiamata a Testimoniare al VAR',
+            messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
+            data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
+          ).timeout(const Duration(seconds: 4));
+        } catch (_) {}
       }
 
       invalidateCache();
@@ -4074,12 +4094,14 @@ class ApiService {
           'data': now.toIso8601String(),
         });
 
-        unawaited(PushNotificationService.instance.inviaPushAUtenti(
-          [richiesta.richiedente],
-          titolo: '📺 VAR: Richiesta Approvata! ✅',
-          messaggio: 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
-          data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
-        ));
+        try {
+          await PushNotificationService.instance.inviaPushAUtenti(
+            [richiesta.richiedente],
+            titolo: '📺 VAR: Richiesta Approvata! ✅',
+            messaggio: 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
+            data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+          ).timeout(const Duration(seconds: 4));
+        } catch (_) {}
       } else {
         // Rigettata
         final bool doSanzione = sanzionaFalsaTestimonianza && richiesta.tipo == 'malus';
@@ -4272,12 +4294,14 @@ class ApiService {
             'data': now.toIso8601String(),
           });
 
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
-            [richiesta.richiedente],
-            titolo: '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
-            messaggio: 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
-            data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
-          ));
+          try {
+            await PushNotificationService.instance.inviaPushAUtenti(
+              [richiesta.richiedente],
+              titolo: '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
+              messaggio: 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
+              data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+            ).timeout(const Duration(seconds: 4));
+          } catch (_) {}
         } else {
           // Rifiutata senza sanzione (es. bonus non confermato)
           await db.collection('Notifiche').insertOne({
@@ -4294,12 +4318,14 @@ class ApiService {
             'data': now.toIso8601String(),
           });
 
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
-            [richiesta.richiedente],
-            titolo: '📺 VAR: Richiesta Non Convalidata ❌',
-            messaggio: 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
-            data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
-          ));
+          try {
+            await PushNotificationService.instance.inviaPushAUtenti(
+              [richiesta.richiedente],
+              titolo: '📺 VAR: Richiesta Non Convalidata ❌',
+              messaggio: 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
+              data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+            ).timeout(const Duration(seconds: 4));
+          } catch (_) {}
         }
 
         // Aggiorna stato ed ELIMINA la foto dal DB

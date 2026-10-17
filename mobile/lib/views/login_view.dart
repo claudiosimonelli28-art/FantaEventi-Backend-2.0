@@ -31,7 +31,7 @@ class _LoginViewState extends State<LoginView> {
   bool _obscureLoginPassword = true;
   bool _obscureRegPassword = true;
   bool _obscureRegConfirmPassword = true;
-  bool _rememberMe = false;
+  bool _rememberMe = true;
 
   // Controllo disponibilità Nickname con debounce
   Timer? _nicknameDebounceTimer;
@@ -149,7 +149,7 @@ class _LoginViewState extends State<LoginView> {
       });
 
       // Sincronizza il token FCM per il nuovo login
-      unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+      await PushNotificationService.instance.syncCurrentDeviceToken();
 
       if (PushNotificationService.hasPendingRoute) {
         Navigator.of(context).pushReplacement(
@@ -226,7 +226,7 @@ class _LoginViewState extends State<LoginView> {
         _isLoading = false;
       });
 
-      unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
+      await PushNotificationService.instance.syncCurrentDeviceToken();
 
       if (PushNotificationService.hasPendingRoute) {
         Navigator.of(context).pushReplacement(
