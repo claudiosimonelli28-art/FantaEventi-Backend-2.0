@@ -46,7 +46,7 @@ jobs:
           path: mobile/build/app/outputs/flutter-apk/app-release.apk
 
   build-ios:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -57,11 +57,16 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Disable Swift Package Manager
+        run: |
+          flutter config --no-enable-swift-package-manager
+
       - name: Install Flutter Dependencies
         run: |
           mkdir -p mobile/build/ios/SourcePackages
           cd mobile
           flutter pub get
+
 
       - name: Install CocoaPods
         run: |
