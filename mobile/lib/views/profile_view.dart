@@ -491,7 +491,7 @@ class _ProfileViewState extends State<ProfileView> {
                               final displayName = (amicoUtente?.nome.isNotEmpty == true)
                                   ? amicoUtente!.nome
                                   : amicoNick;
-                              final avatarUrl = amicoUtente?.avatarUrl;
+                              final avatarUrl = (amicoUtente?.avatarUrl.isNotEmpty == true) ? amicoUtente!.avatarUrl : _apiService.getAvatarPerUtente(amicoNick);
                               final friendCode = amicoUtente?.codiceAmico ?? '';
                               final points = amicoUtente?.puntiTotali ?? 0;
                               final level = amicoUtente?.livello ?? 1;

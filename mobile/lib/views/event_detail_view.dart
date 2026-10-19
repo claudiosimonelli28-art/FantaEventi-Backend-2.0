@@ -1025,7 +1025,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      _buildAvatarWidget(_apiService.getUtenteInMemoria(nick)?.avatarUrl ?? '', nick, radius: 16),
+                      _buildAvatarWidget(_apiService.getAvatarPerUtente(nick), nick, radius: 16),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -1074,7 +1074,11 @@ class _EventDetailViewState extends State<EventDetailView> {
   }
 
   Widget _buildAvatarWidget(String avatarUrl, String nickname, {double radius = 20}) {
-    final imgProvider = getAvatarImageProvider(avatarUrl);
+    String effectiveUrl = avatarUrl.trim();
+    if (effectiveUrl.isEmpty) {
+      effectiveUrl = _apiService.getAvatarPerUtente(nickname);
+    }
+    final imgProvider = getAvatarImageProvider(effectiveUrl);
     return CircleAvatar(
       radius: radius,
       backgroundColor: const Color(0xFF9333EA),
@@ -1345,7 +1349,7 @@ class _EventDetailViewState extends State<EventDetailView> {
     required Color accentColor,
   }) {
     if (winnerNick == null || winnerNick.isEmpty) return const SizedBox.shrink();
-    final avatarUrl = _apiService.getUtenteInMemoria(winnerNick)?.avatarUrl ?? '';
+    final avatarUrl = _apiService.getAvatarPerUtente(winnerNick);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1865,7 +1869,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 children: [
                                   const Text('🥇', style: TextStyle(fontSize: 24)),
                                   const SizedBox(width: 10),
-                                  _buildAvatarWidget(_apiService.getUtenteInMemoria(primo.key)?.avatarUrl ?? '', primo.key, radius: 16),
+                                  _buildAvatarWidget(_apiService.getAvatarPerUtente(primo.key), primo.key, radius: 16),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -1898,7 +1902,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 children: [
                                   const Text('🥈', style: TextStyle(fontSize: 20)),
                                   const SizedBox(width: 10),
-                                  _buildAvatarWidget(_apiService.getUtenteInMemoria(secondo.key)?.avatarUrl ?? '', secondo.key, radius: 14),
+                                  _buildAvatarWidget(_apiService.getAvatarPerUtente(secondo.key), secondo.key, radius: 14),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -1931,7 +1935,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 children: [
                                   const Text('🥉', style: TextStyle(fontSize: 20)),
                                   const SizedBox(width: 10),
-                                  _buildAvatarWidget(_apiService.getUtenteInMemoria(terzo.key)?.avatarUrl ?? '', terzo.key, radius: 14),
+                                  _buildAvatarWidget(_apiService.getAvatarPerUtente(terzo.key), terzo.key, radius: 14),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -2336,7 +2340,7 @@ class _EventDetailViewState extends State<EventDetailView> {
     }
 
     final memUser = _apiService.getUtenteInMemoria(targetNick);
-    String avatarUrl = memUser?.avatarUrl ?? '';
+    String avatarUrl = memUser?.avatarUrl ?? _apiService.getAvatarPerUtente(targetNick);
 
     showModalBottomSheet(
       context: context,
@@ -2733,7 +2737,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       CircleAvatar(
                                         radius: 20,
                                         backgroundColor: const Color(0xFF334155),
-                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl),
+                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl.isNotEmpty ? amico.avatarUrl : _apiService.getAvatarPerUtente(amico.nome.isNotEmpty ? amico.nome : amico.nickname)),
                                       ),
                                       const SizedBox(width: 12),
 

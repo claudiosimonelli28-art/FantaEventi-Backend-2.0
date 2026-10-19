@@ -10,6 +10,11 @@ import 'services/push_notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Carica immediatamente la cache locale di utenti e avatar per rendering istantaneo
+  try {
+    await ApiService().loadLocalCache();
+  } catch (_) {}
+
   // Inizializza Firebase con tolleranza d'errore (non blocca mai l'avvio della UI)
   try {
     await Firebase.initializeApp();

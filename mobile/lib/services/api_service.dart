@@ -88,7 +88,79 @@ class ApiService {
 
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
-  ApiService._internal();
+
+  static const String _kCachedUtentiKey = 'cached_utenti_json_v1';
+  static const String _kCachedAvatarsKey = 'cached_avatars_map_v1';
+  final Map<String, String> _avatarCache = {};
+
+  ApiService._internal() {
+    _loadCachedUsersAndAvatars();
+  }
+
+  Future<void> loadLocalCache() async {
+    await _loadCachedUsersAndAvatars();
+  }
+
+  void _cacheSingleAvatar(String name, String nick, String avatarUrl) {
+    final trimmed = avatarUrl.trim();
+    if (trimmed.isEmpty) return;
+    final cleanNome = name.replaceAll(' ', '').trim().toLowerCase();
+    final cleanNick = nick.replaceAll(' ', '').trim().toLowerCase();
+    final rawNome = name.trim().toLowerCase();
+    final rawNick = nick.trim().toLowerCase();
+    if (cleanNome.isNotEmpty) _avatarCache[cleanNome] = trimmed;
+    if (cleanNick.isNotEmpty) _avatarCache[cleanNick] = trimmed;
+    if (rawNome.isNotEmpty) _avatarCache[rawNome] = trimmed;
+    if (rawNick.isNotEmpty) _avatarCache[rawNick] = trimmed;
+  }
+
+  Future<void> _loadCachedUsersAndAvatars() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final avStr = prefs.getString(_kCachedAvatarsKey);
+      if (avStr != null && avStr.isNotEmpty) {
+        final Map<String, dynamic> map = jsonDecode(avStr);
+        map.forEach((k, v) {
+          if (v is String && v.isNotEmpty) {
+            final keyLower = k.toLowerCase().trim();
+            final keyNoSpaces = keyLower.replaceAll(' ', '');
+            _avatarCache[keyLower] = v;
+            _avatarCache[keyNoSpaces] = v;
+          }
+        });
+      }
+
+      final uStr = prefs.getString(_kCachedUtentiKey);
+      if (uStr != null && uStr.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(uStr);
+        final List<Utente> loaded = [];
+        for (var item in list) {
+          final u = Utente.fromJson(Map<String, dynamic>.from(item as Map));
+          loaded.add(u);
+          if (u.avatarUrl.isNotEmpty) {
+            _cacheSingleAvatar(u.nome, u.nickname, u.avatarUrl);
+          }
+        }
+        if (loaded.isNotEmpty && _utenti.isEmpty) {
+          _utenti.addAll(loaded);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveCachedUsersAndAvatars() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (_utenti.isNotEmpty) {
+        final list = _utenti.map((u) => u.toJson()).toList();
+        await prefs.setString(_kCachedUtentiKey, jsonEncode(list));
+      }
+      if (_avatarCache.isNotEmpty) {
+        await prefs.setString(_kCachedAvatarsKey, jsonEncode(_avatarCache));
+      }
+    } catch (_) {}
+  }
 
   static String get _mongoUri {
     const envUri = String.fromEnvironment('MONGODB_URI');
@@ -194,7 +266,6 @@ class ApiService {
     _eventi.clear();
     _bonusMalusList.clear();
     _votazioniList.clear();
-    _utenti.clear();
     _richiesteVar.clear();
   }
 
@@ -337,6 +408,7 @@ class ApiService {
         final Map<String, dynamic> data = jsonDecode(userJsonStr);
         _currentUser = Utente.fromJson(data);
         _rememberMeSession = true;
+        await _loadCachedUsersAndAvatars();
         clearUserSessionCache();
         return _currentUser;
       }
@@ -688,8 +760,17 @@ class ApiService {
               'countGiustiziere': d['countGiustiziere'] ?? 0,
               'haVistoGuida': d['haVistoGuida'] == true,
             };
+            for (var docItem in docs) {
+              final aUrl = (docItem['avatarUrl'] ?? '').toString();
+              final aNome = (docItem['nome'] ?? docItem['username'] ?? docItem['nickname'] ?? '').toString();
+              final aNick = (docItem['nickname'] ?? '').toString();
+              if (aUrl.isNotEmpty) {
+                _cacheSingleAvatar(aNome, aNick, aUrl);
+              }
+            }
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
+            await _saveCachedUsersAndAvatars();
             await _saveSession(_currentUser!, rememberMe: rememberMe);
             return _currentUser!;
           }
@@ -1442,13 +1523,19 @@ class ApiService {
       await _saveSession(_currentUser!);
     }
 
+    final clean = username.replaceAll(' ', '').trim().toLowerCase();
+    if (newAvatarUrl.isNotEmpty) {
+      _avatarCache[clean] = newAvatarUrl;
+      await _saveCachedUsersAndAvatars();
+    }
+
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
         final uDocs = await db.collection('Utenti').find().toList();
         for (var uDoc in uDocs) {
           final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-          if (uName == username.trim().toLowerCase()) {
+          if (uName == clean) {
             await db.collection('Utenti').update(
               where.id(uDoc['_id'] as ObjectId),
               modify.set('avatarUrl', newAvatarUrl),
@@ -1460,11 +1547,29 @@ class ApiService {
   }
 
   // --- REPERIMENTO UTENTI REALI DAL DB (MONGODB ATLAS DIRETTO) ---
+  Future<List<Utente>>? _pendingGetUtentiFuture;
+
   Future<List<Utente>> getUtenti() async {
+    if (_pendingGetUtentiFuture != null) {
+      return _pendingGetUtentiFuture!;
+    }
+    _pendingGetUtentiFuture = _fetchUtentiFromDb();
     try {
-      final db = await _getMongoDb();
+      return await _pendingGetUtentiFuture!;
+    } finally {
+      _pendingGetUtentiFuture = null;
+    }
+  }
+
+  Future<List<Utente>> _fetchUtentiFromDb() async {
+    try {
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Utenti').find().toList();
+        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 5));
         final List<Utente> list = [];
         for (var d in docs) {
           final jsonMap = Map<String, dynamic>.from(d);
@@ -1492,6 +1597,10 @@ class ApiService {
           final uObj = Utente.fromJson(jsonMap);
           list.add(uObj);
 
+          if (uObj.avatarUrl.isNotEmpty) {
+            _cacheSingleAvatar(uObj.nome, uObj.nickname, uObj.avatarUrl);
+          }
+
           if (_currentUser != null && uObj.nome.trim().toLowerCase() == _currentUser!.nome.trim().toLowerCase()) {
             _currentUser = uObj;
             await _saveSession(_currentUser!);
@@ -1500,12 +1609,44 @@ class ApiService {
         if (list.isNotEmpty) {
           _utenti.clear();
           _utenti.addAll(list);
+          await _saveCachedUsersAndAvatars();
           return List.unmodifiable(_utenti);
         }
       }
     } catch (_) {}
 
     return List.unmodifiable(_utenti);
+  }
+
+  String getAvatarPerUtente(String nickname) {
+    final clean = nickname.replaceAll(' ', '').trim().toLowerCase();
+    final raw = nickname.trim().toLowerCase();
+    if (clean.isEmpty) return '';
+
+    if (_currentUser != null) {
+      final cName = _currentUser!.nome.replaceAll(' ', '').trim().toLowerCase();
+      final cNick = _currentUser!.nickname.replaceAll(' ', '').trim().toLowerCase();
+      final cRawName = _currentUser!.nome.trim().toLowerCase();
+      final cRawNick = _currentUser!.nickname.trim().toLowerCase();
+      if ((cName == clean || cNick == clean || cRawName == raw || cRawNick == raw) && _currentUser!.avatarUrl.isNotEmpty) {
+        return _currentUser!.avatarUrl;
+      }
+    }
+
+    if (_avatarCache.containsKey(clean) && _avatarCache[clean]!.isNotEmpty) {
+      return _avatarCache[clean]!;
+    }
+    if (_avatarCache.containsKey(raw) && _avatarCache[raw]!.isNotEmpty) {
+      return _avatarCache[raw]!;
+    }
+
+    final u = getUtenteInMemoria(nickname);
+    if (u != null && u.avatarUrl.isNotEmpty) {
+      _cacheSingleAvatar(u.nome, u.nickname, u.avatarUrl);
+      return u.avatarUrl;
+    }
+
+    return '';
   }
 
   Utente? getUtenteInMemoria(String nickname) {

@@ -254,10 +254,15 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         await _apiService.syncCurrentUserFromDb();
       }
 
-      final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
-      final meBonus = await _apiService.getBonusMalusList();
-      final meVoti = await _apiService.getVotazioni();
-      _apiService.getUtenti().catchError((_) => <Utente>[]);
+      final results = await Future.wait([
+        _apiService.getEventi(forceRefresh: forceRefresh),
+        _apiService.getBonusMalusList(),
+        _apiService.getVotazioni(),
+        _apiService.getUtenti().catchError((_) => <Utente>[]),
+      ]);
+      final meEventi = results[0] as List<Evento>;
+      final meBonus = results[1] as List<BonusMalus>;
+      final meVoti = results[2] as List<Votazione>;
 
       final curUser = _apiService.currentUser;
       final nick = curUser?.nome ?? 'Cloud';
