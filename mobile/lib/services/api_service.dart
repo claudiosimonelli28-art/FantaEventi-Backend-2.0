@@ -364,7 +364,11 @@ class ApiService {
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
-        final users = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 8));
+        // Query ultra-veloce mirata solo sui campi essenziali (esclude immagini profilo pesanti)
+        final users = await db.collection('Utenti').find(
+          where.fields(['fcmTokens', 'nome', 'nickname', 'username'])
+        ).toList().timeout(const Duration(seconds: 4));
+
         for (var u in users) {
           final uNome = (u['nome'] ?? '').toString().trim().toLowerCase();
           final uNick = (u['nickname'] ?? '').toString().trim().toLowerCase();
