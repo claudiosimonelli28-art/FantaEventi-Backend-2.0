@@ -94,13 +94,9 @@ class _EventDetailViewState extends State<EventDetailView> {
 
       List<BonusMalus> bmList = [];
       try {
-        final results = await Future.wait([
-          _apiService.getBonusMalusList().catchError((_) => <BonusMalus>[]),
-          _apiService.getUtenti().catchError((_) => <Utente>[]),
-          _apiService.getRichiesteVarEvento(_evento.id).catchError((_) => <RichiestaVar>[]),
-        ]);
-        bmList = results[0] as List<BonusMalus>;
-        final varReqs = results[2] as List<RichiestaVar>;
+        bmList = await _apiService.getBonusMalusList().catchError((_) => <BonusMalus>[]);
+        await _apiService.getUtenti().catchError((_) => <Utente>[]);
+        final varReqs = await _apiService.getRichiesteVarEvento(_evento.id).catchError((_) => <RichiestaVar>[]);
 
         for (var bm in bmList) {
           final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
@@ -1078,11 +1074,26 @@ class _EventDetailViewState extends State<EventDetailView> {
     if (effectiveUrl.isEmpty) {
       effectiveUrl = _apiService.getAvatarPerUtente(nickname);
     }
-    final imgProvider = getAvatarImageProvider(effectiveUrl);
+    if (effectiveUrl.isNotEmpty) {
+      final imgProvider = getAvatarImageProvider(effectiveUrl);
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: const Color(0xFF9333EA),
+        backgroundImage: imgProvider,
+      );
+    }
+    final initial = nickname.trim().isNotEmpty ? nickname.trim()[0].toUpperCase() : 'U';
     return CircleAvatar(
       radius: radius,
       backgroundColor: const Color(0xFF9333EA),
-      backgroundImage: imgProvider,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: radius * 0.85,
+        ),
+      ),
     );
   }
 

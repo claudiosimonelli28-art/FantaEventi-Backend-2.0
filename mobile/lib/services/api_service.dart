@@ -1569,7 +1569,7 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 5));
+        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 8));
         final List<Utente> list = [];
         for (var d in docs) {
           final jsonMap = Map<String, dynamic>.from(d);
@@ -1679,7 +1679,7 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
+        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 8));
 
         final now = DateTime.now();
         final List<Evento> list = [];
@@ -2105,7 +2105,10 @@ class ApiService {
         }
       } catch (_) {}
     }
-    return List.unmodifiable(_eventi);
+    if (_eventi.isNotEmpty) {
+      return List.unmodifiable(_eventi);
+    }
+    throw Exception('Impossibile recuperare gli eventi dal server. Verifica la tua connessione.');
   }
 
   // --- PARTECIPA AD UN EVENTO REALE SU MONGODB ATLAS (CON VERIFICA EVENTO IN PROGRAMMA) ---

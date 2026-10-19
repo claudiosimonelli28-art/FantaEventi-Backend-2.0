@@ -5,7 +5,6 @@ import '../services/api_service.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
-import '../models/utente.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/event_card.dart';
 import '../widgets/bonus_malus_card.dart';
@@ -37,6 +36,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   List<Votazione> _votazioniList = [];
   int _numeroNotifiche = 0;
   bool _isLoading = true;
+  bool _networkError = false;
 
   late TabController _tabController;
   Timer? _liveSyncTimer;
@@ -254,15 +254,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         await _apiService.syncCurrentUserFromDb();
       }
 
-      final results = await Future.wait([
-        _apiService.getEventi(forceRefresh: forceRefresh),
-        _apiService.getBonusMalusList(),
-        _apiService.getVotazioni(),
-        _apiService.getUtenti().catchError((_) => <Utente>[]),
-      ]);
-      final meEventi = results[0] as List<Evento>;
-      final meBonus = results[1] as List<BonusMalus>;
-      final meVoti = results[2] as List<Votazione>;
+      // Caricamento ordinato: zero collisioni sul socket singolo di MongoDB
+      final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
+      await _apiService.getUtenti();
+      final meBonus = await _apiService.getBonusMalusList();
+      final meVoti = await _apiService.getVotazioni();
 
       final curUser = _apiService.currentUser;
       final nick = curUser?.nome ?? 'Cloud';
@@ -286,8 +282,18 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         if (!silent) _isLoading = false;
       });
 
+      _networkError = false;
       if (!silent) {
         _checkMostraGuidaIniziale();
+      }
+    } catch (e) {
+      if (_eventi.isEmpty) {
+        _networkError = true;
+      }
+      if (!silent && mounted) {
+        setState(() {
+          _isLoading = false;
+        });
       }
     } finally {
       _isFetchingData = false;
@@ -1266,17 +1272,39 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.event_busy_rounded, size: 64, color: Color(0xFF64748B)),
+                Icon(
+                  _networkError ? Icons.wifi_off_rounded : Icons.event_busy_rounded,
+                  size: 64,
+                  color: _networkError ? const Color(0xFFEF4444) : const Color(0xFF64748B),
+                ),
                 const SizedBox(height: 16),
                 Text(
-                  'Nessun evento disponibile',
+                  _networkError ? 'Connessione non disponibile' : 'Nessun evento disponibile',
                   style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Tocca + in basso per creare il primo evento!',
+                  _networkError
+                      ? 'Verifica la tua connessione internet o riprova tra poco.'
+                      : 'Tocca + in basso per creare il primo evento!',
+                  textAlign: TextAlign.center,
                   style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
                 ),
+                if (_networkError) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () => _loadData(forceRefresh: true),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
+                      'RIPROVA 🔄',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFACC15),
+                      foregroundColor: const Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
