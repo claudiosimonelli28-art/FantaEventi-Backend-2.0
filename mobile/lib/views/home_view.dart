@@ -21,6 +21,7 @@ import '../widgets/tutorial_spotlight_overlay.dart';
 import '../services/tutorial_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/app_toast.dart';
+import '../services/push_notification_service.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -285,6 +286,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       _networkError = false;
       if (!silent) {
         _checkMostraGuidaIniziale();
+        unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
       }
     } catch (e) {
       if (_eventi.isEmpty) {

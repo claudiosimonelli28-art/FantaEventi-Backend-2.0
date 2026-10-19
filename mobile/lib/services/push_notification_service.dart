@@ -203,17 +203,37 @@ class PushNotificationService {
   }
 
   /// Sincronizza il token FCM dell'utente loggato su MongoDB Atlas
-  Future<void> syncCurrentDeviceToken({String? overrideToken}) async {
+  Future<void> syncCurrentDeviceToken({String? overrideToken, bool forceRefresh = false}) async {
     try {
       if (_messaging == null) {
         try {
           _messaging = FirebaseMessaging.instance;
         } catch (_) {}
       }
-      final token = overrideToken ?? await _messaging?.getToken();
+      if (_messaging == null) return;
+
+      final cur = ApiService().currentUser;
+      if (cur == null) return;
+
+      final prefs = await SharedPreferences.getInstance();
+      const String currentTokenBuildKey = 'fcm_token_build_v2_2';
+      final isNewBuild = prefs.getString('fcm_token_build') != currentTokenBuildKey;
+
+      if (forceRefresh || isNewBuild) {
+        try {
+          await _messaging!.deleteToken();
+          await prefs.setString('fcm_token_build', currentTokenBuildKey);
+          debugPrint('FCM Token resettato per garantire emissione token valida');
+        } catch (e) {
+          debugPrint('Notice deleteToken: $e');
+        }
+      }
+
+      final token = overrideToken ?? await _messaging!.getToken();
       if (token != null && token.isNotEmpty) {
         await ApiService().salvaFcmToken(token);
-        debugPrint('FCM Token registrato per l\'utente corrente: $token');
+        await prefs.setString('cached_fcm_token', token);
+        debugPrint('FCM Token registrato per l\'utente corrente (${cur.nome}): $token');
       }
     } catch (e) {
       debugPrint('Errore sync FCM token: $e');
@@ -418,7 +438,7 @@ class PushNotificationService {
       final credentials = ServiceAccountCredentials.fromJson(sa);
       final client = await clientViaServiceAccount(credentials, [
         'https://www.googleapis.com/auth/firebase.messaging',
-      ]);
+      ]).timeout(const Duration(seconds: 10));
 
       _cachedAccessToken = client.credentials.accessToken.data;
       _tokenExpiry = client.credentials.accessToken.expiry;
@@ -448,12 +468,16 @@ class PushNotificationService {
 
       debugPrint('Inizio invio push a ${tokens.length} token per $destinatariNicknames: $titolo');
       for (final token in tokens) {
-        await _sendFcmV1(
-          token: token,
-          titolo: titolo,
-          messaggio: messaggio,
-          data: data ?? {},
-        );
+        try {
+          await _sendFcmV1(
+            token: token,
+            titolo: titolo,
+            messaggio: messaggio,
+            data: data ?? {},
+          );
+        } catch (e) {
+          debugPrint('Errore invio push singolo token: $e');
+        }
       }
     } catch (e) {
       debugPrint('Errore inviaPushAUtenti: $e');
@@ -516,12 +540,18 @@ class PushNotificationService {
           'Authorization': 'Bearer $accessToken',
         },
         body: jsonEncode(payload),
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         debugPrint('✅ Push FCM v1 inviata con successo a $token ($titolo)');
       } else {
         debugPrint('❌ Esito risposta FCM v1 (${response.statusCode}): ${response.body}');
+        if (response.statusCode == 404 ||
+            response.body.contains('UNREGISTERED') ||
+            response.body.contains('NotRegistered')) {
+          debugPrint('🧹 Rimozione automatica token FCM non più valido: $token');
+          unawaited(ApiService().rimuoviFcmTokenGlobale(token));
+        }
       }
     } catch (e) {
       debugPrint('Errore durante la chiamata HTTP a FCM v1: $e');
