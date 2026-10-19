@@ -1870,6 +1870,16 @@ class ApiService {
             if (!isCreatore && !isPartecipante && !isInvitato) {
               continue;
             }
+
+            // Se l'utente era solo un invitato e non ha confermato la partecipazione:
+            // - se l'evento è concluso, viene escluso dal feed
+            // - se l'evento è iniziato da più di 30 minuti, si auto-elimina dal feed!
+            if (!isCreatore && !isPartecipante && isInvitato) {
+              final bool isInizioPassatoDa30Min = now.isAfter(dtStart.add(const Duration(minutes: 30)));
+              if (isConcluso || isInizioPassatoDa30Min) {
+                continue;
+              }
+            }
           }
 
           final Map<String, dynamic> jsonMap = {
@@ -1922,6 +1932,32 @@ class ApiService {
         if (response.statusCode == 200 && !response.body.contains('<html>')) {
           final List<dynamic> data = jsonDecode(response.body) as List<dynamic>;
           final list = data.map((json) => Evento.fromJson(json as Map<String, dynamic>)).toList();
+          if (_currentUser != null) {
+            final myName = _currentUser!.nome.trim().toLowerCase();
+            final myNick = _currentUser!.nickname.trim().toLowerCase();
+            final myId = _currentUser!.id.trim().toLowerCase();
+            final now = DateTime.now();
+
+            list.removeWhere((ev) {
+              final cleanCreator = ev.creatore.trim().toLowerCase();
+              final bool isCreatore = cleanCreator == myName || cleanCreator == myNick || cleanCreator == myId;
+              final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
+                final pLow = p.trim().toLowerCase();
+                return pLow == myName || pLow == myNick || pLow == myId;
+              });
+              final bool isInvitato = ev.invitati.any((i) {
+                final iLow = i.trim().toLowerCase();
+                return iLow == myName || iLow == myNick || iLow == myId;
+              });
+
+              if (!isCreatore && !isPartecipante && !isInvitato) return true;
+              if (!isCreatore && !isPartecipante && isInvitato) {
+                final bool isInizioPassatoDa30Min = now.isAfter(ev.data.add(const Duration(minutes: 30)));
+                if (ev.isConcluso || isInizioPassatoDa30Min) return true;
+              }
+              return false;
+            });
+          }
           _eventi.clear();
           _eventi.addAll(list);
           return list;
@@ -2406,6 +2442,10 @@ class ApiService {
             }
           }
 
+          final evDoc = evId.isNotEmpty ? (validEvents[evIdLower] ?? (evClean.isNotEmpty ? validEvents[evClean] : null)) : null;
+          final String evStato = evDoc != null ? (evDoc['stato'] ?? '').toString().toLowerCase() : '';
+          final String evDataInizio = evDoc != null ? (evDoc['data'] ?? '').toString() : '';
+
           seenKeys.add(idStr);
           notificheList.add({
             'id': idStr,
@@ -2414,6 +2454,8 @@ class ApiService {
             'titolo': d['titolo'] ?? 'Nuova Notifica',
             'messaggio': d['messaggio'] ?? '',
             'eventoId': d['eventoId'] ?? '',
+            'eventoStato': evStato,
+            'eventoDataInizio': evDataInizio,
             'bonusId': d['bonusId'] ?? '',
             'bonusTitolo': d['bonusTitolo'] ?? '',
             'tipo': d['tipo'] ?? 'invito',
@@ -2472,8 +2514,9 @@ class ApiService {
               if (evDoc != null) {
                 final dateStr = evDoc['data']?.toString() ?? '';
                 final dtStart = DateTime.tryParse(dateStr);
-                if (dtStart != null && DateTime.now().isAfter(dtStart)) {
-                  throw Exception('Questo evento è già iniziato! L\'iscrizione è ormai chiusa.');
+                final statoEv = (evDoc['stato'] ?? '').toString().toLowerCase();
+                if (statoEv == 'in_corso' || statoEv == 'concluso' || (dtStart != null && DateTime.now().isAfter(dtStart))) {
+                  throw Exception('Questo evento è già iniziato o concluso! L\'iscrizione è ormai chiusa.');
                 }
 
                 final pullList = {
@@ -2509,7 +2552,7 @@ class ApiService {
         }
       }
     } catch (e) {
-      if (e is Exception && e.toString().contains('Questo evento è già iniziato')) {
+      if (e is Exception && (e.toString().contains('Questo evento è già iniziato') || e.toString().contains('iscrizione è ormai chiusa'))) {
         rethrow;
       }
     }
@@ -2706,9 +2749,29 @@ class ApiService {
           evMatch = evMatch.copyWith(
             titolo: evDoc['titolo'] ?? evDoc['nome'] ?? evMatch.titolo,
             propostoDa: evDoc['propostoDa'] ?? evDoc['creatore'] ?? evMatch.propostoDa,
+            stato: evDoc['stato'] ?? evMatch.stato,
             partecipanti: (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.partecipanti,
             invitati: (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? evMatch.invitati,
           );
+        }
+
+        // Verifica che l'utente sia creatore o partecipante effettivo dell'evento
+        final myName = (_currentUser?.nome ?? curUserNick).trim().toLowerCase();
+        final myAlias = (_currentUser?.nickname ?? '').trim().toLowerCase();
+        final cleanCreator = evMatch.propostoDa.trim().toLowerCase();
+        final bool isCreator = cleanCreator.isNotEmpty && (cleanCreator == myName || (myAlias.isNotEmpty && cleanCreator == myAlias));
+        final bool isParticipant = isCreator || evMatch.partecipanti.any((p) {
+          final pLow = p.trim().toLowerCase();
+          return pLow == myName || (myAlias.isNotEmpty && pLow == myAlias);
+        });
+
+        if (!isParticipant) {
+          throw Exception('Non puoi proporre bonus/malus per un evento a cui non partecipi!');
+        }
+
+        final statoEv = evMatch.stato.trim().toLowerCase();
+        if (statoEv == 'concluso') {
+          throw Exception('Non puoi proporre bonus/malus per un evento già concluso!');
         }
 
         // 2. Controllo anti-duplicazione: verifica se esiste già una proposta identica per lo stesso evento

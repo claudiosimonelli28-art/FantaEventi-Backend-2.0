@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
+import '../models/utente.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/event_card.dart';
 import '../widgets/bonus_malus_card.dart';
@@ -256,6 +257,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
       final meBonus = await _apiService.getBonusMalusList();
       final meVoti = await _apiService.getVotazioni();
+      _apiService.getUtenti().catchError((_) => <Utente>[]);
 
       final curUser = _apiService.currentUser;
       final nick = curUser?.nome ?? 'Cloud';
@@ -1294,6 +1296,20 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               evento: ev,
               currentUserNickname: userNick,
               onTap: () async {
+                final cleanUser = userNick.trim().toLowerCase();
+                final cleanCreator = ev.creatore.trim().toLowerCase();
+                final bool isCreatore = cleanCreator.isNotEmpty && cleanCreator == cleanUser;
+                final bool isPartecipante = isCreatore || ev.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
+
+                if (!isPartecipante && (ev.isInCorso || ev.isConcluso)) {
+                  AppToast.showWarning(
+                    context,
+                    'Iscrizioni Chiuse',
+                    'Non puoi accedere a questo evento: le iscrizioni si sono chiuse con l\'inizio dell\'evento.',
+                  );
+                  return;
+                }
+
                 if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
                     TutorialController.instance.isTutorialEvent(ev)) {
                   TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);

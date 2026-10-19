@@ -181,7 +181,7 @@ class EventCard extends StatelessWidget {
                     isConcluso
                         ? 'EVENTO CONCLUSO'
                         : (isInCorso && !isPartecipante)
-                            ? 'ISCRIZIONI CHIUSE (IN CORSO)'
+                            ? (isInvitato ? 'TEMPO SCADUTO (EVENTO IN CORSO)' : 'ISCRIZIONI CHIUSE (IN CORSO)')
                             : isPartecipante
                                 ? 'GIÀ PARTECIPANTE'
                                 : isInvitato

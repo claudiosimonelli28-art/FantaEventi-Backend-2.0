@@ -94,7 +94,14 @@ class _EventDetailViewState extends State<EventDetailView> {
 
       List<BonusMalus> bmList = [];
       try {
-        bmList = await _apiService.getBonusMalusList();
+        final results = await Future.wait([
+          _apiService.getBonusMalusList().catchError((_) => <BonusMalus>[]),
+          _apiService.getUtenti().catchError((_) => <Utente>[]),
+          _apiService.getRichiesteVarEvento(_evento.id).catchError((_) => <RichiestaVar>[]),
+        ]);
+        bmList = results[0] as List<BonusMalus>;
+        final varReqs = results[2] as List<RichiestaVar>;
+
         for (var bm in bmList) {
           final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
               bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
@@ -106,8 +113,6 @@ class _EventDetailViewState extends State<EventDetailView> {
             }
           }
         }
-        _apiService.getUtenti().catchError((_) => <Utente>[]);
-        final varReqs = await _apiService.getRichiesteVarEvento(_evento.id);
         if (mounted) {
           setState(() {
             _richiesteVarEvento = varReqs;
@@ -673,9 +678,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                             ),
                           ),
                         ),
-                      if (!giaPartecipa) const SizedBox(width: 12),
+                      if (!giaPartecipa && (giaPartecipa || isCreatore)) const SizedBox(width: 12),
 
-                      if (_evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
+                      if ((giaPartecipa || isCreatore) && _evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
                         Expanded(
                           child: ElevatedButton.icon(
                             key: TutorialController.instance.isTutorialEvent(_evento) ? TutorialController.instance.keyProponiBonus : null,

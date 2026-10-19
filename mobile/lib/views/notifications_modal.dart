@@ -575,54 +575,107 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                           ),
                                         ] else if (isPending) ...[
                                           const SizedBox(height: 12),
-                                          if (_respondingNotificaId == notId) ...[
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                                              decoration: BoxDecoration(
-                                                color: _respondingAction == 'accetta'
-                                                    ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                                                    : const Color(0xFFEF4444).withValues(alpha: 0.15),
-                                                borderRadius: BorderRadius.circular(10),
-                                                border: Border.all(
-                                                  color: _respondingAction == 'accetta'
-                                                      ? const Color(0xFF10B981)
-                                                      : const Color(0xFFEF4444),
-                                                  width: 1.5,
+                                          () {
+                                            String evStato = (not['eventoStato'] ?? '').toString().toLowerCase();
+                                            final String evDataStr = (not['eventoDataInizio'] ?? '').toString();
+                                            DateTime? evDataInizio = evDataStr.isNotEmpty ? DateTime.tryParse(evDataStr) : null;
+                                            final String evId = (not['eventoId'] ?? '').toString().trim().toLowerCase();
+
+                                            if ((evStato.isEmpty || evDataInizio == null) && evId.isNotEmpty) {
+                                              for (final e in _apiService.eventi) {
+                                                if (e.id.toLowerCase() == evId || e.titolo.toLowerCase() == evId) {
+                                                  if (evStato.isEmpty) evStato = e.stato.toLowerCase();
+                                                  evDataInizio ??= e.data;
+                                                  break;
+                                                }
+                                              }
+                                            }
+
+                                            final bool isIscrizioniChiuse = isInvito && (
+                                              evStato == 'in_corso' ||
+                                              evStato == 'concluso' ||
+                                              (evDataInizio != null && DateTime.now().isAfter(evDataInizio))
+                                            );
+
+                                            if (isIscrizioniChiuse) {
+                                              return Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4)),
                                                 ),
-                                              ),
-                                              child: Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  SizedBox(
-                                                    width: 16,
-                                                    height: 16,
-                                                    child: CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                                        _respondingAction == 'accetta'
-                                                            ? const Color(0xFF10B981)
-                                                            : const Color(0xFFEF4444),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(Icons.timer_off_rounded, color: Color(0xFFEF4444), size: 16),
+                                                    const SizedBox(width: 8),
+                                                    Flexible(
+                                                      child: Text(
+                                                        '⚠️ ISCRIZIONI CHIUSE: L\'EVENTO È GIÀ INIZIATO',
+                                                        style: GoogleFonts.poppins(
+                                                          color: const Color(0xFFEF4444),
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.bold,
+                                                        ),
+                                                        textAlign: TextAlign.center,
                                                       ),
                                                     ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            if (_respondingNotificaId == notId) {
+                                              return Container(
+                                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                                                decoration: BoxDecoration(
+                                                  color: _respondingAction == 'accetta'
+                                                      ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                                                      : const Color(0xFFEF4444).withValues(alpha: 0.15),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  border: Border.all(
+                                                    color: _respondingAction == 'accetta'
+                                                        ? const Color(0xFF10B981)
+                                                        : const Color(0xFFEF4444),
+                                                    width: 1.5,
                                                   ),
-                                                  const SizedBox(width: 10),
-                                                  Text(
-                                                    _respondingAction == 'accetta'
-                                                        ? '⏳ Accettazione in corso...'
-                                                        : '⏳ Rifiuto in corso...',
-                                                    style: GoogleFonts.poppins(
-                                                      color: _respondingAction == 'accetta'
-                                                          ? const Color(0xFF10B981)
-                                                          : const Color(0xFFEF4444),
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 13,
+                                                ),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child: CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                                          _respondingAction == 'accetta'
+                                                              ? const Color(0xFF10B981)
+                                                              : const Color(0xFFEF4444),
+                                                        ),
+                                                      ),
                                                     ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ] else ...[
-                                            Row(
+                                                    const SizedBox(width: 10),
+                                                    Text(
+                                                      _respondingAction == 'accetta'
+                                                          ? '⏳ Accettazione in corso...'
+                                                          : '⏳ Rifiuto in corso...',
+                                                      style: GoogleFonts.poppins(
+                                                        color: _respondingAction == 'accetta'
+                                                            ? const Color(0xFF10B981)
+                                                            : const Color(0xFFEF4444),
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 13,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              );
+                                            }
+
+                                            return Row(
                                               children: [
                                                 Expanded(
                                                   child: ElevatedButton.icon(
@@ -660,8 +713,8 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                                   ),
                                                 ),
                                               ],
-                                            ),
-                                          ],
+                                            );
+                                          }(),
                                         ],
                                       ],
                                     ),

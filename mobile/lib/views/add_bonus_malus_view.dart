@@ -43,7 +43,17 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
   void initState() {
     super.initState();
     if (widget.evento != null && !widget.evento!.isConcluso) {
-      _eventoSelezionato = widget.evento;
+      final meUser = _apiService.currentUser;
+      final myNick = meUser?.nome.trim().toLowerCase() ?? '';
+      final myAlias = meUser?.nickname.trim().toLowerCase() ?? '';
+      final isCreatore = widget.evento!.creatore.trim().toLowerCase() == myNick || (myAlias.isNotEmpty && widget.evento!.creatore.trim().toLowerCase() == myAlias);
+      final isPartecipante = isCreatore || widget.evento!.partecipanti.any((p) {
+        final pLow = p.trim().toLowerCase();
+        return pLow == myNick || (myAlias.isNotEmpty && pLow == myAlias);
+      });
+      if (isPartecipante) {
+        _eventoSelezionato = widget.evento;
+      }
     }
     if (TutorialController.instance.stage == TutorialStage.step6_in_add_bonus) {
       _titoloController.text = 'Bicchierata alla goccia 🍺';
@@ -78,6 +88,24 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
           context,
           'Evento Concluso',
           'Questo evento è concluso. Non puoi proporre bonus/malus per eventi chiusi.',
+        );
+        return;
+      }
+
+      final meUser = _apiService.getCurrentUser();
+      final myNick = meUser.nome.trim().toLowerCase();
+      final myAlias = meUser.nickname.trim().toLowerCase();
+      final isCreatore = _eventoSelezionato!.creatore.trim().toLowerCase() == myNick || (myAlias.isNotEmpty && _eventoSelezionato!.creatore.trim().toLowerCase() == myAlias);
+      final isPartecipante = isCreatore || _eventoSelezionato!.partecipanti.any((p) {
+        final pLow = p.trim().toLowerCase();
+        return pLow == myNick || (myAlias.isNotEmpty && pLow == myAlias);
+      });
+
+      if (!isPartecipante) {
+        AppToast.showWarning(
+          context,
+          'Accesso Negato',
+          'Non puoi proporre bonus/malus per un evento a cui non partecipi!',
         );
         return;
       }
@@ -223,8 +251,23 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                   FutureBuilder<List<Evento>>(
                     future: _apiService.getEventi(),
                     builder: (context, snapshot) {
-                      // Filtra rigorosamente solo gli eventi attivi e non conclusi
-                      final eventi = (snapshot.data ?? []).where((e) => !e.isConcluso).toList();
+                      final meUser = _apiService.currentUser;
+                      final myNick = meUser?.nome.trim().toLowerCase() ?? '';
+                      final myAlias = meUser?.nickname.trim().toLowerCase() ?? '';
+
+                      // Filtra rigorosamente solo gli eventi attivi e non conclusi a cui l'utente partecipa
+                      final eventi = (snapshot.data ?? []).where((e) {
+                        if (e.isConcluso) return false;
+                        final isCreatore = e.creatore.trim().toLowerCase() == myNick ||
+                            (myAlias.isNotEmpty && e.creatore.trim().toLowerCase() == myAlias);
+                        final isPartecipante = isCreatore ||
+                            e.partecipanti.any((p) {
+                              final pLow = p.trim().toLowerCase();
+                              return pLow == myNick || (myAlias.isNotEmpty && pLow == myAlias);
+                            });
+                        return isPartecipante;
+                      }).toList();
+
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return Container(
                           margin: const EdgeInsets.only(bottom: 20),
@@ -252,7 +295,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
-                                  'Nessun evento attivo disponibile.\nTutti gli eventi risultano conclusi.',
+                                  'Nessun evento attivo disponibile a cui partecipi.\nTutti gli eventi risultano conclusi o non ne fai parte.',
                                   style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
                                 ),
                               ),
