@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - master
+      - refactor/mvvm
 
 permissions:
   contents: write
