@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
-import '../services/api_service.dart';
+import '../viewmodels/var_view_model.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/context_info_modal.dart';
 
@@ -25,159 +25,89 @@ class VarSubmissionModal extends StatefulWidget {
 }
 
 class _VarSubmissionModalState extends State<VarSubmissionModal> {
-  final ApiService _apiService = ApiService();
-  final ImagePicker _picker = ImagePicker();
+  late final VarSubmissionViewModel _viewModel;
   final TextEditingController _descrizioneController = TextEditingController();
-
-  String? _fotoBase64;
-  String? _selectedCulprit;
-  String? _selectedJudge;
-  final Set<String> _selectedWitnesses = {};
-  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    final myNick = _apiService.currentUser?.nickname ?? '';
-    final isOrganizer = widget.evento.creatore.trim().toLowerCase() == myNick.trim().toLowerCase();
-
-    // Se l'organizzatore richiede il VAR, pre-imposta il primo partecipante come giudice
-    if (isOrganizer) {
-      final eligibleJudges = widget.evento.partecipanti
-          .where((p) => p.trim().toLowerCase() != myNick.trim().toLowerCase())
-          .toList();
-      if (eligibleJudges.isNotEmpty) {
-        _selectedJudge = eligibleJudges.first;
-      }
-    }
-
-    // Se è un Malus, pre-seleziona il primo partecipante diverso da me come colpevole
-    if (widget.bonusMalus.punti < 0) {
-      final eligibleCulprits = widget.evento.partecipanti
-          .where((p) => p.trim().toLowerCase() != myNick.trim().toLowerCase())
-          .toList();
-      if (eligibleCulprits.isNotEmpty) {
-        _selectedCulprit = eligibleCulprits.first;
-      }
-    }
+    _viewModel = VarSubmissionViewModel(
+      evento: widget.evento,
+      bonusMalus: widget.bonusMalus,
+    );
   }
 
   @override
   void dispose() {
     _descrizioneController.dispose();
+    _viewModel.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage(ImageSource source) async {
-    try {
-      final XFile? image = await _picker.pickImage(
-        source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 70,
-      );
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        setState(() {
-          _fotoBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        AppToast.showError(context, 'Errore Immagine', 'Impossibile caricare l\'immagine.');
-      }
+    final ok = await _viewModel.pickImage(source);
+    if (!ok && mounted) {
+      AppToast.showError(context, 'Errore Immagine', 'Impossibile caricare l\'immagine.');
     }
   }
 
   Future<void> _inviaRichiesta() async {
-    final curUser = _apiService.currentUser;
-    if (curUser == null) return;
-
-    final myNick = curUser.nickname;
-    final isBonus = widget.bonusMalus.punti > 0;
-    final isOrganizer = widget.evento.creatore.trim().toLowerCase() == myNick.trim().toLowerCase();
-
-    final String bersaglio = isBonus ? myNick : (_selectedCulprit ?? '');
-    if (bersaglio.isEmpty) {
-      AppToast.showWarning(context, 'Giocatore Mancante', 'Seleziona il giocatore a cui si riferisce l\'infrazione!');
-      return;
-    }
-
-    final String judge = isOrganizer ? (_selectedJudge ?? '') : widget.evento.creatore;
-    if (judge.isEmpty) {
-      AppToast.showWarning(context, 'Giudice Mancante', 'Seleziona un Co-Organizzatore che farà da Giudice!');
-      return;
-    }
-
-    final descrizione = _descrizioneController.text.trim();
-    if (descrizione.isEmpty) {
-      AppToast.showWarning(context, 'Descrizione Mancante', 'Inserisci una breve descrizione dell\'accaduto!');
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    final resId = await _apiService.inviaRichiestaVar(
-      eventoId: widget.evento.id,
-      eventoTitolo: widget.evento.titolo,
-      tipo: isBonus ? 'bonus' : 'malus',
-      bonusMalusId: widget.bonusMalus.id,
-      bonusMalusTitolo: widget.bonusMalus.titolo,
-      punti: widget.bonusMalus.punti,
-      richiedente: myNick,
-      bersaglio: bersaglio,
-      descrizione: descrizione,
-      fotoBase64: _fotoBase64,
-      testimoni: _selectedWitnesses.toList(),
-      giudice: judge,
-      penalitaPunti: widget.evento.penalitaFalsaTestimonianza,
-    );
-
-    if (mounted) {
-      setState(() {
-        _isSubmitting = false;
-      });
-
-      if (resId != null) {
-        Navigator.pop(context);
-        AppToast.showSuccess(
-          context,
-          'Richiesta VAR Inoltrata 📺',
-          'Richiesta inviata al Giudice $judge! Testimoni allertati.',
-        );
-        widget.onSubmitted();
-      } else {
-        AppToast.showError(
-          context,
-          'Errore VAR',
-          'Errore durante l\'invio della richiesta VAR. Riprova.',
-        );
+    try {
+      final resId = await _viewModel.inviaRichiesta(_descrizioneController.text);
+      if (mounted) {
+        if (resId != null) {
+          Navigator.pop(context);
+          final judge = _viewModel.isOrganizer
+              ? (_viewModel.selectedJudge ?? '')
+              : widget.evento.creatore;
+          AppToast.showSuccess(
+            context,
+            'Richiesta VAR Inoltrata 📺',
+            'Richiesta inviata al Giudice $judge! Testimoni allertati.',
+          );
+          widget.onSubmitted();
+        } else {
+          AppToast.showError(
+            context,
+            'Errore VAR',
+            'Errore durante l\'invio della richiesta VAR. Riprova.',
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        final msg = e.toString().replaceAll('Exception: ', '');
+        if (msg.contains('Mancante') || msg.contains('Seleziona') || msg.contains('Inserisci')) {
+          AppToast.showWarning(context, 'Attenzione', msg);
+        } else {
+          AppToast.showError(context, 'Errore VAR', msg);
+        }
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final curUser = _apiService.currentUser;
-    final myNick = curUser?.nickname ?? '';
-    final isBonus = widget.bonusMalus.punti > 0;
-    final isOrganizer = widget.evento.creatore.trim().toLowerCase() == myNick.trim().toLowerCase();
-    final effectiveJudge = isOrganizer ? (_selectedJudge ?? '') : widget.evento.creatore;
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final myNick = _viewModel.myNick;
+        final isBonus = _viewModel.isBonus;
+        final isOrganizer = _viewModel.isOrganizer;
+        final effectiveJudge = isOrganizer ? (_viewModel.selectedJudge ?? '') : widget.evento.creatore;
 
-    // Testimoni selezionabili: partecipanti esclusi richiedente, bersaglio e arbitro
-    final eligibleWitnesses = widget.evento.partecipanti.where((p) {
-      final pLower = p.trim().toLowerCase();
-      if (pLower == myNick.trim().toLowerCase()) return false;
-      if (pLower == effectiveJudge.trim().toLowerCase()) return false;
-      if (!isBonus && _selectedCulprit != null && pLower == _selectedCulprit!.trim().toLowerCase()) return false;
-      return true;
-    }).toList();
+        // Testimoni selezionabili: partecipanti esclusi richiedente, bersaglio e arbitro
+        final eligibleWitnesses = widget.evento.partecipanti.where((p) {
+          final pLower = p.trim().toLowerCase();
+          if (pLower == myNick.trim().toLowerCase()) return false;
+          if (pLower == effectiveJudge.trim().toLowerCase()) return false;
+          if (!isBonus && _viewModel.selectedCulprit != null && pLower == _viewModel.selectedCulprit!.trim().toLowerCase()) return false;
+          return true;
+        }).toList();
 
-    final colorAccent = isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444);
+        final colorAccent = isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444);
 
-    return Container(
+        return Container(
       padding: EdgeInsets.only(
         top: 20,
         left: 20,
@@ -306,7 +236,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: _selectedJudge,
+                    value: _viewModel.selectedJudge,
                     dropdownColor: const Color(0xFF0F172A),
                     isExpanded: true,
                     hint: const Text('Seleziona un Co-Organizzatore', style: TextStyle(color: Colors.white54)),
@@ -318,10 +248,10 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                             ))
                         .toList(),
                     onChanged: (val) {
-                      setState(() {
-                        _selectedJudge = val;
-                        if (val != null) _selectedWitnesses.remove(val);
-                      });
+                      _viewModel.selectJudge(val);
+                      if (val != null && _viewModel.selectedWitnesses.contains(val)) {
+                        _viewModel.toggleWitness(val);
+                      }
                     },
                   ),
                 ),
@@ -349,7 +279,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: _selectedCulprit,
+                    value: _viewModel.selectedCulprit,
                     dropdownColor: const Color(0xFF0F172A),
                     isExpanded: true,
                     hint: const Text('Seleziona il giocatore', style: TextStyle(color: Colors.white54)),
@@ -361,10 +291,10 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                             ))
                         .toList(),
                     onChanged: (val) {
-                      setState(() {
-                        _selectedCulprit = val;
-                        if (val != null) _selectedWitnesses.remove(val);
-                      });
+                      _viewModel.selectCulprit(val);
+                      if (val != null && _viewModel.selectedWitnesses.contains(val)) {
+                        _viewModel.toggleWitness(val);
+                      }
                     },
                   ),
                 ),
@@ -443,7 +373,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
               ),
             ),
             const SizedBox(height: 8),
-            if (_fotoBase64 != null) ...[
+            if (_viewModel.fotoBase64 != null) ...[
               Stack(
                 alignment: Alignment.topRight,
                 children: [
@@ -455,7 +385,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                       border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
                       image: DecorationImage(
                         image: MemoryImage(
-                          base64Decode(_fotoBase64!.split(',').last),
+                          base64Decode(_viewModel.fotoBase64!.split(',').last),
                         ),
                         fit: BoxFit.cover,
                       ),
@@ -467,11 +397,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                       radius: 14,
                       child: Icon(Icons.close, color: Colors.white, size: 16),
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _fotoBase64 = null;
-                      });
-                    },
+                    onPressed: _viewModel.removePhoto,
                   ),
                 ],
               ),
@@ -544,7 +470,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                 spacing: 8,
                 runSpacing: 8,
                 children: eligibleWitnesses.map((w) {
-                  final isSelected = _selectedWitnesses.contains(w);
+                  final isSelected = _viewModel.selectedWitnesses.contains(w);
                   return FilterChip(
                     label: Text(w),
                     selected: isSelected,
@@ -562,15 +488,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                         color: isSelected ? const Color(0xFF6366F1) : const Color(0xFF334155),
                       ),
                     ),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedWitnesses.add(w);
-                        } else {
-                          _selectedWitnesses.remove(w);
-                        }
-                      });
-                    },
+                    onSelected: (_) => _viewModel.toggleWitness(w),
                   );
                 }).toList(),
               ),
@@ -578,8 +496,8 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
 
             // TASTO DI INVIO AL VAR
             ElevatedButton.icon(
-              onPressed: _isSubmitting ? null : _inviaRichiesta,
-              icon: _isSubmitting
+              onPressed: _viewModel.isSubmitting ? null : _inviaRichiesta,
+              icon: _viewModel.isSubmitting
                   ? const SizedBox(
                       width: 18,
                       height: 18,
@@ -587,7 +505,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                     )
                   : const Text('📺', style: TextStyle(fontSize: 16)),
               label: Text(
-                _isSubmitting
+                _viewModel.isSubmitting
                     ? 'INVIO IN CORSO...'
                     : (isBonus ? 'INVIA RICHIESTA AL VAR' : 'INVIA DENUNCIA AL VAR'),
                 style: GoogleFonts.poppins(
@@ -605,6 +523,8 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
           ],
         ),
       ),
+    );
+      },
     );
   }
 }

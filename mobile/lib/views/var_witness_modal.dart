@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/richiesta_var.dart';
-import '../services/api_service.dart';
+import '../viewmodels/var_view_model.dart';
 import '../widgets/app_toast.dart';
 
 class VarWitnessModal extends StatefulWidget {
@@ -21,36 +19,19 @@ class VarWitnessModal extends StatefulWidget {
 }
 
 class _VarWitnessModalState extends State<VarWitnessModal> {
-  final ApiService _apiService = ApiService();
-  RichiestaVar? _richiesta;
-  Uint8List? _cachedPhotoBytes;
-  bool _isLoading = true;
-  bool _isVoting = false;
+  late final VarDetailViewModel _viewModel;
 
   @override
   void initState() {
     super.initState();
-    _caricaRichiesta();
+    _viewModel = VarDetailViewModel(widget.varId);
+    _viewModel.caricaRichiesta();
   }
 
-  Future<void> _caricaRichiesta() async {
-    setState(() {
-      _isLoading = true;
-    });
-    final req = await _apiService.getRichiestaVar(widget.varId);
-    Uint8List? bytes;
-    if (req?.fotoBase64 != null && req!.fotoBase64!.isNotEmpty) {
-      try {
-        bytes = base64Decode(req.fotoBase64!.split(',').last);
-      } catch (_) {}
-    }
-    if (mounted) {
-      setState(() {
-        _richiesta = req;
-        _cachedPhotoBytes = bytes;
-        _isLoading = false;
-      });
-    }
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
   }
 
   void _apriFotoFullScreen(Uint8List imageBytes) {
@@ -103,24 +84,8 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
   }
 
   Future<void> _esprimiVoto(bool conferma) async {
-    final curUser = _apiService.currentUser;
-    if (curUser == null || _richiesta == null) return;
-
-    setState(() {
-      _isVoting = true;
-    });
-
-    final success = await _apiService.votaTestimonianzaVar(
-      varId: widget.varId,
-      testimoneNick: curUser.nickname,
-      conferma: conferma,
-    );
-
+    final success = await _viewModel.votaTestimonianza(conferma);
     if (mounted) {
-      setState(() {
-        _isVoting = false;
-      });
-
       if (success) {
         Navigator.pop(context);
         AppToast.showInfo(
@@ -143,7 +108,15 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final isLoading = _viewModel.isLoading;
+        final richiesta = _viewModel.richiesta;
+        final cachedPhotoBytes = _viewModel.cachedPhotoBytes;
+        final isVoting = _viewModel.isProcessing;
+
+        if (isLoading) {
       return Container(
         padding: const EdgeInsets.all(40),
         decoration: const BoxDecoration(
@@ -156,7 +129,7 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
       );
     }
 
-    if (_richiesta == null) {
+    if (richiesta == null) {
       return Container(
         padding: const EdgeInsets.all(30),
         decoration: const BoxDecoration(
@@ -177,9 +150,8 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
       );
     }
 
-    final req = _richiesta!;
-    final curUser = _apiService.currentUser;
-    final myNick = (curUser?.nickname ?? '').trim().toLowerCase();
+    final req = richiesta;
+    final myNick = _viewModel.currentUserNick.trim().toLowerCase();
     final bool hasAlreadyVoted = req.votiTestimoni.containsKey(myNick);
     final bool? myVote = req.votiTestimoni[myNick];
     final bool isAlreadyDecided = !req.isPending;
@@ -316,14 +288,14 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
             const SizedBox(height: 14),
 
             // FOTO ALLEGATA
-            if (_cachedPhotoBytes != null) ...[
+            if (cachedPhotoBytes != null) ...[
               Text(
                 '📸 Prova Fotografica (Tocca per ingrandire):',
                 style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
               ),
               const SizedBox(height: 8),
               InkWell(
-                onTap: () => _apriFotoFullScreen(_cachedPhotoBytes!),
+                onTap: () => _apriFotoFullScreen(cachedPhotoBytes),
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   height: 160,
@@ -331,7 +303,7 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
                     image: DecorationImage(
-                      image: MemoryImage(_cachedPhotoBytes!),
+                      image: MemoryImage(cachedPhotoBytes),
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -419,7 +391,7 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _isVoting ? null : () => _esprimiVoto(true),
+                      onPressed: isVoting ? null : () => _esprimiVoto(true),
                       icon: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
                       label: Text(
                         'CONFERMO ✅',
@@ -436,7 +408,7 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _isVoting ? null : () => _esprimiVoto(false),
+                      onPressed: isVoting ? null : () => _esprimiVoto(false),
                       icon: const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
                       label: Text(
                         'NEGO ❌',
@@ -456,6 +428,8 @@ class _VarWitnessModalState extends State<VarWitnessModal> {
           ],
         ),
       ),
+    );
+      },
     );
   }
 }

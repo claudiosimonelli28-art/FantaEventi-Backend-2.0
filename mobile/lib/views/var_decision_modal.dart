@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/richiesta_var.dart';
-import '../services/api_service.dart';
+import '../viewmodels/var_view_model.dart';
 import '../widgets/app_toast.dart';
 
 class VarDecisionModal extends StatefulWidget {
@@ -21,38 +19,19 @@ class VarDecisionModal extends StatefulWidget {
 }
 
 class _VarDecisionModalState extends State<VarDecisionModal> {
-  final ApiService _apiService = ApiService();
-  RichiestaVar? _richiesta;
-  Uint8List? _cachedPhotoBytes;
-  bool _isLoading = true;
-  bool _isProcessing = false;
-  String? _decisioneScelta; // 'convalida' | 'respingi'
-  bool _sanzionaFalsaTestimonianza = true;
+  late final VarDetailViewModel _viewModel;
 
   @override
   void initState() {
     super.initState();
-    _caricaRichiesta();
+    _viewModel = VarDetailViewModel(widget.varId);
+    _viewModel.caricaRichiesta();
   }
 
-  Future<void> _caricaRichiesta() async {
-    setState(() {
-      _isLoading = true;
-    });
-    final req = await _apiService.getRichiestaVar(widget.varId);
-    Uint8List? bytes;
-    if (req?.fotoBase64 != null && req!.fotoBase64!.isNotEmpty) {
-      try {
-        bytes = base64Decode(req.fotoBase64!.split(',').last);
-      } catch (_) {}
-    }
-    if (mounted) {
-      setState(() {
-        _richiesta = req;
-        _cachedPhotoBytes = bytes;
-        _isLoading = false;
-      });
-    }
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
   }
 
   void _apriFotoFullScreen(Uint8List imageBytes) {
@@ -105,28 +84,9 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
   }
 
   Future<void> _prendiDecisione(bool approva) async {
-    final curUser = _apiService.currentUser;
-    if (curUser == null || _richiesta == null) return;
-
-    setState(() {
-      _isProcessing = true;
-      _decisioneScelta = approva ? 'convalida' : 'respingi';
-    });
-
     try {
-      final success = await _apiService.decidiRichiestaVar(
-        varId: widget.varId,
-        giudiceNick: curUser.nickname,
-        approva: approva,
-        sanzionaFalsaTestimonianza: !approva && _sanzionaFalsaTestimonianza,
-      );
-
+      final success = await _viewModel.decidiRichiesta(approva);
       if (mounted) {
-        setState(() {
-          _isProcessing = false;
-          _decisioneScelta = null;
-        });
-
         if (success) {
           Navigator.pop(context);
           if (approva) {
@@ -139,7 +99,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
             AppToast.showWarning(
               context,
               'Decisione VAR: Respinta ❌',
-              (_sanzionaFalsaTestimonianza && _richiesta!.isMalus)
+              (_viewModel.sanzionaFalsaTestimonianza && (_viewModel.richiesta?.isMalus ?? false))
                   ? 'Denuncia respinta! Applicata sanzione per falsa testimonianza.'
                   : 'Richiesta VAR respinta dal Giudice.',
             );
@@ -155,10 +115,6 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
       }
     } catch (_) {
       if (mounted) {
-        setState(() {
-          _isProcessing = false;
-          _decisioneScelta = null;
-        });
         AppToast.showError(
           context,
           'Errore Decisione VAR',
@@ -170,7 +126,17 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final isLoading = _viewModel.isLoading;
+        final richiesta = _viewModel.richiesta;
+        final cachedPhotoBytes = _viewModel.cachedPhotoBytes;
+        final isProcessing = _viewModel.isProcessing;
+        final decisioneScelta = _viewModel.decisioneScelta;
+        final sanzionaFalsaTestimonianza = _viewModel.sanzionaFalsaTestimonianza;
+
+        if (isLoading) {
       return Container(
         padding: const EdgeInsets.all(40),
         decoration: const BoxDecoration(
@@ -183,7 +149,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
       );
     }
 
-    if (_richiesta == null) {
+    if (richiesta == null) {
       return Container(
         padding: const EdgeInsets.all(30),
         decoration: const BoxDecoration(
@@ -204,7 +170,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
       );
     }
 
-    final req = _richiesta!;
+    final req = richiesta;
     final isBonus = req.isBonus;
     final colorAccent = isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444);
 
@@ -369,14 +335,14 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
             const SizedBox(height: 14),
 
             // ANTEPRIMA PROVA FOTOGRAFICA
-            if (_cachedPhotoBytes != null) ...[
+            if (cachedPhotoBytes != null) ...[
               Text(
                 '📸 Prova Fotografica (Tocca per ingrandire):',
                 style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
               ),
               const SizedBox(height: 8),
               InkWell(
-                onTap: () => _apriFotoFullScreen(_cachedPhotoBytes!),
+                onTap: () => _apriFotoFullScreen(cachedPhotoBytes),
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   height: 180,
@@ -384,7 +350,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
                     image: DecorationImage(
-                      image: MemoryImage(_cachedPhotoBytes!),
+                      image: MemoryImage(cachedPhotoBytes),
                       fit: BoxFit.cover,
                     ),
                   ),
@@ -543,12 +509,10 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                   child: Row(
                     children: [
                       Checkbox(
-                        value: _sanzionaFalsaTestimonianza,
+                        value: sanzionaFalsaTestimonianza,
                         activeColor: const Color(0xFFEF4444),
                         onChanged: (val) {
-                          setState(() {
-                            _sanzionaFalsaTestimonianza = val ?? true;
-                          });
+                          _viewModel.setSanzionaFalsaTestimonianza(val ?? true);
                         },
                       ),
                       Expanded(
@@ -568,8 +532,8 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _isProcessing ? null : () => _prendiDecisione(true),
-                      icon: (_isProcessing && _decisioneScelta == 'convalida')
+                      onPressed: isProcessing ? null : () => _prendiDecisione(true),
+                      icon: (isProcessing && decisioneScelta == 'convalida')
                           ? const SizedBox(
                               width: 16,
                               height: 16,
@@ -577,7 +541,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                             )
                           : const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
                       label: Text(
-                        (_isProcessing && _decisioneScelta == 'convalida')
+                        (isProcessing && decisioneScelta == 'convalida')
                             ? 'Convalida in corso...'
                             : 'CONVALIDA',
                         style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
@@ -595,8 +559,8 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: _isProcessing ? null : () => _prendiDecisione(false),
-                      icon: (_isProcessing && _decisioneScelta == 'respingi')
+                      onPressed: isProcessing ? null : () => _prendiDecisione(false),
+                      icon: (isProcessing && decisioneScelta == 'respingi')
                           ? const SizedBox(
                               width: 16,
                               height: 16,
@@ -604,7 +568,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
                             )
                           : const Icon(Icons.cancel_rounded, color: Colors.white, size: 18),
                       label: Text(
-                        (_isProcessing && _decisioneScelta == 'respingi')
+                        (isProcessing && decisioneScelta == 'respingi')
                             ? 'Rifiuto in corso...'
                             : 'RESPINGI',
                         style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold),
@@ -625,6 +589,8 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
           ],
         ),
       ),
+    );
+      },
     );
   }
 }
