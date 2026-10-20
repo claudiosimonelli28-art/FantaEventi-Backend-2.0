@@ -164,19 +164,12 @@ class ApiService {
 
   static String get _mongoUri {
     const envUri = String.fromEnvironment('MONGODB_URI');
-    if (envUri.isNotEmpty) return envUri;
-    return utf8.decode(base64.decode(
-        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOmNsYXVkaW9zaW1vbmVsbGlAY2x1c3RlcjAuemJicWZjci5tb25nb2RiLm5ldC9GYW50YUV2ZW50aT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHkmYXBwTmFtZT1DbHVzdGVyMA=='));
+    return envUri;
   }
-
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
-    if (envKey.isNotEmpty) return envKey;
-    return 'J9P85UUEuUPXGfwG-941e20fe51bd1e1b903adf425484e929acec2622f261bf5c8d9d1894267dac93-bisyekx'
-        .split('')
-        .reversed
-        .join();
+    return envKey;
   }
 
 
