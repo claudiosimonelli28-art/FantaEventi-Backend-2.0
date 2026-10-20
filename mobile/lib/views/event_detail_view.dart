@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../widgets/avatar_helper.dart';
@@ -14,16 +12,14 @@ import '../widgets/live_pulse_badge.dart';
 import '../widgets/animated_points_counter.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
-import '../models/votazione.dart';
 import '../models/bonus_malus.dart';
-import '../models/richiesta_var.dart';
-import '../services/api_service.dart';
 import 'add_bonus_malus_view.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/context_info_modal.dart';
+import '../viewmodels/event_detail_view_model.dart';
 
 class EventDetailView extends StatefulWidget {
   final Evento evento;
@@ -40,107 +36,38 @@ class EventDetailView extends StatefulWidget {
 }
 
 class _EventDetailViewState extends State<EventDetailView> {
-  final ApiService _apiService = ApiService();
-  final ImagePicker _picker = ImagePicker();
-  late Evento _evento;
-  final List<Votazione> _votazioniEvento = [];
-  List<BonusMalus> _allBonusMalus = [];
-  List<RichiestaVar> _richiesteVarEvento = [];
-  Set<String> _invitatiInSospeso = {};
-  List<String> _partecipantiConfermati = [];
-  Timer? _liveLeaderboardTimer;
+  late final EventDetailViewModel _viewModel;
 
   @override
   void initState() {
     super.initState();
-    _evento = widget.evento;
-    _calcolaCoerenzaInvitiEVotazioni();
-    _liveLeaderboardTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) {
-        _calcolaCoerenzaInvitiEVotazioni();
-      }
-    });
+    _viewModel = EventDetailViewModel(widget.evento);
+    _viewModel.inizializza();
   }
 
   @override
   void dispose() {
     TutorialController.instance.rollbackFromEventDetail();
-    _liveLeaderboardTimer?.cancel();
+    _viewModel.dispose();
     super.dispose();
-  }
-
-  bool _isSyncing = false;
-
-  Future<void> _calcolaCoerenzaInvitiEVotazioni() async {
-    if (_isSyncing) return;
-    _isSyncing = true;
-    try {
-      final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
-
-      final List<String> confermati = [creatore];
-      final Set<String> inSospeso = {};
-
-      for (var p in _evento.partecipanti) {
-        if (!confermati.any((c) => c.trim().toLowerCase() == p.trim().toLowerCase())) {
-          confermati.add(p);
-        }
-      }
-
-      for (var inv in _evento.invitati) {
-        if (!confermati.any((c) => c.trim().toLowerCase() == inv.trim().toLowerCase())) {
-          inSospeso.add(inv);
-        }
-      }
-
-      List<BonusMalus> bmList = [];
-      try {
-        bmList = await _apiService.getBonusMalusList().catchError((_) => <BonusMalus>[]);
-        await _apiService.getUtenti().catchError((_) => <Utente>[]);
-        final varReqs = await _apiService.getRichiesteVarEvento(_evento.id).catchError((_) => <RichiestaVar>[]);
-
-        for (var bm in bmList) {
-          final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-              bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-          if (isSameEv) {
-            for (var u in bm.assegnatoA) {
-              if (u.trim().isNotEmpty && !confermati.any((c) => c.trim().toLowerCase() == u.trim().toLowerCase())) {
-                confermati.add(u.trim());
-              }
-            }
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _richiesteVarEvento = varReqs;
-          });
-        }
-      } catch (_) {}
-
-      if (mounted) {
-        setState(() {
-          _partecipantiConfermati = confermati;
-          _invitatiInSospeso = inSospeso;
-          _allBonusMalus = bmList;
-        });
-      }
-    } finally {
-      _isSyncing = false;
-    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserNick = _apiService.currentUser?.nome ?? 'Cloud';
-    final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
-    final isCreatore = creatore.trim().toLowerCase() == currentUserNick.trim().toLowerCase();
-    final isConcluso = _evento.isConcluso;
-    final giaPartecipa = _partecipantiConfermati.contains(currentUserNick) ||
-        _partecipantiConfermati.contains(_apiService.currentUser?.id);
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final _evento = _viewModel.evento;
+        final _partecipantiConfermati = _viewModel.partecipantiConfermati;
+        final _invitatiInSospeso = _viewModel.invitatiInSospeso;
+        final isCreatore = _viewModel.isCreatore;
+        final isConcluso = _viewModel.isConcluso;
+        final giaPartecipa = _viewModel.giaPartecipa;
 
-    final bool isTutorial = TutorialController.instance.stage == TutorialStage.step5_in_event_detail &&
-        TutorialController.instance.isTutorialEvent(_evento);
+        final bool isTutorial = TutorialController.instance.stage == TutorialStage.step5_in_event_detail &&
+            TutorialController.instance.isTutorialEvent(_evento);
 
-    return PopScope(
+        return PopScope(
       canPop: !isTutorial,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
@@ -620,13 +547,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 ? null
                                 : () async {
                                     try {
-                                      await _apiService.partecipaAdEvento(_evento.id, currentUserNick);
-                                      setState(() {
-                                        if (!_partecipantiConfermati.contains(currentUserNick)) {
-                                          _partecipantiConfermati.add(currentUserNick);
-                                        }
-                                        _invitatiInSospeso.remove(currentUserNick);
-                                      });
+                                      await _viewModel.partecipaAdEvento();
                                       widget.onRefresh();
                                       if (!mounted) return;
                                       AppToast.showSuccess(
@@ -720,12 +641,13 @@ class _EventDetailViewState extends State<EventDetailView> {
       ),
     ),
   );
-}
+      },
+    );
+  }
 
   Widget _buildQuorumLiveCard() {
-    final int totalePartecipanti = _partecipantiConfermati.length;
-    // Formula maggioranza assoluta: (N / 2).floor() + 1
-    final int quorumCalcolato = totalePartecipanti <= 0 ? 1 : (totalePartecipanti / 2).floor() + 1;
+    final int totalePartecipanti = _viewModel.totalePartecipanti;
+    final int quorumCalcolato = _viewModel.quorumCalcolato;
 
     return Container(
       width: double.infinity,
@@ -867,28 +789,8 @@ class _EventDetailViewState extends State<EventDetailView> {
 
   Widget _buildLeaderboardSection() {
     final now = DateTime.now();
-    
-    // Calcolo Punti Evento per ciascun partecipante
-    final Map<String, int> puntiPerPartecipante = {};
-    for (var p in _partecipantiConfermati) {
-      puntiPerPartecipante[p] = 0;
-    }
-
-    for (var bm in _allBonusMalus) {
-      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-      if (isSameEv || _allBonusMalus.length == 1) {
-        for (var p in _partecipantiConfermati) {
-          final count = bm.assegnatoA.where((u) => u.trim().toLowerCase() == p.trim().toLowerCase()).length;
-          if (count > 0) {
-            puntiPerPartecipante[p] = (puntiPerPartecipante[p] ?? 0) + (bm.punti * count);
-          }
-        }
-      }
-    }
-
-    final sortedEntries = puntiPerPartecipante.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    final _evento = _viewModel.evento;
+    final sortedEntries = _viewModel.getSortedLeaderboardEntries();
 
     final isConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || now.isAfter(_evento.dataFine);
     final isInCorso = !isConcluso && (now.isAfter(_evento.data) || _evento.stato.trim().toLowerCase() == 'in_corso');
@@ -1021,7 +923,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      _buildAvatarWidget(_apiService.getAvatarPerUtente(nick), nick, radius: 16),
+                      _buildAvatarWidget(_viewModel.getAvatarPerUtente(nick), nick, radius: 16),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
@@ -1072,7 +974,7 @@ class _EventDetailViewState extends State<EventDetailView> {
   Widget _buildAvatarWidget(String avatarUrl, String nickname, {double radius = 20}) {
     String effectiveUrl = avatarUrl.trim();
     if (effectiveUrl.isEmpty) {
-      effectiveUrl = _apiService.getAvatarPerUtente(nickname);
+      effectiveUrl = _viewModel.getAvatarPerUtente(nickname);
     }
     if (effectiveUrl.isNotEmpty) {
       final imgProvider = getAvatarImageProvider(effectiveUrl);
@@ -1100,165 +1002,19 @@ class _EventDetailViewState extends State<EventDetailView> {
   Widget _buildSpecialTitlesSection(List<MapEntry<String, int>> sortedEntries) {
     if (sortedEntries.isEmpty) return const SizedBox.shrink();
 
-    final savedTitoli = _evento.titoliVincitori;
-
-    String? campioneNick = sortedEntries.isNotEmpty ? sortedEntries.first.key : null;
-    int campionePts = sortedEntries.isNotEmpty ? sortedEntries.first.value : 0;
-    String? reMalusNick;
-    int maxMalusVal = 0;
-    String? giudiceNick;
-    int maxAttivita = 0;
-    String? fantasmaNick;
-    int minAzioni = 0;
-    String? sbirroNick;
-    int maxSbirroVal = 0;
-    String? giustiziereNick;
-    int maxGiustiziereVal = 0;
-
-    if (savedTitoli != null && savedTitoli.isNotEmpty) {
-      if (savedTitoli['campione'] != null) {
-        campioneNick = savedTitoli['campione'].toString();
-        campionePts = (savedTitoli['campionePunti'] as num?)?.toInt() ?? campionePts;
-      }
-      reMalusNick = savedTitoli['reMalus']?.toString();
-      maxMalusVal = (savedTitoli['reMalusPunti'] as num?)?.toInt() ?? 0;
-      giudiceNick = savedTitoli['avvocato']?.toString();
-      maxAttivita = (savedTitoli['avvocatoAzioni'] as num?)?.toInt() ?? 0;
-      fantasmaNick = savedTitoli['fantasma']?.toString();
-      minAzioni = (savedTitoli['fantasmaAzioni'] as num?)?.toInt() ?? 0;
-      sbirroNick = savedTitoli['sbirro']?.toString();
-      maxSbirroVal = (savedTitoli['sbirroDenunce'] as num?)?.toInt() ?? 0;
-      giustiziereNick = savedTitoli['giustiziere']?.toString();
-      maxGiustiziereVal = (savedTitoli['giustiziereApprovate'] as num?)?.toInt() ?? 0;
-    } else {
-      // 1. Campione: primo con punteggio maggiore (se >= 0)
-      final campioneEntry = sortedEntries.first;
-      campioneNick = campioneEntry.key;
-      campionePts = campioneEntry.value;
-
-      // 2. Re dei Malus: chi ha accumulato il maggior totale di punti malus negativi
-      final Map<String, int> malusPunti = {};
-      // 3. L'Avvocato: chi ha proposto o votato più volte
-      final Map<String, int> attivitaUtenti = {};
-      // 4. Per il Fantasma: totale azioni (ricevute + proposte + voti)
-      final Map<String, int> azioniTotali = {};
-
-      for (var p in _evento.partecipanti) {
-        final pNorm = p.trim().toLowerCase();
-        malusPunti[pNorm] = 0;
-        attivitaUtenti[pNorm] = 0;
-        azioniTotali[pNorm] = 0;
-      }
-
-      for (var bm in _allBonusMalus) {
-        final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-            bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-        if (!isSameEv && _allBonusMalus.length > 1) continue;
-
-        // Escludi sanzioni d'ufficio del VAR dalle proposte community
-        final bool isVarSanzione = bm.categoria.toUpperCase() == 'VAR' ||
-            bm.titolo.contains('Falsa Testimonianza') ||
-            bm.descrizione.toLowerCase().contains('sanzione per denuncia');
-
-        // Proposte da
-        final prop = bm.propostoDa.trim().toLowerCase();
-        if (!isVarSanzione && prop.isNotEmpty && attivitaUtenti.containsKey(prop)) {
-          attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
-          azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
-        }
-
-        // Assegnato a
-        for (var u in bm.assegnatoA) {
-          final uNorm = u.trim().toLowerCase();
-          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-          if (bm.punti < 0) {
-            malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
-          }
-        }
-      }
-
-      for (var v in _votazioniEvento) {
-        for (var u in v.votiUtenti.keys) {
-          final uNorm = u.trim().toLowerCase();
-          if (attivitaUtenti.containsKey(uNorm)) {
-            attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
-            azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-          }
-        }
-      }
-
-      // Re dei Malus
-      malusPunti.forEach((nickLower, tot) {
-        if (tot > maxMalusVal) {
-          maxMalusVal = tot;
-          reMalusNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-
-      // L'Avvocato
-      attivitaUtenti.forEach((nickLower, count) {
-        if (count > maxAttivita) {
-          maxAttivita = count;
-          giudiceNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-
-      // Fantasma: chi ha fatto meno azioni in assoluto (escluso chi ha vinto come campione)
-      minAzioni = 999999;
-      if (_evento.partecipanti.length > 1) {
-        for (var p in _evento.partecipanti) {
-          final pLower = p.trim().toLowerCase();
-          if (pLower == campioneNick.trim().toLowerCase()) continue;
-          final azioni = azioniTotali[pLower] ?? 0;
-          if (azioni < minAzioni) {
-            minAzioni = azioni;
-            fantasmaNick = p;
-          }
-        }
-      }
-
-      // 5. Lo Sbirro: chi ha effettuato più denunce malus al VAR
-      final Map<String, int> sbirroCounts = {};
-      // 6. Il Giustiziere: chi ha aperto più chiamate VAR convalidate e approvate
-      final Map<String, int> giustiziereCounts = {};
-
-      for (var r in _richiesteVarEvento) {
-        final req = r.richiedente.trim().toLowerCase();
-        if (r.isApprovata) {
-          giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
-        }
-        if (r.isMalus) {
-          // Lo Sbirro conta tutte le denunce inviate per fare la spia
-          sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
-        }
-      }
-
-      sbirroCounts.forEach((nickLower, count) {
-        if (count > maxSbirroVal) {
-          maxSbirroVal = count;
-          sbirroNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-
-      giustiziereCounts.forEach((nickLower, count) {
-        if (count > maxGiustiziereVal) {
-          maxGiustiziereVal = count;
-          giustiziereNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-    }
+    final titoli = _viewModel.calcolaTitoli(sortedEntries);
+    final campioneNick = titoli.campioneNick;
+    final campionePts = titoli.campionePts;
+    final reMalusNick = titoli.reMalusNick;
+    final maxMalusVal = titoli.maxMalusVal;
+    final giudiceNick = titoli.giudiceNick;
+    final maxAttivita = titoli.maxAttivita;
+    final fantasmaNick = titoli.fantasmaNick;
+    final minAzioni = titoli.minAzioni;
+    final sbirroNick = titoli.sbirroNick;
+    final maxSbirroVal = titoli.maxSbirroVal;
+    final giustiziereNick = titoli.giustiziereNick;
+    final maxGiustiziereVal = titoli.maxGiustiziereVal;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1360,7 +1116,7 @@ class _EventDetailViewState extends State<EventDetailView> {
     required Color accentColor,
   }) {
     if (winnerNick == null || winnerNick.isEmpty) return const SizedBox.shrink();
-    final avatarUrl = _apiService.getAvatarPerUtente(winnerNick);
+    final avatarUrl = _viewModel.getAvatarPerUtente(winnerNick);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1479,148 +1235,21 @@ class _EventDetailViewState extends State<EventDetailView> {
     final primo = sortedEntries.isNotEmpty ? sortedEntries[0] : null;
     final secondo = sortedEntries.length > 1 ? sortedEntries[1] : null;
     final terzo = sortedEntries.length > 2 ? sortedEntries[2] : null;
+    final _evento = _viewModel.evento;
 
-    final savedTitoli = _evento.titoliVincitori;
-
-    String? campioneNick = primo?.key;
-    int campionePts = primo?.value ?? 0;
-    String? reMalusNick;
-    int maxMalusVal = 0;
-    String? giudiceNick;
-    int maxAttivita = 0;
-    String? fantasmaNick;
-    int minAzioni = 0;
-    String? sbirroNick;
-    int maxSbirroVal = 0;
-    String? giustiziereNick;
-    int maxGiustiziereVal = 0;
-
-    if (savedTitoli != null && savedTitoli.isNotEmpty) {
-      if (savedTitoli['campione'] != null) {
-        campioneNick = savedTitoli['campione'].toString();
-        campionePts = (savedTitoli['campionePunti'] as num?)?.toInt() ?? campionePts;
-      }
-      reMalusNick = savedTitoli['reMalus']?.toString();
-      maxMalusVal = (savedTitoli['reMalusPunti'] as num?)?.toInt() ?? 0;
-      giudiceNick = savedTitoli['avvocato']?.toString();
-      maxAttivita = (savedTitoli['avvocatoAzioni'] as num?)?.toInt() ?? 0;
-      fantasmaNick = savedTitoli['fantasma']?.toString();
-      minAzioni = (savedTitoli['fantasmaAzioni'] as num?)?.toInt() ?? 0;
-      sbirroNick = savedTitoli['sbirro']?.toString();
-      maxSbirroVal = (savedTitoli['sbirroDenunce'] as num?)?.toInt() ?? 0;
-      giustiziereNick = savedTitoli['giustiziere']?.toString();
-      maxGiustiziereVal = (savedTitoli['giustiziereApprovate'] as num?)?.toInt() ?? 0;
-    } else {
-      final Map<String, int> malusPunti = {};
-      final Map<String, int> attivitaUtenti = {};
-      final Map<String, int> azioniTotali = {};
-
-      for (var p in _evento.partecipanti) {
-        final pNorm = p.trim().toLowerCase();
-        malusPunti[pNorm] = 0;
-        attivitaUtenti[pNorm] = 0;
-        azioniTotali[pNorm] = 0;
-      }
-
-      for (var bm in _allBonusMalus) {
-        final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-            bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-        if (!isSameEv && _allBonusMalus.length > 1) continue;
-
-        // Escludi sanzioni d'ufficio del VAR
-        final bool isVarSanzione = bm.categoria.toUpperCase() == 'VAR' ||
-            bm.titolo.contains('Falsa Testimonianza') ||
-            bm.descrizione.toLowerCase().contains('sanzione per denuncia');
-
-        final prop = bm.propostoDa.trim().toLowerCase();
-        if (!isVarSanzione && prop.isNotEmpty && attivitaUtenti.containsKey(prop)) {
-          attivitaUtenti[prop] = (attivitaUtenti[prop] ?? 0) + 1;
-          azioniTotali[prop] = (azioniTotali[prop] ?? 0) + 1;
-        }
-
-        for (var u in bm.assegnatoA) {
-          final uNorm = u.trim().toLowerCase();
-          azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-          if (bm.punti < 0) {
-            malusPunti[uNorm] = (malusPunti[uNorm] ?? 0) + bm.punti.abs();
-          }
-        }
-      }
-
-      for (var v in _votazioniEvento) {
-        for (var u in v.votiUtenti.keys) {
-          final uNorm = u.trim().toLowerCase();
-          if (attivitaUtenti.containsKey(uNorm)) {
-            attivitaUtenti[uNorm] = (attivitaUtenti[uNorm] ?? 0) + 1;
-            azioniTotali[uNorm] = (azioniTotali[uNorm] ?? 0) + 1;
-          }
-        }
-      }
-
-      malusPunti.forEach((nickLower, tot) {
-        if (tot > maxMalusVal) {
-          maxMalusVal = tot;
-          reMalusNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-
-      attivitaUtenti.forEach((nickLower, count) {
-        if (count > maxAttivita) {
-          maxAttivita = count;
-          giudiceNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-
-      minAzioni = 999999;
-      if (_evento.partecipanti.length > 1 && campioneNick != null) {
-        for (var p in _evento.partecipanti) {
-          final pLower = p.trim().toLowerCase();
-          if (pLower == campioneNick.trim().toLowerCase()) continue;
-          final azioni = azioniTotali[pLower] ?? 0;
-          if (azioni < minAzioni) {
-            minAzioni = azioni;
-            fantasmaNick = p;
-          }
-        }
-      }
-
-      final Map<String, int> sbirroCounts = {};
-      final Map<String, int> giustiziereCounts = {};
-
-      for (var r in _richiesteVarEvento) {
-        final req = r.richiedente.trim().toLowerCase();
-        if (r.isApprovata) {
-          giustiziereCounts[req] = (giustiziereCounts[req] ?? 0) + 1;
-        }
-        if (r.isMalus) {
-          sbirroCounts[req] = (sbirroCounts[req] ?? 0) + 1;
-        }
-      }
-      sbirroCounts.forEach((nickLower, count) {
-        if (count > maxSbirroVal) {
-          maxSbirroVal = count;
-          sbirroNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-      giustiziereCounts.forEach((nickLower, count) {
-        if (count > maxGiustiziereVal) {
-          maxGiustiziereVal = count;
-          giustiziereNick = _evento.partecipanti.firstWhere(
-            (p) => p.trim().toLowerCase() == nickLower,
-            orElse: () => nickLower,
-          );
-        }
-      });
-    }
+    final titoli = _viewModel.calcolaTitoli(sortedEntries);
+    final campioneNick = titoli.campioneNick;
+    final campionePts = titoli.campionePts;
+    final reMalusNick = titoli.reMalusNick;
+    final maxMalusVal = titoli.maxMalusVal;
+    final giudiceNick = titoli.giudiceNick;
+    final maxAttivita = titoli.maxAttivita;
+    final fantasmaNick = titoli.fantasmaNick;
+    final minAzioni = titoli.minAzioni;
+    final sbirroNick = titoli.sbirroNick;
+    final maxSbirroVal = titoli.maxSbirroVal;
+    final giustiziereNick = titoli.giustiziereNick;
+    final maxGiustiziereVal = titoli.maxGiustiziereVal;
 
     final buffer = StringBuffer();
     buffer.writeln('🏆 *PODIO FANTAEVENTI* - ${_evento.titolo} 🏆');
@@ -1880,7 +1509,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 children: [
                                   const Text('🥇', style: TextStyle(fontSize: 24)),
                                   const SizedBox(width: 10),
-                                  _buildAvatarWidget(_apiService.getAvatarPerUtente(primo.key), primo.key, radius: 16),
+                                  _buildAvatarWidget(_viewModel.getAvatarPerUtente(primo.key), primo.key, radius: 16),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -1913,7 +1542,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 children: [
                                   const Text('🥈', style: TextStyle(fontSize: 20)),
                                   const SizedBox(width: 10),
-                                  _buildAvatarWidget(_apiService.getAvatarPerUtente(secondo.key), secondo.key, radius: 14),
+                                  _buildAvatarWidget(_viewModel.getAvatarPerUtente(secondo.key), secondo.key, radius: 14),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -1946,7 +1575,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 children: [
                                   const Text('🥉', style: TextStyle(fontSize: 20)),
                                   const SizedBox(width: 10),
-                                  _buildAvatarWidget(_apiService.getAvatarPerUtente(terzo.key), terzo.key, radius: 14),
+                                  _buildAvatarWidget(_viewModel.getAvatarPerUtente(terzo.key), terzo.key, radius: 14),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -1984,15 +1613,15 @@ class _EventDetailViewState extends State<EventDetailView> {
                                   if (campioneNick != null)
                                     _buildCompactChip('👑 Campione', campioneNick),
                                   if (reMalusNick != null && maxMalusVal > 0)
-                                    _buildCompactChip('🤡 Re Malus', reMalusNick!),
+                                    _buildCompactChip('🤡 Re Malus', reMalusNick),
                                   if (giudiceNick != null && maxAttivita > 0)
-                                    _buildCompactChip("⚖️ L'Avvocato", giudiceNick!),
+                                    _buildCompactChip("⚖️ L'Avvocato", giudiceNick),
                                   if (fantasmaNick != null)
                                     _buildCompactChip('👻 Fantasma', fantasmaNick),
                                   if (sbirroNick != null && maxSbirroVal > 0)
-                                    _buildCompactChip('🕵️ Lo Sbirro', sbirroNick!),
+                                    _buildCompactChip('🕵️ Lo Sbirro', sbirroNick),
                                   if (giustiziereNick != null && maxGiustiziereVal > 0)
-                                    _buildCompactChip('⚡ Giustiziere', giustiziereNick!),
+                                    _buildCompactChip('⚡ Giustiziere', giustiziereNick),
                                 ],
                               ),
                             ),
@@ -2204,19 +1833,8 @@ class _EventDetailViewState extends State<EventDetailView> {
                     onPressed: () async {
                       Navigator.pop(ctx);
                       try {
-                        final photo = await _picker.pickImage(
-                          source: ImageSource.camera,
-                          imageQuality: 80,
-                          maxWidth: 1080,
-                          maxHeight: 1080,
-                        );
-                        if (photo != null) {
-                          final bytes = await photo.readAsBytes();
-                          final b64 = 'data:image/png;base64,${base64Encode(bytes)}';
-                          setState(() {
-                            _evento = _evento.copyWith(copertinaUrl: b64);
-                          });
-                          await _apiService.aggiornaCopertinaEvento(_evento.id, b64);
+                        final b64 = await _viewModel.scattaFotoCopertina();
+                        if (b64 != null) {
                           widget.onRefresh();
                           if (mounted) {
                             AppToast.showSuccess(
@@ -2245,19 +1863,8 @@ class _EventDetailViewState extends State<EventDetailView> {
                     onPressed: () async {
                       Navigator.pop(ctx);
                       try {
-                        final photo = await _picker.pickImage(
-                          source: ImageSource.gallery,
-                          imageQuality: 80,
-                          maxWidth: 1080,
-                          maxHeight: 1080,
-                        );
-                        if (photo != null) {
-                          final bytes = await photo.readAsBytes();
-                          final b64 = 'data:image/png;base64,${base64Encode(bytes)}';
-                          setState(() {
-                            _evento = _evento.copyWith(copertinaUrl: b64);
-                          });
-                          await _apiService.aggiornaCopertinaEvento(_evento.id, b64);
+                        final b64 = await _viewModel.selezionaFotoCopertinaDaGalleria();
+                        if (b64 != null) {
                           widget.onRefresh();
                           if (mounted) {
                             AppToast.showSuccess(
@@ -2304,10 +1911,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                     onPressed: () async {
                       Navigator.pop(ctx);
                       final newUrl = item['url']!;
-                      setState(() {
-                        _evento = _evento.copyWith(copertinaUrl: newUrl);
-                      });
-                      await _apiService.aggiornaCopertinaEvento(_evento.id, newUrl);
+                      await _viewModel.aggiornaCopertina(newUrl);
                       widget.onRefresh();
                       if (mounted) {
                         AppToast.showSuccess(
@@ -2329,29 +1933,16 @@ class _EventDetailViewState extends State<EventDetailView> {
   }
 
   void _mostraDettaglioStoricoGiocatore(String targetNick) {
-    final curUser = _apiService.currentUser?.nome ?? 'Cloud';
-    final creatore = _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
-    final isEventoConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(_evento.dataFine);
+    final _evento = _viewModel.evento;
+    final curUser = _viewModel.currentUserNick;
+    final creatore = _viewModel.creatore;
+    final isEventoConcluso = _viewModel.isConcluso || DateTime.now().isAfter(_evento.dataFine);
     final isOrganizzatore = !isEventoConcluso && (creatore.trim().toLowerCase() == curUser.trim().toLowerCase());
 
-    final List<Map<String, dynamic>> istanzeAssegnazioni = [];
-    for (var bm in _allBonusMalus) {
-      final isSameEv = bm.eventoId.trim().toLowerCase() == _evento.id.trim().toLowerCase() ||
-          bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
-      if (isSameEv || _allBonusMalus.length == 1) {
-        final count = bm.assegnatoA.where((u) => u.trim().toLowerCase() == targetNick.trim().toLowerCase()).length;
-        for (int i = 0; i < count; i++) {
-          istanzeAssegnazioni.add({
-            'bonus': bm,
-            'numIstanza': i + 1,
-            'totaleIstanze': count,
-          });
-        }
-      }
-    }
+    final istanzeAssegnazioni = _viewModel.getIstanzeAssegnazioniGiocatore(targetNick);
 
-    final memUser = _apiService.getUtenteInMemoria(targetNick);
-    String avatarUrl = memUser?.avatarUrl ?? _apiService.getAvatarPerUtente(targetNick);
+    final memUser = _viewModel.getUtenteInMemoria(targetNick);
+    String avatarUrl = memUser?.avatarUrl ?? _viewModel.getAvatarPerUtente(targetNick);
 
     showModalBottomSheet(
       context: context,
@@ -2363,7 +1954,7 @@ class _EventDetailViewState extends State<EventDetailView> {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
             if (avatarUrl.isEmpty) {
-              _apiService.getUtenti().then((utenti) {
+              _viewModel.fetchUtenti().then((utenti) {
                 final found = utenti.firstWhere(
                   (u) => u.nome.trim().toLowerCase() == targetNick.trim().toLowerCase() || u.nickname.trim().toLowerCase() == targetNick.trim().toLowerCase(),
                   orElse: () => Utente(
@@ -2509,14 +2100,12 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       );
 
                                       if (conf == true) {
-                                        await _apiService.annullaAssegnazioneBonus(
-                                          eventoId: _evento.id,
+                                        await _viewModel.annullaAssegnazioneBonus(
                                           bonusId: bm.id,
                                           utenteDestinatario: targetNick,
                                           punti: bm.punti,
                                         );
                                         Navigator.pop(ctx);
-                                        _calcolaCoerenzaInvitiEVotazioni();
                                         widget.onRefresh();
                                       }
                                     },
@@ -2546,9 +2135,12 @@ class _EventDetailViewState extends State<EventDetailView> {
       ),
     );
 
+    final _evento = _viewModel.evento;
+    final _partecipantiConfermati = _viewModel.partecipantiConfermati;
+    final _invitatiInSospeso = _viewModel.invitatiInSospeso;
     List<Utente> amici;
     try {
-      amici = await _apiService.getGiocatoriInvitabili();
+      amici = await _viewModel.getGiocatoriInvitabili();
     } catch (_) {
       amici = [];
     }
@@ -2748,7 +2340,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       CircleAvatar(
                                         radius: 20,
                                         backgroundColor: const Color(0xFF334155),
-                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl.isNotEmpty ? amico.avatarUrl : _apiService.getAvatarPerUtente(amico.nome.isNotEmpty ? amico.nome : amico.nickname)),
+                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl.isNotEmpty ? amico.avatarUrl : _viewModel.getAvatarPerUtente(amico.nome.isNotEmpty ? amico.nome : amico.nickname)),
                                       ),
                                       const SizedBox(width: 12),
 
@@ -2847,14 +2439,8 @@ class _EventDetailViewState extends State<EventDetailView> {
                               setModalState(() => isInvioInCorso = true);
                               try {
                                 final daInvitare = amiciSelezionati.toList();
-                                await _apiService.invitaAmiciAdEvento(_evento.id, daInvitare);
-
-                                if (mounted) {
-                                  setState(() {
-                                    _invitatiInSospeso.addAll(daInvitare);
-                                  });
-                                  widget.onRefresh();
-                                }
+                                await _viewModel.invitaAmiciAdEvento(daInvitare);
+                                widget.onRefresh();
 
                                 if (context.mounted) {
                                   Navigator.pop(ctx);

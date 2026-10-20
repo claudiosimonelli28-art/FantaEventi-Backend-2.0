@@ -1,14 +1,11 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
-import '../models/utente.dart';
 import '../services/api_service.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/founder_badge.dart';
 import 'login_view.dart';
+import '../viewmodels/profile_view_model.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/app_toast.dart';
@@ -22,52 +19,19 @@ class ProfileView extends StatefulWidget {
 }
 
 class _ProfileViewState extends State<ProfileView> {
-  final ApiService _apiService = ApiService();
-  final ImagePicker _picker = ImagePicker();
+  final ProfileViewModel _viewModel = ProfileViewModel();
   final _codiceAmicoInputController = TextEditingController();
-  late Utente _utente;
-  File? _fotoLocaleFile;
-
-  ImageProvider get _currentAvatarImage {
-    return _fotoLocaleFile != null && _fotoLocaleFile!.existsSync()
-        ? FileImage(_fotoLocaleFile!)
-        : getAvatarImageProvider(_utente.avatarUrl);
-  }
-
-  final List<String> _avatarsPredefiniti = [
-    'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
-    'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=400&q=80',
-    'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=400&q=80',
-    'https://images.unsplash.com/photo-1628157582853-a796fa650a6a?auto=format&fit=crop&w=400&q=80',
-    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=400&q=80',
-  ];
-
-  int _filtroGiorniStorico = 7;
-  int _countCampione = 0;
-  int _countReMalus = 0;
-  int _countAvvocato = 0;
-  int _countFantasma = 0;
-  int _countSbirro = 0;
-  int _countGiustiziere = 0;
-  bool _haGiaRiscattatoPremio = false;
 
   @override
   void initState() {
     super.initState();
-    _utente = _apiService.currentUser ?? _apiService.getCurrentUser();
-    _haGiaRiscattatoPremio = _apiService.hasRedeemedTutorialLocally;
-    _countCampione = _utente.countCampione;
-    _countReMalus = _utente.countReMalus;
-    _countAvvocato = _utente.countAvvocato;
-    _countFantasma = _utente.countFantasma;
-    _countSbirro = _utente.countSbirro;
-    _countGiustiziere = _utente.countGiustiziere;
-    _caricaProfiloAggiornato();
+    _viewModel.inizializza();
   }
 
   @override
   void dispose() {
     _codiceAmicoInputController.dispose();
+    _viewModel.dispose();
     super.dispose();
   }
 
@@ -76,7 +40,7 @@ class _ProfileViewState extends State<ProfileView> {
     if (code.isEmpty) return;
 
     try {
-      await _apiService.inviaRichiestaAmicizia(code);
+      await _viewModel.inviaRichiestaAmicizia(code);
       _codiceAmicoInputController.clear();
       if (!mounted) return;
       AppToast.showSuccess(
@@ -94,44 +58,16 @@ class _ProfileViewState extends State<ProfileView> {
     }
   }
 
-  Future<void> _caricaProfiloAggiornato() async {
-    try {
-      final updatedUser = await _apiService.syncCurrentUserFromDb();
-      final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
-      if (mounted) {
-        setState(() {
-          if (updatedUser != null) {
-            _utente = updatedUser;
-            _countCampione = _utente.countCampione;
-            _countReMalus = _utente.countReMalus;
-            _countAvvocato = _utente.countAvvocato;
-            _countFantasma = _utente.countFantasma;
-            _countSbirro = _utente.countSbirro;
-            _countGiustiziere = _utente.countGiustiziere;
-          }
-          _haGiaRiscattatoPremio = giaRiscattato || _apiService.hasRedeemedTutorialLocally;
-        });
-      }
-      await _apiService.getUtenti();
-      if (mounted) setState(() {});
-    } catch (_) {}
-  }
-
   void _concludiTutorial() async {
-    final bool giaRiscattato = _haGiaRiscattatoPremio || _apiService.hasRedeemedTutorialLocally;
-    final int userLevel = _utente.livello;
+    final bool giaRiscattato = _viewModel.haGiaRiscattatoPremio || ApiService().hasRedeemedTutorialLocally;
+    final int userLevel = _viewModel.utente.livello;
     final String badgeAwarded = userLevel >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
 
     // 1. Rimuovi il banner immediatamente: zero attese
     TutorialController.instance.completeTutorial(context);
-    setState(() {
-      _haGiaRiscattatoPremio = true;
-    });
 
-    // 2. Salva in background senza bloccare la UI
-    _apiService.segnaGuidaRegoleCompletata(awardXp: !giaRiscattato).then((_) {
-      _caricaProfiloAggiornato();
-    });
+    // 2. Salva in background senza bloccare la UI tramite ViewModel
+    _viewModel.concludiTutorial(giaRiscattato: giaRiscattato);
 
     // 3. Mostra subito la modale celebrativa
     showDialog(
@@ -359,12 +295,7 @@ class _ProfileViewState extends State<ProfileView> {
             child: TextButton(
               onPressed: () async {
                 TutorialController.instance.skipTutorial();
-                await _apiService.segnaGuidaRegoleCompletata(awardXp: false);
-                if (mounted) {
-                  setState(() {
-                    _utente = _utente.copyWith(haVistoGuida: true);
-                  });
-                }
+                await _viewModel.saltaTutorialDefinitivamente();
               },
               child: Text(
                 'Salta tutorial definitivamente',
@@ -409,7 +340,7 @@ class _ProfileViewState extends State<ProfileView> {
           maxChildSize: 0.92,
           expand: false,
           builder: (context, scrollController) {
-            final amiciList = _utente.amici;
+            final amiciList = _viewModel.utente.amici;
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Column(
@@ -487,11 +418,11 @@ class _ProfileViewState extends State<ProfileView> {
                             itemCount: amiciList.length,
                             itemBuilder: (context, index) {
                               final amicoNick = amiciList[index];
-                              final amicoUtente = _apiService.getUtenteInMemoria(amicoNick);
+                              final amicoUtente = _viewModel.getUtenteInMemoria(amicoNick);
                               final displayName = (amicoUtente?.nome.isNotEmpty == true)
                                   ? amicoUtente!.nome
                                   : amicoNick;
-                              final avatarUrl = (amicoUtente?.avatarUrl.isNotEmpty == true) ? amicoUtente!.avatarUrl : _apiService.getAvatarPerUtente(amicoNick);
+                              final avatarUrl = (amicoUtente?.avatarUrl.isNotEmpty == true) ? amicoUtente!.avatarUrl : _viewModel.getAvatarPerUtente(amicoNick);
                               final friendCode = amicoUtente?.codiceAmico ?? '';
                               final points = amicoUtente?.puntiTotali ?? 0;
                               final level = amicoUtente?.livello ?? 1;
@@ -618,7 +549,7 @@ class _ProfileViewState extends State<ProfileView> {
           maxChildSize: 0.92,
           expand: false,
           builder: (context, scrollController) {
-            final vittorie = _utente.badgeVincitore;
+            final vittorie = _viewModel.utente.badgeVincitore;
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Column(
@@ -804,7 +735,7 @@ class _ProfileViewState extends State<ProfileView> {
           maxChildSize: 0.92,
           expand: false,
           builder: (context, scrollController) {
-            final badges = _utente.badgeList;
+            final badges = _viewModel.utente.badgeList;
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               child: Column(
@@ -939,22 +870,8 @@ class _ProfileViewState extends State<ProfileView> {
   // APRE LA VERA FOTOCAMERA FISICA DEL TELEFONO
   Future<void> _scattaFotoConFotocamera() async {
     try {
-      final XFile? photo = await _picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 85,
-        maxWidth: 800,
-        maxHeight: 800,
-      );
-
-      if (photo != null) {
-        final bytes = await photo.readAsBytes();
-        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
-        setState(() {
-          _fotoLocaleFile = File(photo.path);
-          _utente = _utente.copyWith(avatarUrl: base64String);
-        });
-        await _apiService.aggiornaAvatarUtente(_utente.nickname, base64String);
-        if (!mounted) return;
+      final success = await _viewModel.scattaFotoConFotocamera();
+      if (success && mounted) {
         AppToast.showSuccess(
           context,
           'Foto Salvata 📸',
@@ -974,22 +891,8 @@ class _ProfileViewState extends State<ProfileView> {
   // APRE LA VERA GALLERIA FOTO DEL TELEFONO
   Future<void> _scegliFotoDaGalleria() async {
     try {
-      final XFile? image = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 800,
-        maxHeight: 800,
-      );
-
-      if (image != null) {
-        final bytes = await image.readAsBytes();
-        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
-        setState(() {
-          _fotoLocaleFile = File(image.path);
-          _utente = _utente.copyWith(avatarUrl: base64String);
-        });
-        await _apiService.aggiornaAvatarUtente(_utente.nickname, base64String);
-        if (!mounted) return;
+      final success = await _viewModel.scegliFotoDaGalleria();
+      if (success && mounted) {
         AppToast.showSuccess(
           context,
           'Foto Salvata 🖼️',
@@ -1072,14 +975,14 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   child: CircleAvatar(
                     radius: 65,
-                    backgroundImage: _currentAvatarImage,
+                    backgroundImage: _viewModel.currentAvatarImage,
                   ),
                 ),
               ),
               const SizedBox(height: 8),
               Center(
                 child: Text(
-                  _utente.nickname.isNotEmpty ? '@${_utente.nickname}' : _utente.nome,
+                  _viewModel.utente.nickname.isNotEmpty ? '@${_viewModel.utente.nickname}' : _viewModel.utente.nome,
                   style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -1161,15 +1064,12 @@ class _ProfileViewState extends State<ProfileView> {
               height: 64,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemCount: _avatarsPredefiniti.length,
+                itemCount: _viewModel.avatarsPredefiniti.length,
                 itemBuilder: (context, index) {
-                  final url = _avatarsPredefiniti[index];
+                  final url = _viewModel.avatarsPredefiniti[index];
                   return GestureDetector(
                     onTap: () {
-                      setState(() {
-                        _fotoLocaleFile = null;
-                        _utente = _utente.copyWith(avatarUrl: url);
-                      });
+                      _viewModel.impostaAvatarUrl(url);
                       Navigator.pop(ctx);
                     },
                     child: Container(
@@ -1212,10 +1112,7 @@ class _ProfileViewState extends State<ProfileView> {
               onPressed: () {
                 final newUrl = customUrlController.text.trim();
                 if (newUrl.isNotEmpty) {
-                  setState(() {
-                    _fotoLocaleFile = null;
-                    _utente = _utente.copyWith(avatarUrl: newUrl);
-                  });
+                  _viewModel.impostaAvatarUrl(newUrl);
                   Navigator.pop(ctx);
                 }
               },
@@ -1235,56 +1132,48 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  String _getRankTitle(int livello) {
-    if (livello >= 10) return '👑 Leggenda Suprema degli Eventi';
-    if (livello >= 7) return '🔥 Master Gamifier';
-    if (livello >= 5) return '⚡ Anima della Festa';
-    if (livello >= 3) return '🎲 Giocatore Esperto';
-    return '🌱 Recluta Fanta Eventi';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final double xpPercent = (_utente.xp / _utente.xpProssimoLivello).clamp(0.0, 1.0);
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final utente = _viewModel.utente;
+        final double xpPercent = _viewModel.xpPercent;
+        final ImageProvider avatarImage = _viewModel.currentAvatarImage;
+        final bool isTutorialStep10 = TutorialController.instance.stage == TutorialStage.step10_in_profile;
 
-    final ImageProvider avatarImage = _fotoLocaleFile != null && _fotoLocaleFile!.existsSync()
-        ? FileImage(_fotoLocaleFile!)
-        : getAvatarImageProvider(_utente.avatarUrl);
-
-    final bool isTutorialStep10 = TutorialController.instance.stage == TutorialStage.step10_in_profile;
-
-    return PopScope(
-      canPop: !isTutorialStep10,
-      child: Scaffold(
-        backgroundColor: const Color(0xFF0F172A),
-        appBar: AppBar(
-          automaticallyImplyLeading: !isTutorialStep10,
-          backgroundColor: const Color(0xFF1E293B),
-          title: Text(
-            'Profilo Giocatore',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          iconTheme: const IconThemeData(color: Colors.white),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
-              tooltip: 'Guida Profilo',
-              onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.profilo),
+        return PopScope(
+          canPop: !isTutorialStep10,
+          child: Scaffold(
+            backgroundColor: const Color(0xFF0F172A),
+            appBar: AppBar(
+              automaticallyImplyLeading: !isTutorialStep10,
+              backgroundColor: const Color(0xFF1E293B),
+              title: Text(
+                'Profilo Giocatore',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+              iconTheme: const IconThemeData(color: Colors.white),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+                  tooltip: 'Guida Profilo',
+                  onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.profilo),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.logout, color: Colors.redAccent),
+                  tooltip: 'Logout',
+                  onPressed: () async {
+                    await _viewModel.logout();
+                    if (!context.mounted) return;
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginView()),
+                      (route) => false,
+                    );
+                  },
+                ),
+              ],
             ),
-            IconButton(
-              icon: const Icon(Icons.logout, color: Colors.redAccent),
-              tooltip: 'Logout',
-              onPressed: () async {
-                await _apiService.logout();
-                if (!context.mounted) return;
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const LoginView()),
-                  (route) => false,
-                );
-              },
-            ),
-          ],
-        ),
         body: SafeArea(
           child: SingleChildScrollView(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -1306,27 +1195,27 @@ class _ProfileViewState extends State<ProfileView> {
                     margin: const EdgeInsets.only(bottom: 20),
                     child: ElevatedButton.icon(
                       onPressed: _concludiTutorial,
-                      icon: Text(_haGiaRiscattatoPremio ? '✅' : '🏆', style: const TextStyle(fontSize: 22)),
+                      icon: Text(_viewModel.haGiaRiscattatoPremio ? '✅' : '🏆', style: const TextStyle(fontSize: 22)),
                       label: Text(
-                        _haGiaRiscattatoPremio
+                        _viewModel.haGiaRiscattatoPremio
                             ? 'COMPLETA IL TUTORIAL (PREMIO GIÀ RISCATTATO)'
                             : 'COMPLETA IL TUTORIAL E RITIRA +100 XP',
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 12.5),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _haGiaRiscattatoPremio ? const Color(0xFF334155) : const Color(0xFFFACC15),
-                        foregroundColor: _haGiaRiscattatoPremio ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
+                        backgroundColor: _viewModel.haGiaRiscattatoPremio ? const Color(0xFF334155) : const Color(0xFFFACC15),
+                        foregroundColor: _viewModel.haGiaRiscattatoPremio ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A),
                         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
-                          side: _haGiaRiscattatoPremio ? const BorderSide(color: Color(0xFF64748B), width: 1.2) : BorderSide.none,
+                          side: _viewModel.haGiaRiscattatoPremio ? const BorderSide(color: Color(0xFF64748B), width: 1.2) : BorderSide.none,
                         ),
                         elevation: 6,
                       ),
                     ),
                   ),
-                ] else if (!_utente.haVistoGuida) ...[
+                ] else if (!utente.haVistoGuida) ...[
                   _buildTutorialIncompletoCard(),
                 ],
               // Avatar & Basic Info Card
@@ -1393,19 +1282,19 @@ class _ProfileViewState extends State<ProfileView> {
                     const SizedBox(height: 16),
 
                     Text(
-                      _utente.nome,
+                      utente.nome,
                       style: GoogleFonts.poppins(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     ),
-                    if (FounderBadge.isFounder(_utente.nickname)) ...[
-                      FounderBadge(nickname: _utente.nickname, isLarge: true),
+                    if (FounderBadge.isFounder(utente.nickname)) ...[
+                      FounderBadge(nickname: utente.nickname, isLarge: true),
                     ],
                     const SizedBox(height: 4),
                     Text(
-                      _getRankTitle(_utente.livello),
+                      _viewModel.rankTitle,
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -1414,7 +1303,7 @@ class _ProfileViewState extends State<ProfileView> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _utente.email,
+                      utente.email,
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         color: const Color(0xFF94A3B8),
@@ -1445,19 +1334,19 @@ class _ProfileViewState extends State<ProfileView> {
                                     style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                                   ),
                                   SelectableText(
-                                    _utente.codiceAmico,
+                                    utente.codiceAmico,
                                     style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
                                   ),
                                 ],
                               ),
                               ElevatedButton.icon(
                                 onPressed: () async {
-                                  await Clipboard.setData(ClipboardData(text: _utente.codiceAmico));
+                                  await Clipboard.setData(ClipboardData(text: utente.codiceAmico));
                                   if (!context.mounted) return;
                                   AppToast.showSuccess(
                                     context,
                                     'Codice Copiato 📲',
-                                    'Codice Amico ${_utente.codiceAmico} copiato negli appunti!',
+                                    'Codice Amico ${utente.codiceAmico} copiato negli appunti!',
                                   );
                                 },
                                 icon: const Icon(Icons.copy_rounded, size: 16, color: Color(0xFF0F172A)),
@@ -1498,7 +1387,7 @@ class _ProfileViewState extends State<ProfileView> {
                                 ),
                               ),
                               Text(
-                                '${_utente.xp} / ${_utente.xpProssimoLivello} XP',
+                                '${utente.xp} / ${utente.xpProssimoLivello} XP',
                                 style: GoogleFonts.poppins(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
@@ -1535,7 +1424,7 @@ class _ProfileViewState extends State<ProfileView> {
                             child: Column(
                               children: [
                                 Text(
-                                  '${_utente.puntiTotali}',
+                                  '${utente.puntiTotali}',
                                   style: GoogleFonts.poppins(
                                     fontSize: 20,
                                     fontWeight: FontWeight.bold,
@@ -1565,7 +1454,7 @@ class _ProfileViewState extends State<ProfileView> {
                               child: Column(
                                 children: [
                                   Text(
-                                    '${_utente.amici.length}',
+                                    '${utente.amici.length}',
                                     style: GoogleFonts.poppins(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -1596,7 +1485,7 @@ class _ProfileViewState extends State<ProfileView> {
                               child: Column(
                                 children: [
                                   Text(
-                                    '${_utente.badgeVincitore.length}',
+                                    '${utente.badgeVincitore.length}',
                                     style: GoogleFonts.poppins(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -1677,7 +1566,7 @@ class _ProfileViewState extends State<ProfileView> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '${_utente.badgeVincitore.length}',
+                                    '${utente.badgeVincitore.length}',
                                     style: GoogleFonts.poppins(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -1756,7 +1645,7 @@ class _ProfileViewState extends State<ProfileView> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Text(
-                                    '${_utente.badgeList.length}',
+                                    '${utente.badgeList.length}',
                                     style: GoogleFonts.poppins(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
@@ -1874,42 +1763,42 @@ class _ProfileViewState extends State<ProfileView> {
                 child: Row(
                   children: [
                     FilterChip(
-                      selected: _filtroGiorniStorico == 1,
+                      selected: _viewModel.filtroGiorniStorico == 1,
                       label: const Text('Ultimi 24h'),
                       selectedColor: const Color(0xFF9333EA),
                       backgroundColor: const Color(0xFF1E293B),
                       labelStyle: TextStyle(
-                        color: _filtroGiorniStorico == 1 ? Colors.white : const Color(0xFF94A3B8),
+                        color: _viewModel.filtroGiorniStorico == 1 ? Colors.white : const Color(0xFF94A3B8),
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
-                      onSelected: (_) => setState(() => _filtroGiorniStorico = 1),
+                      onSelected: (_) => _viewModel.setFiltroGiorniStorico(1),
                     ),
                     const SizedBox(width: 8),
                     FilterChip(
-                      selected: _filtroGiorniStorico == 3,
+                      selected: _viewModel.filtroGiorniStorico == 3,
                       label: const Text('Ultimi 3 Giorni'),
                       selectedColor: const Color(0xFF9333EA),
                       backgroundColor: const Color(0xFF1E293B),
                       labelStyle: TextStyle(
-                        color: _filtroGiorniStorico == 3 ? Colors.white : const Color(0xFF94A3B8),
+                        color: _viewModel.filtroGiorniStorico == 3 ? Colors.white : const Color(0xFF94A3B8),
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
-                      onSelected: (_) => setState(() => _filtroGiorniStorico = 3),
+                      onSelected: (_) => _viewModel.setFiltroGiorniStorico(3),
                     ),
                     const SizedBox(width: 8),
                     FilterChip(
-                      selected: _filtroGiorniStorico == 7,
+                      selected: _viewModel.filtroGiorniStorico == 7,
                       label: const Text('Ultimi 7 Giorni'),
                       selectedColor: const Color(0xFF9333EA),
                       backgroundColor: const Color(0xFF1E293B),
                       labelStyle: TextStyle(
-                        color: _filtroGiorniStorico == 7 ? Colors.white : const Color(0xFF94A3B8),
+                        color: _viewModel.filtroGiorniStorico == 7 ? Colors.white : const Color(0xFF94A3B8),
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
-                      onSelected: (_) => setState(() => _filtroGiorniStorico = 7),
+                      onSelected: (_) => _viewModel.setFiltroGiorniStorico(7),
                     ),
                   ],
                 ),
@@ -1917,7 +1806,7 @@ class _ProfileViewState extends State<ProfileView> {
               const SizedBox(height: 12),
               Builder(
                 builder: (context) {
-                  final storicoFiltrato = ApiService.filtraStorico(_utente.storicoVoti, maxGiorni: _filtroGiorniStorico);
+                  final storicoFiltrato = _viewModel.storicoFiltrato;
                   if (storicoFiltrato.isEmpty) {
                     return Text(
                       'Nessuna attività registrata nel periodo selezionato.',
@@ -1964,6 +1853,8 @@ class _ProfileViewState extends State<ProfileView> {
       ),
     ),
   );
+      },
+    );
 }
 
   Widget _buildBachecaTitoli() {
@@ -2015,7 +1906,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: _buildBachecaBadge(
                     icon: '👑',
                     label: 'Campione',
-                    count: _countCampione,
+                    count: _viewModel.countCampione,
                     color: const Color(0xFFFACC15),
                   ),
                 ),
@@ -2024,7 +1915,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: _buildBachecaBadge(
                     icon: '🤡',
                     label: 'Re Malus',
-                    count: _countReMalus,
+                    count: _viewModel.countReMalus,
                     color: const Color(0xFFEF4444),
                   ),
                 ),
@@ -2037,7 +1928,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: _buildBachecaBadge(
                     icon: '⚖️',
                     label: 'Avvocato',
-                    count: _countAvvocato,
+                    count: _viewModel.countAvvocato,
                     color: const Color(0xFF38BDF8),
                   ),
                 ),
@@ -2046,7 +1937,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: _buildBachecaBadge(
                     icon: '👻',
                     label: 'Fantasma',
-                    count: _countFantasma,
+                    count: _viewModel.countFantasma,
                     color: const Color(0xFF94A3B8),
                   ),
                 ),
@@ -2059,7 +1950,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: _buildBachecaBadge(
                     icon: '🕵️',
                     label: 'Lo Sbirro',
-                    count: _countSbirro,
+                    count: _viewModel.countSbirro,
                     color: const Color(0xFFF97316),
                   ),
                 ),
@@ -2068,7 +1959,7 @@ class _ProfileViewState extends State<ProfileView> {
                   child: _buildBachecaBadge(
                     icon: '⚡',
                     label: 'Giustiziere',
-                    count: _countGiustiziere,
+                    count: _viewModel.countGiustiziere,
                     color: const Color(0xFF10B981),
                   ),
                 ),

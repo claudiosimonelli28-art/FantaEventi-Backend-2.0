@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/api_service.dart';
 import '../models/evento.dart';
 import '../models/bonus_malus.dart';
-import '../models/votazione.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/event_card.dart';
 import '../widgets/bonus_malus_card.dart';
@@ -19,9 +17,8 @@ import 'var_submission_modal.dart';
 import '../widgets/guida_regolamento_modal.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../services/tutorial_controller.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../viewmodels/home_view_model.dart';
 import '../widgets/app_toast.dart';
-import '../services/push_notification_service.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -31,16 +28,9 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
-  final ApiService _apiService = ApiService();
-  List<Evento> _eventi = [];
-  List<BonusMalus> _bonusMalusList = [];
-  List<Votazione> _votazioniList = [];
-  int _numeroNotifiche = 0;
-  bool _isLoading = true;
-  bool _networkError = false;
+  final HomeViewModel _viewModel = HomeViewModel();
 
   late TabController _tabController;
-  Timer? _liveSyncTimer;
 
   // Controller e animazioni per lo Speed Dial FAB
   late AnimationController _fabAnimationController;
@@ -103,29 +93,25 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       }
     });
 
-    _loadData(forceRefresh: true);
-    _checkLongTermInactivity();
-    _liveSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      _loadData(silent: true, forceRefresh: false);
-    });
+    _viewModel.inizializza();
+    _checkInitialModals();
   }
 
-  Future<void> _checkLongTermInactivity() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final lastActiveMs = prefs.getInt('ultimo_accesso_effettivo_timestamp');
-      final nowMs = DateTime.now().millisecondsSinceEpoch;
-
-      if (lastActiveMs != null) {
-        final diffDays = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(lastActiveMs)).inDays;
-        if (diffDays >= 180 && mounted) {
-          final userNick = _apiService.currentUser?.nome ?? 'Campione';
-          _mostraModaleBentornato(userNick);
+  Future<void> _checkInitialModals() async {
+    final shouldShowInactive = await _viewModel.checkShouldShowLongTermInactivity();
+    if (shouldShowInactive && mounted) {
+      _mostraModaleBentornato(_viewModel.currentUserNick);
+    }
+    final shouldShowGuide = await _viewModel.shouldShowInitialGuide();
+    if (shouldShowGuide && mounted) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (mounted) {
+        final startTutorial = await GuidaRegolamentoModal.mostra(context, isFirstAccess: true);
+        if (startTutorial == true && mounted) {
+          _avviaTutorialGuidato();
         }
       }
-
-      await prefs.setInt('ultimo_accesso_effettivo_timestamp', nowMs);
-    } catch (_) {}
+    }
   }
 
   void _mostraModaleBentornato(String userNick) {
@@ -241,98 +227,8 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
   }
 
-  final Set<String> _readNotificaIds = {};
-  bool _isFetchingData = false;
-
   Future<void> _loadData({bool silent = false, bool forceRefresh = false}) async {
-    if (_isFetchingData) return;
-    _isFetchingData = true;
-    try {
-      if (!silent && mounted) {
-        setState(() {
-          _isLoading = true;
-        });
-        await _apiService.syncCurrentUserFromDb();
-      }
-
-      // Caricamento ordinato: zero collisioni sul socket singolo di MongoDB
-      final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
-      await _apiService.getUtenti();
-      final meBonus = await _apiService.getBonusMalusList();
-      final meVoti = await _apiService.getVotazioni();
-
-      final curUser = _apiService.currentUser;
-      final nick = curUser?.nome ?? 'Cloud';
-      final nots = await _apiService.getNotifiche(nick);
-      final unreadNots = nots.where((n) {
-        final nId = (n['id'] ?? '').toString();
-        if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
-        if (n['letto'] == true || n['stato'] == 'letto') return false;
-        return true;
-      }).toList();
-
-      final inAttesa = unreadNots.length;
-
-      if (!mounted) return;
-
-      setState(() {
-        _eventi = meEventi;
-        _bonusMalusList = meBonus;
-        _votazioniList = meVoti;
-        _numeroNotifiche = inAttesa;
-        if (!silent) _isLoading = false;
-      });
-
-      _networkError = false;
-      if (!silent) {
-        _checkMostraGuidaIniziale();
-        unawaited(PushNotificationService.instance.syncCurrentDeviceToken());
-      }
-    } catch (e) {
-      if (_eventi.isEmpty) {
-        _networkError = true;
-      }
-      if (!silent && mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } finally {
-      _isFetchingData = false;
-    }
-  }
-
-  String? _lastCheckedUserGuida;
-
-  Future<void> _checkMostraGuidaIniziale() async {
-    final curUser = _apiService.currentUser;
-    if (curUser == null) return;
-    final userKey = curUser.id.isNotEmpty ? curUser.id : curUser.nome.trim().toLowerCase();
-    if (_lastCheckedUserGuida == userKey) return;
-
-    final seen = await _apiService.haVistoGuidaRegole(userKey);
-    if (seen) {
-      _lastCheckedUserGuida = userKey;
-      return;
-    }
-
-    // Se l'utente ha già avviato il tutorial ed è rimasto a metà, non ripresentare la modale delle regole
-    final savedStage = await TutorialController.instance.getSavedStage();
-    if (savedStage != null && savedStage != TutorialStage.idle) {
-      _lastCheckedUserGuida = userKey;
-      return;
-    }
-
-    _lastCheckedUserGuida = userKey;
-    if (mounted) {
-      await Future.delayed(const Duration(milliseconds: 600));
-      if (mounted) {
-        final startTutorial = await GuidaRegolamentoModal.mostra(context, isFirstAccess: true);
-        if (startTutorial == true && mounted) {
-          _avviaTutorialGuidato();
-        }
-      }
-    }
+    await _viewModel.loadData(silent: silent, forceRefresh: forceRefresh);
   }
 
   void _onTutorialChanged() {
@@ -362,10 +258,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   void _apriPrimoEvento() async {
-    if (_eventi.isEmpty) return;
-    final ev = _eventi.firstWhere(
+    if (_viewModel.eventi.isEmpty) return;
+    final ev = _viewModel.eventi.firstWhere(
       (e) => TutorialController.instance.isTutorialEvent(e),
-      orElse: () => _eventi.first,
+      orElse: () => _viewModel.eventi.first,
     );
     if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card) {
       TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
@@ -424,10 +320,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     if (savedStage == TutorialStage.step5_in_event_detail || savedStage == TutorialStage.step6_in_add_bonus) {
       Evento? targetEvent;
-      if (_eventi.isNotEmpty) {
-        targetEvent = _eventi.firstWhere(
+      if (_viewModel.eventi.isNotEmpty) {
+        targetEvent = _viewModel.eventi.firstWhere(
           (e) => TutorialController.instance.isTutorialEvent(e),
-          orElse: () => _eventi.first,
+          orElse: () => _viewModel.eventi.first,
         );
       }
       if (targetEvent != null) {
@@ -500,8 +396,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   Future<void> _confermaEliminazioneEvento(Evento evento) async {
-    final curUser = _apiService.currentUser;
-    final nick = curUser?.nome ?? 'Cloud';
+    final nick = _viewModel.currentUserNick;
     bool isDeleting = false;
 
     final confermato = await showDialog<bool>(
@@ -568,7 +463,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
                       final evId = evento.id;
                       try {
-                        await _apiService.eliminaEvento(evId, nick);
+                        await _viewModel.eliminaEvento(evId, nick);
                         if (ctx.mounted) {
                           Navigator.pop(ctx, true);
                         }
@@ -594,10 +489,6 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
 
     if (confermato == true) {
-      final evId = evento.id;
-      setState(() {
-        _eventi.removeWhere((e) => e.id == evId);
-      });
       _loadData(forceRefresh: true, silent: true);
       if (mounted) {
         AppToast.showSuccess(
@@ -610,8 +501,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   Future<void> _partecipaEvento(Evento evento) async {
-    final curUser = _apiService.currentUser;
-    final nick = curUser?.nome ?? 'Cloud';
+    final nick = _viewModel.currentUserNick;
 
     if (evento.isConcluso || evento.isInCorso) {
       if (!mounted) return;
@@ -626,7 +516,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     }
 
     try {
-      await _apiService.partecipaAdEvento(evento.id, nick);
+      await _viewModel.partecipaAdEvento(evento.id, nick);
       if (!mounted) return;
       AppToast.showSuccess(
         context,
@@ -647,7 +537,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   @override
   void dispose() {
     TutorialController.instance.removeListener(_onTutorialChanged);
-    _liveSyncTimer?.cancel();
+    _viewModel.dispose();
     _tabController.dispose();
     _fabAnimationController.dispose();
     super.dispose();
@@ -675,10 +565,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final curUser = _apiService.currentUser;
-    final userNick = curUser?.nome ?? 'Cloud';
+    return ListenableBuilder(
+      listenable: _viewModel,
+      builder: (context, _) {
+        final curUser = _viewModel.currentUser;
+        final userNick = _viewModel.currentUserNick;
 
-    final Widget mainScaffold = Scaffold(
+        final Widget mainScaffold = Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
@@ -757,7 +650,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               clipBehavior: Clip.none,
               children: [
                 const Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
-                if (_numeroNotifiche > 0 || TutorialController.instance.stage == TutorialStage.step8_tap_notification)
+                if (_viewModel.numeroNotifiche > 0 || TutorialController.instance.stage == TutorialStage.step8_tap_notification)
                   Positioned(
                     right: -2,
                     top: -2,
@@ -768,7 +661,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                         shape: BoxShape.circle,
                       ),
                       child: Text(
-                        '${_numeroNotifiche > 0 ? _numeroNotifiche : 1}',
+                        '${_viewModel.numeroNotifiche > 0 ? _viewModel.numeroNotifiche : 1}',
                         style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -862,7 +755,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       ),
       body: Stack(
         children: [
-          _isLoading
+          _viewModel.isLoading
               ? const Center(
                   child: CircularProgressIndicator(color: Color(0xFFFACC15)),
                 )
@@ -967,11 +860,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
     final overlay = _buildInteractiveTutorialOverlay();
 
-    return Stack(
-      children: [
-        mainScaffold,
-        ?overlay,
-      ],
+        return Stack(
+          children: [
+            mainScaffold,
+            ?overlay,
+          ],
+        );
+      },
     );
   }
 
@@ -1264,8 +1159,11 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   Widget _buildEventiTab(String userNick) {
+    final eventi = _viewModel.eventi;
+    final networkError = _viewModel.networkError;
+
     Widget child;
-    if (_eventi.isEmpty) {
+    if (eventi.isEmpty) {
       child = SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: SizedBox(
@@ -1275,24 +1173,24 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  _networkError ? Icons.wifi_off_rounded : Icons.event_busy_rounded,
+                  networkError ? Icons.wifi_off_rounded : Icons.event_busy_rounded,
                   size: 64,
-                  color: _networkError ? const Color(0xFFEF4444) : const Color(0xFF64748B),
+                  color: networkError ? const Color(0xFFEF4444) : const Color(0xFF64748B),
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  _networkError ? 'Connessione non disponibile' : 'Nessun evento disponibile',
+                  networkError ? 'Connessione non disponibile' : 'Nessun evento disponibile',
                   style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  _networkError
+                  networkError
                       ? 'Verifica la tua connessione internet o riprova tra poco.'
                       : 'Tocca + in basso per creare il primo evento!',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
                 ),
-                if (_networkError) ...[
+                if (networkError) ...[
                   const SizedBox(height: 16),
                   ElevatedButton.icon(
                     onPressed: () => _loadData(forceRefresh: true),
@@ -1316,10 +1214,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       child = ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
-        itemCount: _eventi.length,
+        itemCount: eventi.length,
         itemBuilder: (ctx, idx) {
-          final ev = _eventi[idx];
-          final tutorialEv = _eventi.cast<Evento?>().firstWhere(
+          final ev = eventi[idx];
+          final tutorialEv = eventi.cast<Evento?>().firstWhere(
             (e) => e != null && TutorialController.instance.isTutorialEvent(e),
             orElse: () => null,
           );
@@ -1371,12 +1269,8 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   Widget _buildBonusMalusTab() {
-    final currentUserNick = _apiService.currentUser?.nome ?? 'Cloud';
-    final cleanUser = currentUserNick.trim().toLowerCase();
-
-    final activeEvents = _eventi.where((e) =>
-      e.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(e.dataFine)
-    ).toList();
+    final cleanUser = _viewModel.currentUserNick.trim().toLowerCase();
+    final activeEvents = _viewModel.activeEvents;
 
     Widget child;
     if (activeEvents.isEmpty) {
@@ -1421,14 +1315,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
           final isOrganizzatore = cleanCreatore == cleanUser;
           final isPartecipante = ev.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
 
-          // Filtra tutti i bonus/malus approvati per questo evento
-          final approvedForEvent = _bonusMalusList.where((b) {
-            final isSameEv = b.eventoId.trim().toLowerCase() == ev.id.trim().toLowerCase() ||
-                b.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
-            final isApprovato = b.stato == 'approvato' || b.stato == 'confermato' || b.approvato;
-            final isMine = b.propostoDa.trim().toLowerCase() == cleanUser;
-            return isSameEv && (isApprovato || isMine);
-          }).toList();
+          final approvedForEvent = _viewModel.getApprovedBonusMalusForEvent(ev, cleanUser);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -1483,7 +1370,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                                 bonusMalus: bm,
                                 onElimina: (isMine && !isVarSanction)
                                     ? () async {
-                                        await _apiService.eliminaBonusMalus(bm.id);
+                                        await _viewModel.eliminaBonusMalus(bm.id);
                                         if (!mounted) return;
                                         AppToast.showSuccess(
                                           context,
@@ -1696,7 +1583,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
                                       if (confermato != true) return;
 
-                                      await _apiService.assegnaBonusMalusAPartecipante(
+                                      await _viewModel.assegnaBonusMalusAPartecipante(
                                         eventoId: ev.id,
                                         bonusId: bm.id,
                                         utenteDestinatario: part,
@@ -1742,68 +1629,13 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   }
 
   Widget _buildVotazioniTab() {
-    final curUser = _apiService.currentUser;
+    final curUser = _viewModel.currentUser;
     final cleanUser = (curUser?.nome ?? 'Cloud').trim().toLowerCase();
     final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
     final cleanId = (curUser?.id ?? '').trim().toLowerCase();
 
-    final activeVotazioni = _votazioniList.where((v) {
-      final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
-
-      final evMatch = _eventi.firstWhere(
-        (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
-               (e.titolo.isNotEmpty && v.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
-               (e.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
-        orElse: () => Evento(
-          id: '',
-          titolo: '',
-          descrizione: '',
-          data: DateTime.now(),
-          luogo: '',
-          stato: '',
-          propostoDa: '',
-          partecipanti: [],
-          bonusMalusApplicati: [],
-          votazioniAttive: [],
-        ),
-      );
-
-      // REGOLA ASSOLUTA: Se l'evento non appartiene alla lista degli eventi dell'utente (_eventi),
-      // significa che l'utente non è invitato e non partecipa: LA VOTAZIONE DEVE ESSERE ESCLUSA!
-      if (evMatch.id.isEmpty) {
-        return false;
-      }
-
-      // Se l'evento è concluso o scaduto, non fa più parte delle votazioni live
-      if (evMatch.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(evMatch.dataFine)) {
-        return false;
-      }
-
-      // Verifica rigorosa di partecipazione: l'utente deve essere confermato come creatore, partecipante o invitato
-      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
-      final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
-      final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
-
-      final bool isCoinvolto = cleanCreatore == cleanUser || cleanCreatore == cleanNick || cleanCreatore == cleanId ||
-                               pList.contains(cleanUser) || pList.contains(cleanNick) || pList.contains(cleanId) ||
-                               iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
-
-      if (!isCoinvolto) {
-        return false;
-      }
-
-      return true;
-    }).toList();
-
-    final activeEventsWithVotes = _eventi.where((ev) {
-      if (ev.isConcluso || DateTime.now().isAfter(ev.dataFine)) return false;
-      return activeVotazioni.any((v) {
-        final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
-        return (evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId)) ||
-               (ev.titolo.isNotEmpty && v.titolo.toLowerCase().contains(ev.titolo.toLowerCase())) ||
-               (ev.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(ev.titolo.toLowerCase()));
-      });
-    }).toList();
+    final activeVotazioni = _viewModel.getActiveVotazioni(cleanUser, cleanNick, cleanId);
+    final activeEventsWithVotes = _viewModel.getActiveEventsWithVotes(activeVotazioni);
 
     Widget child;
     if (activeEventsWithVotes.isEmpty) {
@@ -1826,12 +1658,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemCount: activeEventsWithVotes.length,
         itemBuilder: (ctx, idx) {
           final ev = activeEventsWithVotes[idx];
-          final votesForEvent = activeVotazioni.where((v) {
-            final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
-            return (evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId)) ||
-                   (ev.titolo.isNotEmpty && v.titolo.toLowerCase().contains(ev.titolo.toLowerCase())) ||
-                   (ev.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(ev.titolo.toLowerCase()));
-          }).toList();
+          final votesForEvent = _viewModel.getVotesForEvent(ev, activeVotazioni);
 
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -1867,7 +1694,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                       children: votesForEvent.map((v) {
                         return VoteCard(
                           votazione: v,
-                          currentUserNickname: _apiService.currentUser?.nome ?? 'Cloud',
+                          currentUserNickname: _viewModel.currentUserNick,
                           onVotaTap: () async {
                             await Navigator.of(context).push(
                               MaterialPageRoute(builder: (_) => VoteView(votazione: v)),
