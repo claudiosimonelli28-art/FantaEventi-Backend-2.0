@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import '../services/push_notification_service.dart';
+import '../viewmodels/login_view_model.dart';
 import 'home_view.dart';
 import '../widgets/app_toast.dart';
 
@@ -28,21 +29,7 @@ class _LoginViewState extends State<LoginView> {
   final _regPasswordController = TextEditingController();
   final _regConfirmPasswordController = TextEditingController();
 
-  bool _obscureLoginPassword = true;
-  bool _obscureRegPassword = true;
-  bool _obscureRegConfirmPassword = true;
-  bool _rememberMe = true;
-
-  // Controllo disponibilità Nickname con debounce
-  Timer? _nicknameDebounceTimer;
-  bool _isCheckingNickname = false;
-  bool? _isNicknameAvailable;
-  List<String> _suggestedNicknames = [];
-  String? _nicknameStatusMessage;
-
-  bool _isRegisterMode = false;
-  bool _isLoading = false;
-  final ApiService _apiService = ApiService();
+  final LoginViewModel _viewModel = LoginViewModel();
 
   void _showError(String message) {
     if (!mounted) return;
@@ -54,58 +41,15 @@ class _LoginViewState extends State<LoginView> {
   }
 
   void _onNicknameChanged(String value) {
-    _nicknameDebounceTimer?.cancel();
-    final trimmed = value.trim();
-
-    if (trimmed.length < 3) {
-      setState(() {
-        _isCheckingNickname = false;
-        _isNicknameAvailable = null;
-        _suggestedNicknames = [];
-        _nicknameStatusMessage = trimmed.isNotEmpty ? 'Almeno 3 caratteri richiesti' : null;
-      });
-      return;
-    }
-
-    setState(() {
-      _isCheckingNickname = true;
-      _nicknameStatusMessage = 'Controllo disponibilità...';
-    });
-
-    _nicknameDebounceTimer = Timer(const Duration(milliseconds: 1800), () async {
-      final currentNick = _nicknameController.text.trim();
-      if (currentNick.length < 3) return;
-
-      final res = await _apiService.verificaDisponibilitaNickname(currentNick);
-
-      if (!mounted) return;
-      if (_nicknameController.text.trim() == currentNick) {
-        setState(() {
-          _isCheckingNickname = false;
-          _isNicknameAvailable = res.disponibile;
-          _nicknameStatusMessage = res.messaggio;
-          _suggestedNicknames = res.suggerimenti;
-        });
-      }
-    });
+    _viewModel.onNicknameChanged(value, _nicknameController);
   }
 
   void _applyNicknameSuggestion(String suggested) {
-    _nicknameDebounceTimer?.cancel();
-    setState(() {
-      _nicknameController.text = suggested;
-      _nicknameController.selection = TextSelection.fromPosition(
-        TextPosition(offset: suggested.length),
-      );
-      _isCheckingNickname = false;
-      _isNicknameAvailable = true;
-      _nicknameStatusMessage = 'Nome utente disponibile! ✨';
-      _suggestedNicknames = [];
-    });
+    _viewModel.applyNicknameSuggestion(suggested, _nicknameController);
   }
 
   Widget? _buildNicknameSuffix() {
-    if (_isCheckingNickname) {
+    if (_viewModel.isCheckingNickname) {
       return const Padding(
         padding: EdgeInsets.all(12),
         child: SizedBox(
@@ -118,10 +62,10 @@ class _LoginViewState extends State<LoginView> {
         ),
       );
     }
-    if (_isNicknameAvailable == true) {
+    if (_viewModel.isNicknameAvailable == true) {
       return const Icon(Icons.check_circle_rounded, color: Color(0xFF22C55E), size: 22);
     }
-    if (_isNicknameAvailable == false) {
+    if (_viewModel.isNicknameAvailable == false) {
       return const Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 22);
     }
     return null;
@@ -131,25 +75,13 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _handleLogin() async {
     if (!(_loginFormKey.currentState?.validate() ?? false)) return;
 
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
-      await _apiService.login(
-        _identifierController.text.trim(),
-        _loginPasswordController.text,
-        rememberMe: _rememberMe,
+      await _viewModel.login(
+        identifier: _identifierController.text.trim(),
+        password: _loginPasswordController.text,
       );
 
       if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      // Sincronizza il token FCM per il nuovo login
-      await PushNotificationService.instance.syncCurrentDeviceToken();
 
       if (PushNotificationService.hasPendingRoute) {
         Navigator.of(context).pushReplacement(
@@ -163,17 +95,9 @@ class _LoginViewState extends State<LoginView> {
       }
     } on NeedsPasswordSetupException catch (e) {
       if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
       _showPasswordSetupModal(e.username, e.email);
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
       _showError(e.toString());
     }
   }
@@ -182,51 +106,17 @@ class _LoginViewState extends State<LoginView> {
   Future<void> _handleRegister() async {
     if (!(_registerFormKey.currentState?.validate() ?? false)) return;
 
-    final nick = _nicknameController.text.trim();
-    if (nick.length < 3) {
-      _showError('Il nickname deve contenere almeno 3 caratteri.');
-      return;
-    }
-
-    if (_isNicknameAvailable == false) {
-      _showError('Il nickname "$nick" non è disponibile. Scegline un altro o usa uno dei suggerimenti proposti!');
-      return;
-    }
-
-    final pass = _regPasswordController.text.trim();
-    final confirmPass = _regConfirmPasswordController.text.trim();
-
-    if (pass.length < 6) {
-      _showError('La password deve contenere almeno 6 caratteri.');
-      return;
-    }
-
-    if (pass != confirmPass) {
-      _showError('Le password non coincidono! Controlla e riprova.');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
-      await _apiService.registrazione(
+      await _viewModel.register(
         nome: _nomeController.text.trim(),
         cognome: _cognomeController.text.trim(),
-        nickname: nick,
+        nickname: _nicknameController.text.trim(),
         email: _emailController.text.trim(),
-        password: pass,
-        rememberMe: _rememberMe,
+        password: _regPasswordController.text.trim(),
+        confirmPassword: _regConfirmPasswordController.text.trim(),
       );
 
       if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      await PushNotificationService.instance.syncCurrentDeviceToken();
 
       if (PushNotificationService.hasPendingRoute) {
         Navigator.of(context).pushReplacement(
@@ -240,20 +130,9 @@ class _LoginViewState extends State<LoginView> {
       }
     } on NicknameAlreadyTakenException catch (e) {
       if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _isNicknameAvailable = false;
-        _nicknameStatusMessage = 'Nome utente già in uso! Prova uno di questi:';
-        _suggestedNicknames = e.suggerimenti;
-      });
       _showError('Il nickname "${e.nickname}" è già occupato! Scegli uno dei suggerimenti proposti.');
     } catch (e) {
       if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
       _showError(e.toString());
     }
   }
@@ -264,7 +143,7 @@ class _LoginViewState extends State<LoginView> {
     final setupConfirmPassController = TextEditingController();
     bool obscureSetup1 = true;
     bool obscureSetup2 = true;
-    bool setupRememberMe = _rememberMe;
+    bool setupRememberMe = _viewModel.rememberMe;
     bool isSaving = false;
 
     showModalBottomSheet(
@@ -452,14 +331,16 @@ class _LoginViewState extends State<LoginView> {
                         setModalState(() => isSaving = true);
 
                         try {
-                          await _apiService.impostaPasswordPrimoAccesso(
+                          await _viewModel.impostaPasswordPrimoAccesso(
                             username: username,
                             nuovaPassword: p1,
                             rememberMe: setupRememberMe,
                           );
 
                           if (!mounted) return;
-                          Navigator.of(modalCtx).pop(); // Chiudi bottom sheet
+                          if (modalCtx.mounted) {
+                            Navigator.of(modalCtx).pop();
+                          }
                           nav.pushReplacement(
                             MaterialPageRoute(builder: (_) => const HomeView()),
                           );
@@ -654,7 +535,7 @@ class _LoginViewState extends State<LoginView> {
                           });
 
                           try {
-                            final res = await _apiService.richiediCodiceReset(ident);
+                            final res = await _viewModel.richiediCodiceReset(ident);
                             setModalState(() {
                               isProcessing = false;
                               step = 2;
@@ -817,7 +698,7 @@ class _LoginViewState extends State<LoginView> {
                           });
 
                           try {
-                            await _apiService.confermaCodiceEReset(
+                            await _viewModel.confermaCodiceEReset(
                               email: targetEmail,
                               codice: code,
                               nuovaPassword: p1,
@@ -898,7 +779,7 @@ class _LoginViewState extends State<LoginView> {
 
   @override
   void dispose() {
-    _nicknameDebounceTimer?.cancel();
+    _viewModel.dispose();
     _identifierController.dispose();
     _loginPasswordController.dispose();
     _nomeController.dispose();
@@ -915,627 +796,622 @@ class _LoginViewState extends State<LoginView> {
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Header Logo con Icona Ufficiale FantaEventi
-                Center(
-                  child: Container(
-                    width: 88,
-                    height: 88,
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF9333EA).withValues(alpha: 0.45),
-                          blurRadius: 22,
-                          spreadRadius: 4,
+        child: ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) {
+            return Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 28.0, vertical: 24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Header Logo con Icona Ufficiale FantaEventi
+                    Center(
+                      child: Container(
+                        width: 88,
+                        height: 88,
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFACC15), Color(0xFF9333EA)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF9333EA).withValues(alpha: 0.45),
+                              blurRadius: 22,
+                              spreadRadius: 4,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/icon/app_icon.jpg',
-                        fit: BoxFit.cover,
+                        child: ClipOval(
+                          child: Image.asset(
+                            'assets/icon/app_icon.jpg',
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Text(
-                  'FantaEventi',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.poppins(
-                    fontSize: 30,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF9333EA).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1),
-                  ),
-                  child: Text(
-                    '🏆 Trasforma ogni serata con i tuoi amici in una sfida epica! ✨',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFFACC15),
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  _isRegisterMode
-                      ? 'Crea il tuo profilo e inizia a scalare la classifica!'
-                      : 'Inserisci il tuo Nickname o Email per entrare in gioco',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: const Color(0xFF94A3B8),
-                    height: 1.4,
-                  ),
-                ),
-                const SizedBox(height: 32),
-
-                // Form Container
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: const Color(0xFF334155),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 8),
+                    const SizedBox(height: 18),
+                    Text(
+                      'FantaEventi',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.poppins(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
                       ),
-                    ],
-                  ),
-                  child: AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 300),
-                    crossFadeState: _isRegisterMode ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                    firstChild: Form(
-                      key: _loginFormKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Accedi con il tuo Account',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 20),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF9333EA).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4), width: 1),
+                      ),
+                      child: Text(
+                        '🏆 Trasforma ogni serata con i tuoi amici in una sfida epica! ✨',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFFFACC15),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _viewModel.isRegisterMode
+                          ? 'Crea il tuo profilo e inizia a scalare la classifica!'
+                          : 'Inserisci il tuo Nickname o Email per entrare in gioco',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        color: const Color(0xFF94A3B8),
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
 
-                          TextFormField(
-                            controller: _identifierController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Nickname o Email',
-                              hintText: 'Es. mario_rossi oppure utente@email.it',
-                              hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.person_outline, color: Color(0xFFFACC15)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) {
-                                return 'Inserisci il tuo Nickname o Email';
-                              }
-                              return null;
-                            },
+                    // Form Container
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: const Color(0xFF334155),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 15,
+                            offset: const Offset(0, 8),
                           ),
-                          const SizedBox(height: 14),
-
-                          TextFormField(
-                            controller: _loginPasswordController,
-                            obscureText: _obscureLoginPassword,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Password',
-                              hintText: 'Inserisci la tua password',
-                              hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscureLoginPassword ? Icons.visibility_off : Icons.visibility,
-                                  color: const Color(0xFF64748B),
-                                ),
-                                onPressed: () => setState(() => _obscureLoginPassword = !_obscureLoginPassword),
-                              ),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        ],
+                      ),
+                      child: AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 300),
+                        crossFadeState: _viewModel.isRegisterMode ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                        firstChild: Form(
+                          key: _loginFormKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              InkWell(
-                                onTap: () => setState(() => _rememberMe = !_rememberMe),
-                                borderRadius: BorderRadius.circular(8),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2.0),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        height: 24,
-                                        width: 24,
-                                        child: Checkbox(
-                                          value: _rememberMe,
-                                          onChanged: (val) => setState(() => _rememberMe = val ?? false),
+                              Text(
+                                'Accedi con il tuo Account',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 20),
 
-                                          activeColor: const Color(0xFFFACC15),
-                                          checkColor: const Color(0xFF0F172A),
-                                          side: const BorderSide(color: Color(0xFF64748B)),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        'Ricordami',
-                                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFFCBD5E1)),
-                                      ),
-                                    ],
+                              TextFormField(
+                                controller: _identifierController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Nickname o Email',
+                                  hintText: 'Es. mario_rossi oppure utente@email.it',
+                                  hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.person_outline, color: Color(0xFFFACC15)),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) {
+                                    return 'Inserisci il tuo Nickname o Email';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 14),
+
+                              TextFormField(
+                                controller: _loginPasswordController,
+                                obscureText: _viewModel.obscureLoginPassword,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Password',
+                                  hintText: 'Inserisci la tua password',
+                                  hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _viewModel.obscureLoginPassword ? Icons.visibility_off : Icons.visibility,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                    onPressed: _viewModel.toggleObscureLoginPassword,
+                                  ),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
                                   ),
                                 ),
                               ),
-                              TextButton(
-                                onPressed: _showForgotPasswordModal,
-                                style: TextButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              const SizedBox(height: 12),
+
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  InkWell(
+                                    onTap: () => _viewModel.setRememberMe(!_viewModel.rememberMe),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2.0),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            height: 24,
+                                            width: 24,
+                                            child: Checkbox(
+                                              value: _viewModel.rememberMe,
+                                              onChanged: (val) => _viewModel.setRememberMe(val ?? false),
+                                              activeColor: const Color(0xFFFACC15),
+                                              checkColor: const Color(0xFF0F172A),
+                                              side: const BorderSide(color: Color(0xFF64748B)),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Ricordami',
+                                            style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFFCBD5E1)),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: _showForgotPasswordModal,
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    child: Text(
+                                      'Password dimenticata?',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFFFACC15),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 18),
+
+                              ElevatedButton(
+                                onPressed: _viewModel.isLoading ? null : _handleLogin,
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ).copyWith(
+                                  elevation: WidgetStateProperty.all(0),
                                 ),
-                                child: Text(
-                                  'Password dimenticata?',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFFFACC15),
+                                child: Ink(
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFFFACC15), Color(0xFFEAB308)],
+                                    ),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Container(
+                                    alignment: Alignment.center,
+                                    constraints: const BoxConstraints(minHeight: 52),
+                                    child: _viewModel.isLoading
+                                        ? const CircularProgressIndicator(color: Color(0xFF0F172A))
+                                        : Text(
+                                            'ENTRA IN GIOCO',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF0F172A),
+                                              letterSpacing: 1.1,
+                                            ),
+                                          ),
                                   ),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 18),
-
-
-                          ElevatedButton(
-                            onPressed: _isLoading ? null : _handleLogin,
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ).copyWith(
-                              elevation: WidgetStateProperty.all(0),
-                            ),
-                            child: Ink(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFFFACC15), Color(0xFFEAB308)],
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              child: Container(
-                                alignment: Alignment.center,
-                                constraints: const BoxConstraints(minHeight: 52),
-                                child: _isLoading
-                                    ? const CircularProgressIndicator(color: Color(0xFF0F172A))
-                                    : Text(
-                                        'ENTRA IN GIOCO',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF0F172A),
-                                          letterSpacing: 1.1,
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    secondChild: Form(
-                      key: _registerFormKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Registrazione Nuovo Utente',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _nomeController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Nome',
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.badge_outlined, color: Color(0xFFFACC15)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            validator: (val) => val == null || val.trim().isEmpty ? 'Inserisci il nome' : null,
-                          ),
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: _cognomeController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Cognome',
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.badge_outlined, color: Color(0xFFFACC15)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: _nicknameController,
-                            onChanged: _onNicknameChanged,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Nickname di Gioco (min. 3 caratteri)',
-                              hintText: 'Es. MarioRossi, Bomber99, SuperFanta...',
-                              hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.stars_rounded, color: Color(0xFF9333EA)),
-                              suffixIcon: _buildNicknameSuffix(),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide(
-                                  color: _isNicknameAvailable == true
-                                      ? const Color(0xFF22C55E).withValues(alpha: 0.7)
-                                      : (_isNicknameAvailable == false
-                                          ? const Color(0xFFEF4444).withValues(alpha: 0.7)
-                                          : Colors.transparent),
-                                  width: 1.5,
+                        ),
+                        secondChild: Form(
+                          key: _registerFormKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Registrazione Nuovo Utente',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
                                 ),
                               ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide(
-                                  color: _isNicknameAvailable == true
-                                      ? const Color(0xFF22C55E)
-                                      : (_isNicknameAvailable == false
-                                          ? const Color(0xFFEF4444)
-                                          : const Color(0xFF9333EA)),
-                                  width: 1.8,
-                                ),
-                              ),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) return 'Inserisci il nickname';
-                              if (val.trim().length < 3) return 'Il nickname deve contenere almeno 3 caratteri';
-                              if (_isNicknameAvailable == false) return 'Nome utente già in uso';
-                              return null;
-                            },
-                          ),
-                          if (_nicknameStatusMessage != null) ...[
-                            const SizedBox(height: 6),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 4),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _isNicknameAvailable == true
-                                        ? Icons.check_circle_outline
-                                        : (_isNicknameAvailable == false ? Icons.warning_amber_rounded : Icons.info_outline),
-                                    size: 15,
-                                    color: _isNicknameAvailable == true
-                                        ? const Color(0xFF22C55E)
-                                        : (_isNicknameAvailable == false ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8)),
+                              const SizedBox(height: 16),
+
+                              TextFormField(
+                                controller: _nomeController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Nome',
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.badge_outlined, color: Color(0xFFFACC15)),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
                                   ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      _nicknameStatusMessage!,
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: _isNicknameAvailable == true
-                                            ? const Color(0xFF22C55E)
-                                            : (_isNicknameAvailable == false ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8)),
-                                      ),
+                                ),
+                                validator: (val) => val == null || val.trim().isEmpty ? 'Inserisci il nome' : null,
+                              ),
+                              const SizedBox(height: 12),
+
+                              TextFormField(
+                                controller: _cognomeController,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Cognome',
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.badge_outlined, color: Color(0xFFFACC15)),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                validator: (val) => val == null || val.trim().isEmpty ? 'Inserisci il cognome' : null,
+                              ),
+                              const SizedBox(height: 12),
+
+                              TextFormField(
+                                controller: _nicknameController,
+                                onChanged: _onNicknameChanged,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Nickname di Gioco (min. 3 caratteri)',
+                                  hintText: 'Es. MarioRossi, Bomber99, SuperFanta...',
+                                  hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.stars_rounded, color: Color(0xFF9333EA)),
+                                  suffixIcon: _buildNicknameSuffix(),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide(
+                                      color: _viewModel.isNicknameAvailable == true
+                                          ? const Color(0xFF22C55E).withValues(alpha: 0.7)
+                                          : (_viewModel.isNicknameAvailable == false
+                                              ? const Color(0xFFEF4444).withValues(alpha: 0.7)
+                                              : Colors.transparent),
+                                      width: 1.5,
                                     ),
                                   ),
-                                ],
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide(
+                                      color: _viewModel.isNicknameAvailable == true
+                                          ? const Color(0xFF22C55E)
+                                          : (_viewModel.isNicknameAvailable == false
+                                              ? const Color(0xFFEF4444)
+                                              : const Color(0xFF9333EA)),
+                                      width: 1.8,
+                                    ),
+                                  ),
+                                ),
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) return 'Inserisci il nickname';
+                                  if (val.trim().length < 3) return 'Il nickname deve contenere almeno 3 caratteri';
+                                  if (_viewModel.isNicknameAvailable == false) return 'Nome utente già in uso';
+                                  return null;
+                                },
                               ),
-                            ),
-                          ],
-                          if (_suggestedNicknames.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF1E293B),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.35)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                              if (_viewModel.nicknameStatusMessage != null) ...[
+                                const SizedBox(height: 6),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                                  child: Row(
                                     children: [
-                                      const Icon(Icons.auto_awesome, color: Color(0xFFFACC15), size: 15),
+                                      Icon(
+                                        _viewModel.isNicknameAvailable == true
+                                            ? Icons.check_circle_outline
+                                            : (_viewModel.isNicknameAvailable == false ? Icons.warning_amber_rounded : Icons.info_outline),
+                                        size: 15,
+                                        color: _viewModel.isNicknameAvailable == true
+                                            ? const Color(0xFF22C55E)
+                                            : (_viewModel.isNicknameAvailable == false ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8)),
+                                      ),
                                       const SizedBox(width: 6),
-                                      Text(
-                                        'Suggeriti per te (tocca per scegliere):',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: const Color(0xFFFACC15),
+                                      Expanded(
+                                        child: Text(
+                                          _viewModel.nicknameStatusMessage!,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: _viewModel.isNicknameAvailable == true
+                                                ? const Color(0xFF22C55E)
+                                                : (_viewModel.isNicknameAvailable == false ? const Color(0xFFF59E0B) : const Color(0xFF94A3B8)),
+                                          ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 8),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: _suggestedNicknames.map((suggerito) {
-                                      return ActionChip(
-                                        backgroundColor: const Color(0xFF9333EA).withValues(alpha: 0.25),
-                                        side: const BorderSide(color: Color(0xFF9333EA)),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        avatar: const Icon(Icons.touch_app_outlined, size: 15, color: Color(0xFFD8B4FE)),
-                                        label: Text(
-                                          suggerito,
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
+                                ),
+                              ],
+                              if (_viewModel.suggestedNicknames.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.35)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Icon(Icons.auto_awesome, color: Color(0xFFFACC15), size: 15),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Suggeriti per te (tocca per scegliere):',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: const Color(0xFFFACC15),
+                                            ),
                                           ),
-                                        ),
-                                        onPressed: () => _applyNicknameSuggestion(suggerito),
-                                      );
-                                    }).toList(),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: _viewModel.suggestedNicknames.map((suggerito) {
+                                          return ActionChip(
+                                            backgroundColor: const Color(0xFF9333EA).withValues(alpha: 0.25),
+                                            side: const BorderSide(color: Color(0xFF9333EA)),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                            avatar: const Icon(Icons.touch_app_outlined, size: 15, color: Color(0xFFD8B4FE)),
+                                            label: Text(
+                                              suggerito,
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                            onPressed: () => _applyNicknameSuggestion(suggerito),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Indirizzo Email',
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFACC15)),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            validator: (val) => val == null || val.trim().isEmpty || !val.contains('@') ? 'Email non valida' : null,
-                          ),
-                          const SizedBox(height: 12),
-
-                          TextFormField(
-                            controller: _regPasswordController,
-                            obscureText: _obscureRegPassword,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Password (minimo 6 caratteri)',
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscureRegPassword ? Icons.visibility_off : Icons.visibility,
-                                  color: const Color(0xFF64748B),
                                 ),
-                                onPressed: () => setState(() => _obscureRegPassword = !_obscureRegPassword),
-                              ),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) return 'Inserisci una password';
-                              if (val.trim().length < 6) return 'Almeno 6 caratteri';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
+                              ],
+                              const SizedBox(height: 12),
 
-                          TextFormField(
-                            controller: _regConfirmPasswordController,
-                            obscureText: _obscureRegConfirmPassword,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: InputDecoration(
-                              labelText: 'Conferma Password',
-                              labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
-                              prefixIcon: const Icon(Icons.lock_reset_outlined, color: Color(0xFFFACC15)),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  _obscureRegConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                                  color: const Color(0xFF64748B),
+                              TextFormField(
+                                controller: _emailController,
+                                keyboardType: TextInputType.emailAddress,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Indirizzo Email',
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFFFACC15)),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
                                 ),
-                                onPressed: () => setState(() => _obscureRegConfirmPassword = !_obscureRegConfirmPassword),
+                                validator: (val) => val == null || val.trim().isEmpty || !val.contains('@') ? 'Email non valida' : null,
                               ),
-                              filled: true,
-                              fillColor: const Color(0xFF0F172A),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(14),
-                                borderSide: BorderSide.none,
-                              ),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) return 'Conferma la password';
-                              if (val.trim() != _regPasswordController.text.trim()) return 'Le password non coincidono';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 12),
+                              const SizedBox(height: 12),
 
-                          InkWell(
-                            onTap: () => setState(() => _rememberMe = !_rememberMe),
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    height: 24,
-                                    width: 24,
-                                    child: Checkbox(
-                                      value: _rememberMe,
-                                      onChanged: (val) => setState(() => _rememberMe = val ?? false),
-                                      activeColor: const Color(0xFF9333EA),
-                                      checkColor: Colors.white,
-                                      side: const BorderSide(color: Color(0xFF64748B)),
+                              TextFormField(
+                                controller: _regPasswordController,
+                                obscureText: _viewModel.obscureRegPassword,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Password (minimo 6 caratteri)',
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFFFACC15)),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _viewModel.obscureRegPassword ? Icons.visibility_off : Icons.visibility,
+                                      color: const Color(0xFF64748B),
                                     ),
+                                    onPressed: _viewModel.toggleObscureRegPassword,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Mantieni l\'accesso',
-                                    style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFFCBD5E1)),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
                                   ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-
-                          ElevatedButton(
-                            onPressed: _isLoading ? null : _handleRegister,
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ).copyWith(
-                              elevation: WidgetStateProperty.all(0),
-                            ),
-                            child: Ink(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF9333EA), Color(0xFF7E22CE)],
                                 ),
-                                borderRadius: BorderRadius.circular(14),
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) return 'Inserisci una password';
+                                  if (val.trim().length < 6) return 'Almeno 6 caratteri';
+                                  return null;
+                                },
                               ),
-                              child: Container(
-                                alignment: Alignment.center,
-                                constraints: const BoxConstraints(minHeight: 52),
-                                child: _isLoading
-                                    ? const CircularProgressIndicator(color: Colors.white)
-                                    : Text(
-                                        'REGISTRATI A FANTAEVENTI',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 1.1,
+                              const SizedBox(height: 12),
+
+                              TextFormField(
+                                controller: _regConfirmPasswordController,
+                                obscureText: _viewModel.obscureRegConfirmPassword,
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(
+                                  labelText: 'Conferma Password',
+                                  labelStyle: const TextStyle(color: Color(0xFF94A3B8)),
+                                  prefixIcon: const Icon(Icons.lock_reset_outlined, color: Color(0xFFFACC15)),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _viewModel.obscureRegConfirmPassword ? Icons.visibility_off : Icons.visibility,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                    onPressed: _viewModel.toggleObscureRegConfirmPassword,
+                                  ),
+                                  filled: true,
+                                  fillColor: const Color(0xFF0F172A),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) return 'Conferma la password';
+                                  if (val.trim() != _regPasswordController.text.trim()) return 'Le password non coincidono';
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
+
+                              InkWell(
+                                onTap: () => _viewModel.setRememberMe(!_viewModel.rememberMe),
+                                borderRadius: BorderRadius.circular(8),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2.0),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: Checkbox(
+                                          value: _viewModel.rememberMe,
+                                          onChanged: (val) => _viewModel.setRememberMe(val ?? false),
+                                          activeColor: const Color(0xFF9333EA),
+                                          checkColor: Colors.white,
+                                          side: const BorderSide(color: Color(0xFF64748B)),
                                         ),
                                       ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Mantieni l\'accesso',
+                                        style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFFCBD5E1)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 18),
+
+                              ElevatedButton(
+                                onPressed: _viewModel.isLoading ? null : _handleRegister,
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                ).copyWith(
+                                  elevation: WidgetStateProperty.all(0),
+                                ),
+                                child: Ink(
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF9333EA), Color(0xFF7E22CE)],
+                                    ),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Container(
+                                    alignment: Alignment.center,
+                                    constraints: const BoxConstraints(minHeight: 52),
+                                    child: _viewModel.isLoading
+                                        ? const CircularProgressIndicator(color: Colors.white)
+                                        : Text(
+                                            'REGISTRATI A FANTAEVENTI',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                              letterSpacing: 1.1,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
-                // Switcher per Registrazione
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _isRegisterMode = !_isRegisterMode;
-                      _nicknameDebounceTimer?.cancel();
-                      _isCheckingNickname = false;
-                      _isNicknameAvailable = null;
-                      _suggestedNicknames = [];
-                      _nicknameStatusMessage = null;
-                    });
-                  },
-                  child: Text(
-                    _isRegisterMode
-                        ? 'Hai già un account? Accedi col tuo Nickname'
-                        : 'Non sei ancora registrato? Registrati qui!',
-                    style: GoogleFonts.inter(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFFACC15),
+                    // Switcher per Registrazione
+                    TextButton(
+                      onPressed: _viewModel.toggleMode,
+                      child: Text(
+                        _viewModel.isRegisterMode
+                            ? 'Hai già un account? Accedi col tuo Nickname'
+                            : 'Non sei ancora registrato? Registrati qui!',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFFFACC15),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
