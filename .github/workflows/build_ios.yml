@@ -36,9 +36,15 @@ jobs:
           flutter pub get
 
       - name: Build Android APK
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
         run: |
           cd mobile
-          flutter build apk --release
+          DEFINE_ARGS=""
+          if [ -n "$MONGODB_URI" ]; then DEFINE_ARGS="$DEFINE_ARGS --dart-define=MONGODB_URI=$MONGODB_URI"; fi
+          if [ -n "$BREVO_API_KEY" ]; then DEFINE_ARGS="$DEFINE_ARGS --dart-define=BREVO_API_KEY=$BREVO_API_KEY"; fi
+          flutter build apk --release $DEFINE_ARGS
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -68,16 +74,21 @@ jobs:
           cd mobile
           flutter pub get
 
-
       - name: Install CocoaPods
         run: |
           cd mobile/ios
           pod install || true
 
       - name: Build iOS (No Codesign)
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
         run: |
           cd mobile
-          flutter build ios --release --no-codesign
+          DEFINE_ARGS=""
+          if [ -n "$MONGODB_URI" ]; then DEFINE_ARGS="$DEFINE_ARGS --dart-define=MONGODB_URI=$MONGODB_URI"; fi
+          if [ -n "$BREVO_API_KEY" ]; then DEFINE_ARGS="$DEFINE_ARGS --dart-define=BREVO_API_KEY=$BREVO_API_KEY"; fi
+          flutter build ios --release --no-codesign $DEFINE_ARGS
 
       - name: Create IPA Package
         run: |
@@ -124,4 +135,3 @@ jobs:
           files: release_artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

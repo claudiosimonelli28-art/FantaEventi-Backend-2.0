@@ -1,0 +1,6 @@
+# Security & Sensitive Files
+*.env
+*.env.*
+app_config.json
+*.key
+*.pem

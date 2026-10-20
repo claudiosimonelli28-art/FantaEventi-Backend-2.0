@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:mongo_dart/mongo_dart.dart';
 
-
 class DbService {
   static DbService? _instance;
   Db? _db;
@@ -30,30 +29,41 @@ class DbService {
   static String get brevoApiKey {
     final key = Platform.environment['BREVO_API_KEY'];
     if (key != null && key.trim().isNotEmpty) return key.trim();
-    return 'J9P85UUEuUPXGfwG-941e20fe51bd1e1b903adf425484e929acec2622f261bf5c8d9d1894267dac93-bisyekx'
-        .split('')
-        .reversed
-        .join();
-  }
-
-
-
-
-  Future<void> connect() async {
-    String mongoUri = 'mongodb+srv://Lorenzo:[REDACTED]@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0';
-
     try {
       final envFile = File('.env');
       if (envFile.existsSync()) {
         final lines = envFile.readAsLinesSync();
         for (var line in lines) {
-          if (line.startsWith('MONGODB_URI=')) {
-            mongoUri = line.substring('MONGODB_URI='.length).trim();
-            break;
+          if (line.startsWith('BREVO_API_KEY=')) {
+            return line.substring('BREVO_API_KEY='.length).trim();
           }
         }
       }
     } catch (_) {}
+    return '';
+  }
+
+  Future<void> connect() async {
+    String? mongoUri = Platform.environment['MONGODB_URI'];
+
+    if (mongoUri == null || mongoUri.trim().isEmpty) {
+      try {
+        final envFile = File('.env');
+        if (envFile.existsSync()) {
+          final lines = envFile.readAsLinesSync();
+          for (var line in lines) {
+            if (line.startsWith('MONGODB_URI=')) {
+              mongoUri = line.substring('MONGODB_URI='.length).trim();
+              break;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (mongoUri == null || mongoUri.trim().isEmpty) {
+      throw StateError('MONGODB_URI non configurato nell\'ambiente o nel file .env');
+    }
 
     print('🔌 Connessione al tuo database MongoDB Atlas in corso...');
     _db = await Db.create(mongoUri);
