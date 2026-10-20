@@ -359,8 +359,31 @@ class ApiService {
 
   Future<List<String>> getFcmTokensPerUtenti(List<String> nicknames) async {
     if (nicknames.isEmpty) return [];
-    final List<String> allTokens = [];
     final cleanNicks = nicknames.map((n) => n.trim().toLowerCase()).toSet();
+    final List<String> allTokens = [];
+
+    // 1. Prova prima in-memory / cache locale istantanea (0 ms, zero carico DB, zero conflitti di socket)
+    for (var u in _utenti) {
+      final uNome = u.nome.trim().toLowerCase();
+      final uNick = u.nickname.trim().toLowerCase();
+      final uUser = u.username.trim().toLowerCase();
+      if (cleanNicks.contains(uNome) || cleanNicks.contains(uNick) || cleanNicks.contains(uUser)) {
+        allTokens.addAll(u.fcmTokens);
+      }
+    }
+    if (_currentUser != null) {
+      final curNome = _currentUser!.nome.trim().toLowerCase();
+      final curNick = _currentUser!.nickname.trim().toLowerCase();
+      if (cleanNicks.contains(curNome) || cleanNicks.contains(curNick)) {
+        allTokens.addAll(_currentUser!.fcmTokens);
+      }
+    }
+
+    if (allTokens.isNotEmpty) {
+      return allTokens.toSet().toList();
+    }
+
+    // 2. Fallback rapido su MongoDB con proiezione mirata
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
@@ -2303,7 +2326,7 @@ class ApiService {
 
         // Invia notifica push reale per la tendina di sistema
         try {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          await PushNotificationService.instance.inviaPushAUtenti(
             aggiuntiEffettivi,
             titolo: '🎉 Invito ad Evento: $evTitolo',
             messaggio: '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
@@ -2311,7 +2334,7 @@ class ApiService {
               'tipo': 'invito',
               'eventoId': eventoId,
             },
-          ));
+          ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
 
         // Aggiorna istantaneamente anche lo stato in-memory di _eventi
@@ -2802,7 +2825,7 @@ class ApiService {
         // Invia notifica push reale per la tendina di sistema a tutti gli invitati
         if (invitati.isNotEmpty) {
           try {
-            unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            await PushNotificationService.instance.inviaPushAUtenti(
               invitati,
               titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
               messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
@@ -2810,7 +2833,7 @@ class ApiService {
                 'tipo': 'invito',
                 'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
               },
-            ));
+            ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         }
 
@@ -3053,7 +3076,7 @@ class ApiService {
         // Invia notifica push reale per la tendina di sistema a tutti i partecipanti
         if (uniqueDestMap.isNotEmpty) {
           try {
-            unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            await PushNotificationService.instance.inviaPushAUtenti(
               uniqueDestMap.values.toList(),
               titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
               messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
@@ -3062,7 +3085,7 @@ class ApiService {
                 'eventoId': eventoId,
                 'bonusId': bmHexId,
               },
-            ));
+            ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         }
 
@@ -3337,7 +3360,7 @@ class ApiService {
 
         if (destList.isNotEmpty) {
           try {
-            unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            await PushNotificationService.instance.inviaPushAUtenti(
               destList,
               titolo: '🏆 Bonus/Malus Assegnato!',
               messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
@@ -3345,7 +3368,7 @@ class ApiService {
                 'tipo': 'assegnazione_bonus',
                 'eventoId': eventoId,
               },
-            ));
+            ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         }
       }
@@ -3961,12 +3984,12 @@ class ApiService {
       });
 
       try {
-        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+        await PushNotificationService.instance.inviaPushAUtenti(
           [targetUser.nickname],
           titolo: '👥 Nuova Richiesta di Amicizia',
           messaggio: '${curUser.nickname} vuole aggiungerti agli amici!',
           data: {'tipo': 'amicizia'},
-        ));
+        ).timeout(const Duration(seconds: 4), onTimeout: () {});
       } catch (_) {}
     }
   }
@@ -4030,12 +4053,12 @@ class ApiService {
         });
 
         try {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          await PushNotificationService.instance.inviaPushAUtenti(
             [mittente],
             titolo: '👥 Richiesta di Amicizia Accettata!',
             messaggio: '${curUser.nickname} ha accettato la tua richiesta di amicizia! Ora siete amici.',
             data: {'tipo': 'amicizia'},
-          ));
+          ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
       }
     }
@@ -4139,21 +4162,21 @@ class ApiService {
 
       // Invia notifiche push per la tendina al Giudice e ai Testimoni
       try {
-        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+        await PushNotificationService.instance.inviaPushAUtenti(
           [giudice],
           titolo: '📺 VAR: Richiesta da Esaminare!',
           messaggio: msgGiudice,
           data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
-        ));
+        ).timeout(const Duration(seconds: 4), onTimeout: () {});
       } catch (_) {}
       if (testimoni.isNotEmpty) {
         try {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          await PushNotificationService.instance.inviaPushAUtenti(
             testimoni,
             titolo: '👀 Chiamata a Testimoniare al VAR',
             messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
             data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
-          ));
+          ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
       }
 
@@ -4329,12 +4352,12 @@ class ApiService {
         });
 
         try {
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          await PushNotificationService.instance.inviaPushAUtenti(
             [richiesta.richiedente],
             titolo: '📺 VAR: Richiesta Approvata! ✅',
             messaggio: 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
             data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
-          ));
+          ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
       } else {
         // Rigettata
@@ -4529,12 +4552,12 @@ class ApiService {
           });
 
           try {
-            unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            await PushNotificationService.instance.inviaPushAUtenti(
               [richiesta.richiedente],
               titolo: '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
               messaggio: 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
               data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
-            ));
+            ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         } else {
           // Rifiutata senza sanzione (es. bonus non confermato)
@@ -4553,12 +4576,12 @@ class ApiService {
           });
 
           try {
-            unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            await PushNotificationService.instance.inviaPushAUtenti(
               [richiesta.richiedente],
               titolo: '📺 VAR: Richiesta Non Convalidata ❌',
               messaggio: 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
               data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
-            ));
+            ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         }
 

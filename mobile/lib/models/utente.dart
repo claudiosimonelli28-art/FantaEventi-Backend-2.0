@@ -19,6 +19,7 @@ class Utente {
   final int countSbirro;
   final int countGiustiziere;
   final bool haVistoGuida;
+  final List<String> fcmTokens;
 
   Utente({
     required this.id,
@@ -41,6 +42,7 @@ class Utente {
     this.countSbirro = 0,
     this.countGiustiziere = 0,
     this.haVistoGuida = false,
+    this.fcmTokens = const [],
   });
 
   String get nickname => nome;
@@ -102,6 +104,7 @@ class Utente {
       countSbirro: (json['countSbirro'] as num?)?.toInt() ?? 0,
       countGiustiziere: (json['countGiustiziere'] as num?)?.toInt() ?? 0,
       haVistoGuida: json['haVistoGuida'] == true,
+      fcmTokens: (json['fcmTokens'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }
 
@@ -128,6 +131,7 @@ class Utente {
       'countSbirro': countSbirro,
       'countGiustiziere': countGiustiziere,
       'haVistoGuida': haVistoGuida,
+      'fcmTokens': fcmTokens,
     };
   }
 
@@ -152,6 +156,7 @@ class Utente {
     int? countSbirro,
     int? countGiustiziere,
     bool? haVistoGuida,
+    List<String>? fcmTokens,
   }) {
     return Utente(
       id: id ?? this.id,
@@ -174,6 +179,7 @@ class Utente {
       countSbirro: countSbirro ?? this.countSbirro,
       countGiustiziere: countGiustiziere ?? this.countGiustiziere,
       haVistoGuida: haVistoGuida ?? this.haVistoGuida,
+      fcmTokens: fcmTokens ?? this.fcmTokens,
     );
   }
 }

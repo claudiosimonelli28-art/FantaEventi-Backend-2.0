@@ -249,9 +249,17 @@ class _CreateEventViewState extends State<CreateEventView> {
   }
 
   Future<void> _submitForm() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      final curUser = _apiService.currentUser;
-      final creatore = curUser?.nome ?? 'Cloud';
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      AppToast.showError(
+        context,
+        'Dati incompleti',
+        'Compila tutti i campi obbligatori (titolo, descrizione e luogo)',
+      );
+      return;
+    }
+
+    final curUser = _apiService.currentUser;
+    final creatore = curUser?.nome ?? 'Cloud';
 
       if (_partecipantiSelezionati.isEmpty) {
         _partecipantiSelezionati.add(creatore);
@@ -312,7 +320,6 @@ class _CreateEventViewState extends State<CreateEventView> {
           });
         }
       }
-    }
   }
 
   @override
