@@ -25,6 +25,8 @@ class DbService {
   DbCollection get bonusMalusCollection => db.collection('BonusMalus');
   DbCollection get votazioniCollection => db.collection('Votazioni');
   DbCollection get passwordResetCollection => db.collection('PasswordResetTokens');
+  DbCollection get richiesteVarCollection => db.collection('RichiesteVar');
+  DbCollection get notificheCollection => db.collection('Notifiche');
 
   static String get brevoApiKey {
     final key = Platform.environment['BREVO_API_KEY'];

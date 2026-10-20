@@ -8,6 +8,7 @@ import 'package:backend/controllers/evento_controller.dart';
 import 'package:backend/controllers/bonus_malus_controller.dart';
 import 'package:backend/controllers/votazione_controller.dart';
 import 'package:backend/controllers/notifica_controller.dart';
+import 'package:backend/controllers/var_controller.dart';
 
 Middleware _corsMiddleware() {
   return (Handler innerHandler) {
@@ -38,6 +39,7 @@ void main() async {
   final bonusMalusCtrl = BonusMalusController();
   final votazioneCtrl = VotazioneController();
   final notificaCtrl = NotificaController();
+  final varCtrl = VarController();
 
   // Rotte Utenti
   app.post('/api/login', utenteCtrl.login);
@@ -47,7 +49,6 @@ void main() async {
   app.post('/api/utenti/conferma-reset-password', utenteCtrl.confermaResetPassword);
   app.post('/api/utenti/avatar', utenteCtrl.aggiornaAvatar);
   app.get('/api/utenti', utenteCtrl.getUtenti);
-
 
   // Rotte Eventi
   app.get('/api/eventi', eventoCtrl.getEventi);
@@ -67,6 +68,14 @@ void main() async {
   // Rotte Votazioni
   app.get('/api/votazioni', votazioneCtrl.getVotazioni);
   app.post('/api/votazioni/vota', votazioneCtrl.vota);
+
+  // Rotte VAR (Verifica Assistita da Regia)
+  app.post('/api/var/crea', varCtrl.creaRichiestaVar);
+  app.get('/api/var/dettaglio', varCtrl.getRichiestaVar);
+  app.get('/api/var/evento', varCtrl.getRichiesteVarEvento);
+  app.get('/api/var/giudice', varCtrl.getRichiesteVarGiudice);
+  app.post('/api/var/vota-testimone', varCtrl.votaTestimonianza);
+  app.post('/api/var/decidi', varCtrl.decidiRichiesta);
 
   final handler = Pipeline()
       .addMiddleware(logRequests())
