@@ -7,4 +7,6 @@ services:
     plan: free
     envVars:
       - key: MONGODB_URI
-        value: mongodb+srv://Lorenzo:[REDACTED]@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
