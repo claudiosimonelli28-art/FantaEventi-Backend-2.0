@@ -1,12 +1,10 @@
-import 'package:mongo_dart/mongo_dart.dart';
+import 'package:backend/db/db_service.dart';
 
 void main() async {
-  final mongoUri = 'mongodb://Lorenzo:[REDACTED]@cluster0-shard-00-00.zbbqfcr.mongodb.net:27017,cluster0-shard-00-01.zbbqfcr.mongodb.net:27017,cluster0-shard-00-02.zbbqfcr.mongodb.net:27017/FantaEventi?ssl=true&replicaSet=atlas-shard-0&authSource=admin&retryWrites=true&w=majority';
-  
   print('Connessione a MongoDB Atlas per ispezione collezioni...');
-  final db = await Db.create(mongoUri);
-  await db.open();
-  
+  await DbService.instance.connect();
+  final db = DbService.instance.db;
+
   final collections = await db.getCollectionNames();
   print('📊 Collezioni trovate nel DB FantaEventi: $collections');
 
@@ -14,12 +12,8 @@ void main() async {
     if (colName != null) {
       final count = await db.collection(colName).count();
       print('  - Collezione "$colName": $count documenti');
-      final docs = await db.collection(colName).find().take(5).toList();
-      for (var d in docs) {
-        print('    Doc: $d');
-      }
     }
   }
 
-  await db.close();
+  await DbService.instance.close();
 }
