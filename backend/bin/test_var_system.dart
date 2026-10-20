@@ -5,7 +5,7 @@ void main() async {
   print('--- TEST AUTOMATICO SISTEMA VAR DI FANTAEVENTI ---');
 
   const mongoUri =
-      'mongodb+srv://Lorenzo:claudiosimonelli@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0';
+      Platform.environment["MONGODB_URI"] ?? (File(".env").existsSync() ? File(".env").readAsLinesSync().firstWhere((l) => l.startsWith("MONGODB_URI=")).split("=")[1] : "");
 
   final db = await Db.create(mongoUri);
   await db.open();

@@ -2,7 +2,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 
 void main() async {
   print('🔎 === ISPEZIONE DOCUMENTI UTENTI IN MONGODB ATLAS ===');
-  final mongoUri = 'mongodb+srv://Lorenzo:claudiosimonelli@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0';
+  final mongoUri = Platform.environment["MONGODB_URI"] ?? (File(".env").existsSync() ? File(".env").readAsLinesSync().firstWhere((l) => l.startsWith("MONGODB_URI=")).split("=")[1] : "");
   final db = await Db.create(mongoUri);
   await db.open();
 
