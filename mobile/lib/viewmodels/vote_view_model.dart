@@ -15,15 +15,18 @@ class VoteViewModel extends BaseViewModel {
   Votazione get votazione => _votazione;
   bool get isSubmitting => _isSubmitting;
   Utente? get currentUser => _apiService.currentUser;
-  String get currentUserNick => _apiService.currentUser?.nome.isNotEmpty == true
-      ? _apiService.currentUser!.nome
-      : 'Cloud';
+  String get currentUserNick {
+    final u = _apiService.currentUser;
+    if (u == null) return 'Cloud';
+    if (u.nickname.isNotEmpty) return u.nickname;
+    if (u.nome.isNotEmpty) return u.nome;
+    return 'Cloud';
+  }
 
   bool get isPartecipante {
     final curUser = _apiService.currentUser;
-    final curUserNick = curUser?.nome.isNotEmpty == true ? curUser!.nome : 'Cloud';
-    final cleanUser = curUserNick.trim().toLowerCase();
     final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
+    final cleanNome = (curUser?.nome ?? '').trim().toLowerCase();
     final cleanId = (curUser?.id ?? '').trim().toLowerCase();
 
     final evId = _votazione.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
@@ -50,9 +53,12 @@ class VoteViewModel extends BaseViewModel {
       final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
       final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
 
-      return cleanCreatore == cleanUser || cleanCreatore == cleanNick || cleanCreatore == cleanId ||
-             pList.contains(cleanUser) || pList.contains(cleanNick) || pList.contains(cleanId) ||
-             iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
+      return cleanCreatore == cleanNick || cleanCreatore == cleanNome || cleanCreatore == cleanId ||
+             (cleanNick == 'cloud' && cleanCreatore == 'claudio') || (cleanNome == 'claudio' && cleanCreatore == 'cloud') ||
+             pList.contains(cleanNick) || pList.contains(cleanNome) || pList.contains(cleanId) ||
+             (cleanNick == 'cloud' && pList.contains('claudio')) || (cleanNome == 'claudio' && pList.contains('cloud')) ||
+             iList.contains(cleanNick) || iList.contains(cleanNome) || iList.contains(cleanId) ||
+             (cleanNick == 'cloud' && iList.contains('claudio')) || (cleanNome == 'claudio' && iList.contains('cloud'));
     }
     return true;
   }

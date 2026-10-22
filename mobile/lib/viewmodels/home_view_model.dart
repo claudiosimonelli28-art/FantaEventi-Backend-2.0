@@ -46,7 +46,13 @@ class HomeViewModel extends BaseViewModel {
   int get numeroNotifiche => _numeroNotifiche;
   bool get networkError => _networkError;
   Utente? get currentUser => _apiService.currentUser;
-  String get currentUserNick => _apiService.currentUser?.nome ?? 'Cloud';
+  String get currentUserNick {
+    final u = _apiService.currentUser;
+    if (u == null) return 'Cloud';
+    if (u.nickname.isNotEmpty) return u.nickname;
+    if (u.nome.isNotEmpty) return u.nome;
+    return 'Cloud';
+  }
 
   // --- INIZIALIZZAZIONE & TIMERS ---
   void inizializza() {

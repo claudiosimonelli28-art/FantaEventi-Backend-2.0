@@ -1231,8 +1231,17 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
               onTap: () async {
                 final cleanUser = userNick.trim().toLowerCase();
                 final cleanCreator = ev.creatore.trim().toLowerCase();
-                final bool isCreatore = cleanCreator.isNotEmpty && cleanCreator == cleanUser;
-                final bool isPartecipante = isCreatore || ev.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
+                final bool isCreatore = cleanCreator.isNotEmpty &&
+                    (cleanCreator == cleanUser ||
+                     (cleanUser == 'cloud' && (cleanCreator == 'claudio' || cleanCreator.contains('claudio'))) ||
+                     (cleanUser == 'claudio' && cleanCreator == 'cloud'));
+
+                final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
+                  final pClean = p.trim().toLowerCase();
+                  return pClean == cleanUser ||
+                      (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
+                      (cleanUser == 'claudio' && pClean == 'cloud');
+                });
 
                 if (!isPartecipante && (ev.isInCorso || ev.isConcluso)) {
                   AppToast.showWarning(
@@ -1312,8 +1321,15 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
         itemBuilder: (ctx, idx) {
           final ev = activeEvents[idx];
           final cleanCreatore = (ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa).trim().toLowerCase();
-          final isOrganizzatore = cleanCreatore == cleanUser;
-          final isPartecipante = ev.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
+          final isOrganizzatore = cleanCreatore == cleanUser ||
+              (cleanUser == 'cloud' && (cleanCreatore == 'claudio' || cleanCreatore.contains('claudio'))) ||
+              (cleanUser == 'claudio' && cleanCreatore == 'cloud');
+          final isPartecipante = ev.partecipanti.any((p) {
+            final pClean = p.trim().toLowerCase();
+            return pClean == cleanUser ||
+                (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
+                (cleanUser == 'claudio' && pClean == 'cloud');
+          });
 
           final approvedForEvent = _viewModel.getApprovedBonusMalusForEvent(ev, cleanUser);
 

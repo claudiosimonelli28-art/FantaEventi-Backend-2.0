@@ -63,13 +63,38 @@ class EventDetailViewModel extends BaseViewModel {
   List<String> get partecipantiConfermati => List.unmodifiable(_partecipantiConfermati);
 
   Utente? get currentUser => _apiService.currentUser;
-  String get currentUserNick => _apiService.currentUser?.nome ?? 'Cloud';
+  String get currentUserNick {
+    final u = _apiService.currentUser;
+    if (u == null) return 'Cloud';
+    if (u.nickname.isNotEmpty) return u.nickname;
+    if (u.nome.isNotEmpty) return u.nome;
+    return 'Cloud';
+  }
   String get creatore => _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
-  bool get isCreatore => creatore.trim().toLowerCase() == currentUserNick.trim().toLowerCase();
+  bool get isCreatore {
+    final cNick = currentUserNick.trim().toLowerCase();
+    final cReal = (_apiService.currentUser?.nome ?? '').trim().toLowerCase();
+    final evCreatore = creatore.trim().toLowerCase();
+    return evCreatore == cNick ||
+        evCreatore == cReal ||
+        (cNick == 'cloud' && evCreatore == 'claudio') ||
+        (cReal == 'claudio' && evCreatore == 'cloud');
+  }
   bool get isConcluso => _evento.isConcluso;
-  bool get giaPartecipa =>
-      _partecipantiConfermati.contains(currentUserNick) ||
-      _partecipantiConfermati.contains(_apiService.currentUser?.id);
+  bool get giaPartecipa {
+    final cNick = currentUserNick.trim().toLowerCase();
+    final cReal = (_apiService.currentUser?.nome ?? '').trim().toLowerCase();
+    final curId = _apiService.currentUser?.id.trim().toLowerCase() ?? '';
+
+    return _partecipantiConfermati.any((p) {
+      final pClean = p.trim().toLowerCase();
+      return pClean == cNick ||
+          pClean == cReal ||
+          (cNick == 'cloud' && pClean == 'claudio') ||
+          (cReal == 'claudio' && pClean == 'cloud') ||
+          (curId.isNotEmpty && pClean == curId);
+    });
+  }
 
   int get totalePartecipanti => _partecipantiConfermati.length;
   // Formula maggioranza assoluta: (N / 2).floor() + 1

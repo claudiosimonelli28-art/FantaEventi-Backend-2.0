@@ -24,9 +24,25 @@ class EventCard extends StatelessWidget {
     final cleanUser = currentUserNickname.trim().toLowerCase();
     final cleanCreatore = evento.creatore.trim().toLowerCase();
     
-    final isCreatore = cleanCreatore.isNotEmpty && cleanCreatore == cleanUser;
-    final isPartecipante = isCreatore || evento.partecipanti.any((p) => p.trim().toLowerCase() == cleanUser);
-    final isInvitato = evento.invitati.any((i) => i.trim().toLowerCase() == cleanUser);
+    final isCreatore = cleanCreatore.isNotEmpty &&
+        (cleanCreatore == cleanUser ||
+         (cleanUser == 'cloud' && (cleanCreatore == 'claudio' || cleanCreatore.contains('claudio'))) ||
+         (cleanUser == 'claudio' && cleanCreatore == 'cloud'));
+
+    final isPartecipante = isCreatore || evento.partecipanti.any((p) {
+      final pClean = p.trim().toLowerCase();
+      return pClean == cleanUser ||
+          (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
+          (cleanUser == 'claudio' && pClean == 'cloud');
+    });
+
+    final isInvitato = evento.invitati.any((i) {
+      final iClean = i.trim().toLowerCase();
+      return iClean == cleanUser ||
+          (cleanUser == 'cloud' && (iClean == 'claudio' || iClean.contains('claudio'))) ||
+          (cleanUser == 'claudio' && iClean == 'cloud');
+    });
+
     final isConcluso = evento.isConcluso;
     final isInCorso = evento.isInCorso;
     final bool isIscrizioniChiuse = isConcluso || (isInCorso && !isPartecipante);
