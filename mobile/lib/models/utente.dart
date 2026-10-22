@@ -2,6 +2,7 @@ class Utente {
   final String id;
   final String nome;
   final String cognome;
+  final String nickname;
   final String email;
   final String avatarUrl;
   final int livello;
@@ -27,6 +28,7 @@ class Utente {
     required this.id,
     required this.nome,
     this.cognome = '',
+    String? nickname,
     required this.email,
     required this.avatarUrl,
     required this.livello,
@@ -47,15 +49,18 @@ class Utente {
     this.haVistoGuida = false,
     this.fcmTokens = const [],
     this.dataRegistrazione = '',
-  });
+  }) : nickname = (nickname != null && nickname.isNotEmpty) ? nickname : (nome.isNotEmpty ? nome : 'Utente');
 
-  String get nickname => nome;
-  String get username => nome;
+  String get username => nickname;
   int get countAvvocato => countGiudice;
   int get countCampione => badgeVincitore.length;
 
   factory Utente.fromJson(Map<String, dynamic> json) {
-    final nameValue = json['nickname'] ?? json['nome'] ?? json['username'] ?? 'Utente';
+    final rawName = (json['nome'] ?? '').toString().trim();
+    final rawNick = (json['nickname'] ?? json['username'] ?? '').toString().trim();
+    final parsedNome = rawName.isNotEmpty ? rawName : (rawNick.isNotEmpty ? rawNick : 'Utente');
+    final parsedNick = rawNick.isNotEmpty ? rawNick : parsedNome;
+
     final int rawXp = (json['xp'] as num?)?.toInt() ?? ((json['puntiEsperienza'] as num?)?.toInt() ?? 100);
     final int calcLivello = 1 + (rawXp / 1000).floor();
     final int calcNextXp = calcLivello * 1000;
@@ -63,19 +68,19 @@ class Utente {
     // Genera o recupera Codice Amico (es. FE-1234)
     String friendCode = json['codiceAmico'] as String? ?? '';
     if (friendCode.isEmpty) {
-      final String idPart = nameValue.toString().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+      final String idPart = parsedNick.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
       final String codeSeed = idPart.length >= 3 ? idPart.substring(0, 3) : 'FE';
-      final int numSeed = (nameValue.toString().hashCode.abs() % 8999) + 1000;
+      final int numSeed = (parsedNick.hashCode.abs() % 8999) + 1000;
       friendCode = 'FE-$codeSeed$numSeed';
     }
 
     final String rawAvatar = (json['avatarUrl'] ?? '').toString().trim();
     final String parsedAvatar = rawAvatar.isNotEmpty
         ? rawAvatar
-        : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(nameValue.toString())}';
+        : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(parsedNick)}';
 
     final String parsedId = json['id'] as String? ?? json['_id']?.toString() ?? '';
-    final String parsedCognome = (json['cognome'] ?? '').toString();
+    final String parsedCognome = (json['cognome'] ?? '').toString().trim();
 
     String parsedDataReg = (json['dataRegistrazione'] ?? json['dataCreazione'] ?? json['creatoIl'] ?? json['data'] ?? '').toString();
     if (parsedDataReg.isEmpty && parsedId.length >= 8) {
@@ -93,8 +98,9 @@ class Utente {
 
     return Utente(
       id: parsedId,
-      nome: nameValue.toString(),
+      nome: parsedNome,
       cognome: parsedCognome,
+      nickname: parsedNick,
       email: json['email'] as String? ?? '',
       avatarUrl: parsedAvatar,
       livello: calcLivello,
@@ -135,6 +141,7 @@ class Utente {
       'id': id,
       'nome': nome,
       'cognome': cognome,
+      'nickname': nickname,
       'email': email,
       'avatarUrl': avatarUrl,
       'livello': livello,
@@ -163,6 +170,7 @@ class Utente {
     String? id,
     String? nome,
     String? cognome,
+    String? nickname,
     String? email,
     String? avatarUrl,
     int? livello,
@@ -188,6 +196,7 @@ class Utente {
       id: id ?? this.id,
       nome: nome ?? this.nome,
       cognome: cognome ?? this.cognome,
+      nickname: nickname ?? this.nickname,
       email: email ?? this.email,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       livello: livello ?? this.livello,

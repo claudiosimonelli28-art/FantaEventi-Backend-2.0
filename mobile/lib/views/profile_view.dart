@@ -170,11 +170,6 @@ class _ProfileViewState extends State<ProfileView> {
           ],
         ),
         actions: [
-                IconButton(
-                  icon: const Icon(Icons.manage_accounts_rounded, color: Color(0xFF818CF8), size: 24),
-                  tooltip: 'Area Riservata & Gestisci Account',
-                  onPressed: _mostraModalGestioneAccount,
-                ),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -1161,6 +1156,11 @@ class _ProfileViewState extends State<ProfileView> {
               iconTheme: const IconThemeData(color: Colors.white),
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.shield_outlined, color: Color(0xFF818CF8), size: 24),
+                  tooltip: 'Area Riservata & Gestisci Account',
+                  onPressed: _mostraModalGestioneAccount,
+                ),
+                IconButton(
                   icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
                   tooltip: 'Guida Profilo',
                   onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.profilo),
@@ -2022,8 +2022,8 @@ class _ProfileViewState extends State<ProfileView> {
                     child: Column(
                       children: [
                         _buildInfoRow(
-                          icon: Icons.person_outline_rounded,
-                          label: 'Nome / Nickname',
+                          icon: Icons.person_rounded,
+                          label: 'Nome',
                           value: utente.nome,
                         ),
                         if (utente.cognome.isNotEmpty) ...[
@@ -2034,6 +2034,13 @@ class _ProfileViewState extends State<ProfileView> {
                             value: utente.cognome,
                           ),
                         ],
+                        const Divider(color: Color(0xFF334155), height: 20),
+                        _buildInfoRow(
+                          icon: Icons.sports_esports_rounded,
+                          label: 'Nickname in Gioco',
+                          value: '@${utente.nickname}',
+                          valueColor: const Color(0xFFFACC15),
+                        ),
                         const Divider(color: Color(0xFF334155), height: 20),
                         _buildInfoRow(
                           icon: Icons.alternate_email_rounded,
