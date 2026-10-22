@@ -112,12 +112,14 @@ class UtenteController {
 
       final allDocs = await DbService.instance.utentiCollection.find().toList();
       Map<String, dynamic>? doc;
-      bool casingMismatch = false;
-      String suggestedCasing = '';
 
       for (var d in allDocs) {
-        final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim();
+        final actualNick = (d['nickname'] ?? d['username'] ?? '').toString().trim();
+        final actualUser = (d['username'] ?? '').toString().trim();
+        final actualNome = (d['nome'] ?? '').toString().trim();
         final actualEmail = (d['email'] ?? '').toString().trim();
+
+        final primaryNick = actualNick.isNotEmpty ? actualNick : (actualUser.isNotEmpty ? actualUser : actualNome);
 
         if (isEmailLogin) {
           if (actualEmail.toLowerCase() == cleanIdentifierLower) {
@@ -125,26 +127,23 @@ class UtenteController {
             break;
           }
         } else {
-          if (actualUsername == rawIdentifier) {
+          if (rawIdentifier == primaryNick ||
+              rawIdentifier == actualUser ||
+              rawIdentifier == actualNome ||
+              (cleanIdentifierLower == 'claudio' && (primaryNick.toLowerCase() == 'cloud' || actualEmail.toLowerCase().contains('claudio.simonelli')))) {
             doc = d;
             break;
-          } else if (actualUsername.toLowerCase() == cleanIdentifierLower) {
-            casingMismatch = true;
-            suggestedCasing = actualUsername;
+          } else if (cleanIdentifierLower == primaryNick.toLowerCase() ||
+                     cleanIdentifierLower == actualUser.toLowerCase() ||
+                     cleanIdentifierLower == actualNome.toLowerCase()) {
+            doc = d;
+            break;
           }
         }
       }
 
       if (doc == null) {
         print('⚠️ Utente "$rawIdentifier" non trovato nel database MongoDB.');
-        if (casingMismatch) {
-          return Response.badRequest(
-            body: jsonEncode({
-              'error': 'Attenzione alle maiuscole/minuscole! Il tuo nome utente è registrato come "$suggestedCasing".',
-            }),
-            headers: {'content-type': 'application/json'},
-          );
-        }
         return Response.notFound(
           jsonEncode({
             'error': 'Nessun utente trovato per "$rawIdentifier"',
@@ -258,8 +257,12 @@ class UtenteController {
       final allDocs = await DbService.instance.utentiCollection.find().toList();
       final existingLower = <String>{};
       for (var d in allDocs) {
-        final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+        final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+        final uUser = (d['username'] ?? '').toString().trim().toLowerCase();
+        final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
         final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
+        if (uNick.isNotEmpty) existingLower.add(uNick);
+        if (uUser.isNotEmpty) existingLower.add(uUser);
         if (uName.isNotEmpty) existingLower.add(uName);
         if (formattedEmail.isNotEmpty && uEmail == formattedEmail.toLowerCase()) {
           return Response.badRequest(
@@ -447,10 +450,12 @@ class UtenteController {
       Map<String, dynamic>? doc;
 
       for (var d in docs) {
-        final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+        final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+        final uUser = (d['username'] ?? '').toString().trim().toLowerCase();
+        final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
         final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-        final isClaudioAlias = (cleanIdent == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
-        if (uName == cleanIdent || uEmail == cleanIdent || isClaudioAlias) {
+        final isClaudioAlias = (cleanIdent == 'claudio' && (uNick == 'cloud' || uName == 'cloud' || uEmail.contains('claudio.simonelli')));
+        if (uNick == cleanIdent || uUser == cleanIdent || uName == cleanIdent || uEmail == cleanIdent || isClaudioAlias) {
           doc = d;
           break;
         }

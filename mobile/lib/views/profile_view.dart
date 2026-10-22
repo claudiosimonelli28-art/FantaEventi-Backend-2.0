@@ -21,6 +21,54 @@ class ProfileView extends StatefulWidget {
 class _ProfileViewState extends State<ProfileView> {
   final ProfileViewModel _viewModel = ProfileViewModel();
   final _codiceAmicoInputController = TextEditingController();
+  bool _isLoggingOut = false;
+
+  Future<void> _eseguiLogout([BuildContext? modalContext]) async {
+    if (_isLoggingOut) return;
+    _isLoggingOut = true;
+
+    if (modalContext != null && modalContext.mounted) {
+      Navigator.of(modalContext).pop();
+    }
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E293B),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF334155)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: Color(0xFF6366F1)),
+                const SizedBox(height: 18),
+                Text(
+                  'Disconnessione in corso...',
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, decoration: TextDecoration.none),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    try {
+      await _viewModel.logout();
+    } catch (_) {}
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginView()),
+      (route) => false,
+    );
+  }
 
   @override
   void initState() {
@@ -1156,8 +1204,16 @@ class _ProfileViewState extends State<ProfileView> {
               iconTheme: const IconThemeData(color: Colors.white),
               actions: [
                 IconButton(
-                  icon: const Icon(Icons.shield_outlined, color: Color(0xFF818CF8), size: 24),
-                  tooltip: 'Area Riservata & Gestisci Account',
+                  icon: Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFF818CF8), width: 1.2),
+                    ),
+                    child: const Icon(Icons.manage_accounts_rounded, color: Color(0xFFA5B4FC), size: 20),
+                  ),
+                  tooltip: 'Area Riservata & Dati Account',
                   onPressed: _mostraModalGestioneAccount,
                 ),
                 IconButton(
@@ -1168,14 +1224,7 @@ class _ProfileViewState extends State<ProfileView> {
                 IconButton(
                   icon: const Icon(Icons.logout, color: Colors.redAccent),
                   tooltip: 'Logout',
-                  onPressed: () async {
-                    await _viewModel.logout();
-                    if (!context.mounted) return;
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const LoginView()),
-                      (route) => false,
-                    );
-                  },
+                  onPressed: () => _eseguiLogout(),
                 ),
               ],
             ),
@@ -2140,15 +2189,7 @@ class _ProfileViewState extends State<ProfileView> {
                             style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                           ),
                           trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
-                          onTap: () async {
-                            Navigator.of(ctx).pop();
-                            await _viewModel.logout();
-                            if (!mounted) return;
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (_) => const LoginView()),
-                              (route) => false,
-                            );
-                          },
+                          onTap: () => _eseguiLogout(ctx),
                         ),
                       ],
                     ),

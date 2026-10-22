@@ -437,19 +437,31 @@ class ApiService {
     } catch (_) {}
   }
 
-  Future<bool> eliminaAccount(String utenteNome) async {
+  Future<bool> eliminaAccount({String? utenteId, String? nickname, String? nome}) async {
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return false;
 
-      final cleanNick = utenteNome.trim().toLowerCase();
+      final cleanNick = (nickname ?? '').trim().toLowerCase();
+      final cleanName = (nome ?? '').trim().toLowerCase();
 
       // 1. Trova e rimuovi l'utente da MongoDB Atlas
       final allUsers = await db.collection('Utenti').find().toList();
       Map<String, dynamic>? targetUser;
       for (var u in allUsers) {
-        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim().toLowerCase();
-        if (uNick == cleanNick) {
+        final uIdStr = u['_id']?.toHexString() ?? u['_id']?.toString() ?? '';
+        final uNick = (u['nickname'] ?? u['username'] ?? '').toString().trim().toLowerCase();
+        final uNome = (u['nome'] ?? '').toString().trim().toLowerCase();
+
+        if (utenteId != null && utenteId.isNotEmpty && uIdStr == utenteId) {
+          targetUser = u;
+          break;
+        }
+        if (cleanNick.isNotEmpty && (uNick == cleanNick || uNome == cleanNick)) {
+          targetUser = u;
+          break;
+        }
+        if (cleanName.isNotEmpty && (uNome == cleanName || uNick == cleanName)) {
           targetUser = u;
           break;
         }
@@ -459,20 +471,26 @@ class ApiService {
         final uId = targetUser['_id'];
         final sel = uId is ObjectId ? where.id(uId) : where.eq('_id', uId);
         await db.collection('Utenti').remove(sel);
-      } else {
-        await db.collection('Utenti').remove(
-          where.eq('nickname', utenteNome)
-               .or(where.eq('username', utenteNome))
-               .or(where.eq('nome', utenteNome)),
-        );
       }
 
       // 2. Rimuovi notifiche collegate
-      try {
-        await db.collection('Notifiche').remove(
-          where.eq('destinatario', utenteNome).or(where.eq('mittente', utenteNome)),
-        );
-      } catch (_) {}
+      final matchNames = <String>{};
+      if (cleanNick.isNotEmpty) matchNames.add(cleanNick);
+      if (cleanName.isNotEmpty) matchNames.add(cleanName);
+      if (targetUser != null) {
+        final tn = (targetUser['nickname'] ?? targetUser['username'] ?? '').toString();
+        final tm = (targetUser['nome'] ?? '').toString();
+        if (tn.isNotEmpty) matchNames.add(tn);
+        if (tm.isNotEmpty) matchNames.add(tm);
+      }
+
+      for (var name in matchNames) {
+        try {
+          await db.collection('Notifiche').remove(
+            where.eq('destinatario', name).or(where.eq('mittente', name)),
+          );
+        } catch (_) {}
+      }
 
       // 3. Esegui logout e pulizia sessione locale
       await logout();
@@ -785,13 +803,19 @@ class ApiService {
       final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
         final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
-        bool casingMismatch = false;
-        String suggestedCasing = '';
 
         for (var d in docs) {
-          final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim();
+          final actualNick = (d['nickname'] ?? d['username'] ?? '').toString().trim();
+          final actualUser = (d['username'] ?? '').toString().trim();
+          final actualNome = (d['nome'] ?? '').toString().trim();
+          final actualCognome = (d['cognome'] ?? '').toString().trim();
           final actualEmail = (d['email'] ?? '').toString().trim();
-          final isClaudioAlias = (cleanIdentifierLower == 'claudio' && (actualUsername.toLowerCase() == 'cloud' || actualEmail.toLowerCase().contains('claudio.simonelli')));
+
+          final primaryNick = actualNick.isNotEmpty ? actualNick : (actualUser.isNotEmpty ? actualUser : actualNome);
+          final primaryNome = actualNome.isNotEmpty ? actualNome : primaryNick;
+
+          final isClaudioAlias = (cleanIdentifierLower == 'claudio' &&
+              (primaryNick.toLowerCase() == 'cloud' || actualEmail.toLowerCase().contains('claudio.simonelli')));
 
           bool isMatch = false;
 
@@ -801,12 +825,16 @@ class ApiService {
               isMatch = true;
             }
           } else {
-            // Accesso con Nickname: case-sensitive esatto!
-            if (actualUsername == rawIdentifier || isClaudioAlias) {
+            // Accesso con Nickname o Nome: case-sensitive o case-insensitive
+            if (rawIdentifier == primaryNick ||
+                rawIdentifier == actualUser ||
+                rawIdentifier == actualNome ||
+                isClaudioAlias) {
               isMatch = true;
-            } else if (actualUsername.toLowerCase() == cleanIdentifierLower) {
-              casingMismatch = true;
-              suggestedCasing = actualUsername;
+            } else if (cleanIdentifierLower == primaryNick.toLowerCase() ||
+                cleanIdentifierLower == actualUser.toLowerCase() ||
+                cleanIdentifierLower == actualNome.toLowerCase()) {
+              isMatch = true;
             }
           }
 
@@ -816,7 +844,7 @@ class ApiService {
             // Riconoscimento al primo accesso: utente esistente ma senza password impostata
             if (existingPasswordHash.isEmpty) {
               throw NeedsPasswordSetupException(
-                username: actualUsername,
+                username: primaryNick,
                 email: actualEmail,
               );
             }
@@ -833,9 +861,10 @@ class ApiService {
 
             final jsonMap = {
               'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
-              'nome': actualUsername,
-              'username': actualUsername,
-              'nickname': actualUsername,
+              'nome': primaryNome,
+              'cognome': actualCognome,
+              'username': primaryNick,
+              'nickname': primaryNick,
               'email': actualEmail,
               'avatarUrl': d['avatarUrl'] ?? '',
               'livello': d['livello'] ?? 1,
@@ -854,11 +883,12 @@ class ApiService {
               'countSbirro': d['countSbirro'] ?? 0,
               'countGiustiziere': d['countGiustiziere'] ?? 0,
               'haVistoGuida': d['haVistoGuida'] == true,
+              'dataRegistrazione': d['dataRegistrazione'] ?? d['dataCreazione'] ?? '',
             };
             for (var docItem in docs) {
               final aUrl = (docItem['avatarUrl'] ?? '').toString();
-              final aNome = (docItem['nome'] ?? docItem['username'] ?? docItem['nickname'] ?? '').toString();
-              final aNick = (docItem['nickname'] ?? '').toString();
+              final aNome = (docItem['nome'] ?? '').toString();
+              final aNick = (docItem['nickname'] ?? docItem['username'] ?? '').toString();
               if (aUrl.isNotEmpty) {
                 _cacheSingleAvatar(aNome, aNick, aUrl);
               }
@@ -869,10 +899,6 @@ class ApiService {
             await _saveSession(_currentUser!, rememberMe: rememberMe);
             return _currentUser!;
           }
-        }
-
-        if (casingMismatch) {
-          throw Exception('Attenzione alle maiuscole/minuscole! Il tuo nome utente è registrato come "$suggestedCasing".');
         }
 
         throw Exception(
@@ -963,10 +989,21 @@ class ApiService {
       if (db != null && db.isConnected) {
         final docs = await db.collection('Utenti').find().toList();
         for (var d in docs) {
-          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
-          final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-          final isClaudioAlias = (cleanUser == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
-          if (uName == cleanUser || uEmail == cleanUser || isClaudioAlias) {
+          final actualNick = (d['nickname'] ?? d['username'] ?? '').toString().trim();
+          final actualUser = (d['username'] ?? '').toString().trim();
+          final actualNome = (d['nome'] ?? '').toString().trim();
+          final actualCognome = (d['cognome'] ?? '').toString().trim();
+          final actualEmail = (d['email'] ?? '').toString().trim();
+
+          final primaryNick = actualNick.isNotEmpty ? actualNick : (actualUser.isNotEmpty ? actualUser : actualNome);
+          final primaryNome = actualNome.isNotEmpty ? actualNome : primaryNick;
+
+          final isClaudioAlias = (cleanUser == 'claudio' && (primaryNick.toLowerCase() == 'cloud' || actualEmail.toLowerCase().contains('claudio.simonelli')));
+          if (primaryNick.toLowerCase() == cleanUser ||
+              actualUser.toLowerCase() == cleanUser ||
+              actualNome.toLowerCase() == cleanUser ||
+              actualEmail.toLowerCase() == cleanUser ||
+              isClaudioAlias) {
             ObjectId? objId;
             try {
               objId = d['_id'] is ObjectId ? d['_id'] as ObjectId : ObjectId.fromHexString(d['_id'].toString());
@@ -978,14 +1015,12 @@ class ApiService {
               modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
             );
 
-            final actualUsername = (d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente').toString();
-            final actualEmail = (d['email'] ?? '').toString();
-
             final jsonMap = {
               'id': objId?.toHexString() ?? d['_id']?.toString() ?? '',
-              'nome': actualUsername,
-              'username': actualUsername,
-              'nickname': actualUsername,
+              'nome': primaryNome,
+              'cognome': actualCognome,
+              'username': primaryNick,
+              'nickname': primaryNick,
               'email': actualEmail,
               'avatarUrl': d['avatarUrl'] ?? '',
               'livello': d['livello'] ?? 1,
@@ -1004,6 +1039,7 @@ class ApiService {
               'countSbirro': d['countSbirro'] ?? 0,
               'countGiustiziere': d['countGiustiziere'] ?? 0,
               'haVistoGuida': d['haVistoGuida'] == true,
+              'dataRegistrazione': d['dataRegistrazione'] ?? d['dataCreazione'] ?? '',
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -1101,7 +1137,11 @@ class ApiService {
         final docs = await db.collection('Utenti').find().toList();
         final existingLower = <String>{};
         for (var d in docs) {
-          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+          final uUser = (d['username'] ?? '').toString().trim().toLowerCase();
+          final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
+          if (uNick.isNotEmpty) existingLower.add(uNick);
+          if (uUser.isNotEmpty) existingLower.add(uUser);
           if (uName.isNotEmpty) existingLower.add(uName);
         }
 
@@ -1159,8 +1199,12 @@ class ApiService {
         final existingLower = <String>{};
 
         for (var d in docs) {
-          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+          final uUser = (d['username'] ?? '').toString().trim().toLowerCase();
+          final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
+          if (uNick.isNotEmpty) existingLower.add(uNick);
+          if (uUser.isNotEmpty) existingLower.add(uUser);
           if (uName.isNotEmpty) existingLower.add(uName);
 
           if (cleanEmail.isNotEmpty && uEmail == cleanEmail.toLowerCase()) {
@@ -1339,10 +1383,12 @@ class ApiService {
         Map<String, dynamic>? targetDoc;
 
         for (var d in docs) {
-          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+          final uUser = (d['username'] ?? '').toString().trim().toLowerCase();
+          final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
           final uEmail = (d['email'] ?? '').toString().trim().toLowerCase();
-          final isClaudioAlias = (cleanIdent == 'claudio' && (uName == 'cloud' || uEmail.contains('claudio.simonelli')));
-          if (uName == cleanIdent || uEmail == cleanIdent || isClaudioAlias) {
+          final isClaudioAlias = (cleanIdent == 'claudio' && (uNick == 'cloud' || uName == 'cloud' || uEmail.contains('claudio.simonelli')));
+          if (uNick == cleanIdent || uUser == cleanIdent || uName == cleanIdent || uEmail == cleanIdent || isClaudioAlias) {
             targetDoc = d;
             break;
           }
@@ -1353,7 +1399,7 @@ class ApiService {
         }
 
         final email = (targetDoc['email'] ?? '').toString().trim();
-        final username = (targetDoc['nome'] ?? targetDoc['username'] ?? targetDoc['nickname'] ?? 'Utente').toString();
+        final username = (targetDoc['nickname'] ?? targetDoc['username'] ?? targetDoc['nome'] ?? 'Utente').toString();
 
         if (email.isEmpty) {
           throw Exception('Nessun indirizzo email collegato a questo profilo.');
@@ -1696,7 +1742,9 @@ class ApiService {
             _cacheSingleAvatar(uObj.nome, uObj.nickname, uObj.avatarUrl);
           }
 
-          if (_currentUser != null && uObj.nome.trim().toLowerCase() == _currentUser!.nome.trim().toLowerCase()) {
+          if (_currentUser != null &&
+              (uObj.nickname.trim().toLowerCase() == _currentUser!.nickname.trim().toLowerCase() ||
+               uObj.nome.trim().toLowerCase() == _currentUser!.nome.trim().toLowerCase())) {
             _currentUser = uObj;
             await _saveSession(_currentUser!);
           }
@@ -4056,21 +4104,25 @@ class ApiService {
       if (accetta) {
         final docs = await db.collection('Utenti').find().toList();
         for (var d in docs) {
-          final uName = (d['nome'] ?? d['username'] ?? d['nickname'] ?? '').toString().trim().toLowerCase();
+          final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+          final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
+          final isCurUser = (uNick == curUser.nickname.toLowerCase() || uName == curUser.nickname.toLowerCase());
+          final isMittente = (uNick == mittente.toLowerCase() || uName == mittente.toLowerCase());
+
           ObjectId? uObjId;
           try {
             uObjId = d['_id'] is ObjectId ? d['_id'] as ObjectId : ObjectId.fromHexString(d['_id'].toString());
           } catch (_) {}
           final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', d['_id']);
 
-          if (uName == curUser.nickname.toLowerCase()) {
+          if (isCurUser) {
             final List<dynamic> amici = List.from(d['amici'] ?? []);
             if (!amici.any((a) => a.toString().toLowerCase() == mittente.toLowerCase())) {
               amici.add(mittente);
               await db.collection('Utenti').update(uSelector, modify.set('amici', amici));
             }
           }
-          if (uName == mittente.toLowerCase()) {
+          if (isMittente) {
             final List<dynamic> amici = List.from(d['amici'] ?? []);
             if (!amici.any((a) => a.toString().toLowerCase() == curUser.nickname.toLowerCase())) {
               amici.add(curUser.nickname);
