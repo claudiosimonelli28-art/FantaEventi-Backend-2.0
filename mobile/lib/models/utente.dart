@@ -1,6 +1,7 @@
 class Utente {
   final String id;
   final String nome;
+  final String cognome;
   final String email;
   final String avatarUrl;
   final int livello;
@@ -20,10 +21,12 @@ class Utente {
   final int countGiustiziere;
   final bool haVistoGuida;
   final List<String> fcmTokens;
+  final String dataRegistrazione;
 
   Utente({
     required this.id,
     required this.nome,
+    this.cognome = '',
     required this.email,
     required this.avatarUrl,
     required this.livello,
@@ -43,13 +46,13 @@ class Utente {
     this.countGiustiziere = 0,
     this.haVistoGuida = false,
     this.fcmTokens = const [],
+    this.dataRegistrazione = '',
   });
 
   String get nickname => nome;
   String get username => nome;
   int get countAvvocato => countGiudice;
   int get countCampione => badgeVincitore.length;
-
 
   factory Utente.fromJson(Map<String, dynamic> json) {
     final nameValue = json['nickname'] ?? json['nome'] ?? json['username'] ?? 'Utente';
@@ -71,9 +74,27 @@ class Utente {
         ? rawAvatar
         : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(nameValue.toString())}';
 
+    final String parsedId = json['id'] as String? ?? json['_id']?.toString() ?? '';
+    final String parsedCognome = (json['cognome'] ?? '').toString();
+
+    String parsedDataReg = (json['dataRegistrazione'] ?? json['dataCreazione'] ?? json['creatoIl'] ?? json['data'] ?? '').toString();
+    if (parsedDataReg.isEmpty && parsedId.length >= 8) {
+      try {
+        final sec = int.tryParse(parsedId.substring(0, 8), radix: 16);
+        if (sec != null && sec > 1600000000) {
+          final dt = DateTime.fromMillisecondsSinceEpoch(sec * 1000).toLocal();
+          parsedDataReg = '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+        }
+      } catch (_) {}
+    }
+    if (parsedDataReg.isEmpty) {
+      parsedDataReg = 'Attivo dal 2026';
+    }
+
     return Utente(
-      id: json['id'] as String? ?? json['_id']?.toString() ?? '',
+      id: parsedId,
       nome: nameValue.toString(),
+      cognome: parsedCognome,
       email: json['email'] as String? ?? '',
       avatarUrl: parsedAvatar,
       livello: calcLivello,
@@ -105,6 +126,7 @@ class Utente {
       countGiustiziere: (json['countGiustiziere'] as num?)?.toInt() ?? 0,
       haVistoGuida: json['haVistoGuida'] == true,
       fcmTokens: (json['fcmTokens'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      dataRegistrazione: parsedDataReg,
     );
   }
 
@@ -112,6 +134,7 @@ class Utente {
     return {
       'id': id,
       'nome': nome,
+      'cognome': cognome,
       'email': email,
       'avatarUrl': avatarUrl,
       'livello': livello,
@@ -132,12 +155,14 @@ class Utente {
       'countGiustiziere': countGiustiziere,
       'haVistoGuida': haVistoGuida,
       'fcmTokens': fcmTokens,
+      'dataRegistrazione': dataRegistrazione,
     };
   }
 
   Utente copyWith({
     String? id,
     String? nome,
+    String? cognome,
     String? email,
     String? avatarUrl,
     int? livello,
@@ -157,10 +182,12 @@ class Utente {
     int? countGiustiziere,
     bool? haVistoGuida,
     List<String>? fcmTokens,
+    String? dataRegistrazione,
   }) {
     return Utente(
       id: id ?? this.id,
       nome: nome ?? this.nome,
+      cognome: cognome ?? this.cognome,
       email: email ?? this.email,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       livello: livello ?? this.livello,
@@ -180,7 +207,7 @@ class Utente {
       countGiustiziere: countGiustiziere ?? this.countGiustiziere,
       haVistoGuida: haVistoGuida ?? this.haVistoGuida,
       fcmTokens: fcmTokens ?? this.fcmTokens,
+      dataRegistrazione: dataRegistrazione ?? this.dataRegistrazione,
     );
   }
 }
-

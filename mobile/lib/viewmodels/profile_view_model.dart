@@ -234,4 +234,15 @@ class ProfileViewModel extends BaseViewModel {
   Future<void> logout() async {
     await _apiService.logout();
   }
+
+  // --- ELIMINAZIONE ACCOUNT ---
+  Future<bool> eliminaAccount() async {
+    setLoading(true);
+    try {
+      final success = await _apiService.eliminaAccount(_utente.nome);
+      return success;
+    } finally {
+      setLoading(false);
+    }
+  }
 }

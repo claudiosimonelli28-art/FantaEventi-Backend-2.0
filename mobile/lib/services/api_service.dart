@@ -437,6 +437,52 @@ class ApiService {
     } catch (_) {}
   }
 
+  Future<bool> eliminaAccount(String utenteNome) async {
+    try {
+      final db = await _getMongoDb();
+      if (db == null || !db.isConnected) return false;
+
+      final cleanNick = utenteNome.trim().toLowerCase();
+
+      // 1. Trova e rimuovi l'utente da MongoDB Atlas
+      final allUsers = await db.collection('Utenti').find().toList();
+      Map<String, dynamic>? targetUser;
+      for (var u in allUsers) {
+        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim().toLowerCase();
+        if (uNick == cleanNick) {
+          targetUser = u;
+          break;
+        }
+      }
+
+      if (targetUser != null) {
+        final uId = targetUser['_id'];
+        final sel = uId is ObjectId ? where.id(uId) : where.eq('_id', uId);
+        await db.collection('Utenti').remove(sel);
+      } else {
+        await db.collection('Utenti').remove(
+          where.eq('nickname', utenteNome)
+               .or(where.eq('username', utenteNome))
+               .or(where.eq('nome', utenteNome)),
+        );
+      }
+
+      // 2. Rimuovi notifiche collegate
+      try {
+        await db.collection('Notifiche').remove(
+          where.eq('destinatario', utenteNome).or(where.eq('mittente', utenteNome)),
+        );
+      } catch (_) {}
+
+      // 3. Esegui logout e pulizia sessione locale
+      await logout();
+      invalidateCache();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<Utente?> tryAutoLogin() async {
     try {
       final prefs = await SharedPreferences.getInstance();

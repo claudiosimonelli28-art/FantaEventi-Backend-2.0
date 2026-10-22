@@ -170,6 +170,11 @@ class _ProfileViewState extends State<ProfileView> {
           ],
         ),
         actions: [
+                IconButton(
+                  icon: const Icon(Icons.manage_accounts_rounded, color: Color(0xFF818CF8), size: 24),
+                  tooltip: 'Area Riservata & Gestisci Account',
+                  onPressed: _mostraModalGestioneAccount,
+                ),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
@@ -1508,6 +1513,69 @@ class _ProfileViewState extends State<ProfileView> {
               ),
               const SizedBox(height: 20),
 
+              // CARD AREA RISERVATA & GESTISCI ACCOUNT
+              InkWell(
+                onTap: _mostraModalGestioneAccount,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.shield_outlined, color: Color(0xFF818CF8), size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Area Riservata & Dati Account',
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'Informazioni personali, sicurezza e gestione account',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF818CF8), size: 16),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // BACHECA TITOLI E RICONOSCIMENTI
               _buildBachecaTitoli(),
               const SizedBox(height: 16),
@@ -1856,6 +1924,504 @@ class _ProfileViewState extends State<ProfileView> {
       },
     );
 }
+
+  void _mostraModalGestioneAccount() {
+    final utente = _viewModel.utente;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF0F172A),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (context, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF475569),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.manage_accounts_rounded, color: Color(0xFF818CF8), size: 24),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Area Riservata',
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'Informazioni personali e gestione account',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  // SCHEDA DATI ACCOUNT
+                  Text(
+                    'INFORMAZIONI PERSONALI',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: const Color(0xFF818CF8),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFF334155)),
+                    ),
+                    child: Column(
+                      children: [
+                        _buildInfoRow(
+                          icon: Icons.person_outline_rounded,
+                          label: 'Nome / Nickname',
+                          value: utente.nome,
+                        ),
+                        if (utente.cognome.isNotEmpty) ...[
+                          const Divider(color: Color(0xFF334155), height: 20),
+                          _buildInfoRow(
+                            icon: Icons.badge_outlined,
+                            label: 'Cognome',
+                            value: utente.cognome,
+                          ),
+                        ],
+                        const Divider(color: Color(0xFF334155), height: 20),
+                        _buildInfoRow(
+                          icon: Icons.alternate_email_rounded,
+                          label: 'Email',
+                          value: utente.email,
+                        ),
+                        const Divider(color: Color(0xFF334155), height: 20),
+                        _buildInfoRow(
+                          icon: Icons.key_rounded,
+                          label: 'Codice Amico',
+                          value: utente.codiceAmico,
+                          trailing: IconButton(
+                            icon: const Icon(Icons.copy_rounded, color: Color(0xFFFACC15), size: 18),
+                            tooltip: 'Copia codice',
+                            onPressed: () {
+                              Clipboard.setData(ClipboardData(text: utente.codiceAmico));
+                              AppToast.showSuccess(context, 'Codice Amico copiato negli appunti!');
+                            },
+                          ),
+                        ),
+                        const Divider(color: Color(0xFF334155), height: 20),
+                        _buildInfoRow(
+                          icon: Icons.calendar_today_rounded,
+                          label: 'Data di Iscrizione',
+                          value: utente.dataRegistrazione,
+                        ),
+                        const Divider(color: Color(0xFF334155), height: 20),
+                        _buildInfoRow(
+                          icon: Icons.verified_user_outlined,
+                          label: 'Stato Profilo',
+                          value: 'Attivo & Verificato',
+                          valueColor: const Color(0xFF10B981),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // SICUREZZA & PASSWORD
+                  Text(
+                    'SICUREZZA & SESSIONE',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFF334155)),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3B82F6).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.lock_reset_rounded, color: Color(0xFF60A5FA), size: 20),
+                          ),
+                          title: Text(
+                            'Reimposta Password',
+                            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            'Invia codice di verifica per cambiare password',
+                            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                          ),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            _mostraDialogReimpostaPassword();
+                          },
+                        ),
+                        const Divider(color: Color(0xFF334155), height: 1),
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.logout_rounded, color: Color(0xFFF87171), size: 20),
+                          ),
+                          title: Text(
+                            'Disconnetti (Logout)',
+                            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            'Termina la sessione su questo dispositivo',
+                            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                          ),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                          onTap: () async {
+                            Navigator.of(ctx).pop();
+                            await _viewModel.logout();
+                            if (!mounted) return;
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(builder: (_) => const LoginView()),
+                              (route) => false,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+
+                  // ZONA PERICOLO - ELIMINAZIONE ACCOUNT
+                  Text(
+                    'ZONA PERICOLO',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: const Color(0xFFEF4444),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Eliminazione Definitiva Account',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFFFCA5A5),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Questa operazione rimuoverà irreversibilmente il tuo profilo, i punteggi, i badge e la cronologia delle votazioni conforme alle policy di privacy.',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            color: const Color(0xFF94A3B8),
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.delete_forever_rounded, color: Color(0xFFEF4444), size: 18),
+                            label: Text(
+                              'Elimina Definitivamente Account',
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFFEF4444),
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () {
+                              Navigator.of(ctx).pop();
+                              _confermaEliminazioneAccount();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    Color? valueColor,
+    Widget? trailing,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color(0xFF64748B), size: 18),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: valueColor ?? Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) trailing,
+      ],
+    );
+  }
+
+  void _confermaEliminazioneAccount() {
+    final utente = _viewModel.utente;
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Color(0xFFEF4444), size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Eliminare l\'account?',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 17, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Attenzione: questa azione è irreversibile.',
+                style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFFFCA5A5)),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Tutti i dati dell\'utente "${utente.nome}", inclusi ${utente.puntiTotali} punti totali, ${utente.badgeList.length} badge e lo storico completo delle votazioni, verranno eliminati per sempre dal database.',
+                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8), height: 1.4),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: Text(
+                'Annulla',
+                style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () async {
+                Navigator.of(dialogCtx).pop();
+                _eseguiEliminazioneAccount();
+              },
+              child: Text(
+                'Sì, Elimina per sempre',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _eseguiEliminazioneAccount() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: Color(0xFFEF4444)),
+              const SizedBox(height: 16),
+              Text(
+                'Eliminazione account in corso...',
+                style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, decoration: TextDecoration.none),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final success = await _viewModel.eliminaAccount();
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (success) {
+      AppToast.showSuccess(context, 'Account eliminato con successo. Arrivederci!');
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginView()),
+        (route) => false,
+      );
+    } else {
+      AppToast.showError(context, 'Impossibile eliminare l\'account. Riprova più tardi.');
+    }
+  }
+
+  void _mostraDialogReimpostaPassword() {
+    final utente = _viewModel.utente;
+    showDialog(
+      context: context,
+      builder: (dCtx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.lock_reset_rounded, color: Color(0xFF60A5FA), size: 24),
+              const SizedBox(width: 10),
+              Text(
+                'Reimposta Password',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+              ),
+            ],
+          ),
+          content: Text(
+            'Vuoi richiedere un codice di verifica alla tua email (${utente.email}) per reimpostare la tua password?',
+            style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8), height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dCtx).pop(),
+              child: Text('Chiudi', style: GoogleFonts.poppins(color: const Color(0xFF94A3B8))),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF3B82F6),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () async {
+                Navigator.of(dCtx).pop();
+                try {
+                  await ApiService().richiediCodiceReset(utente.email);
+                  if (mounted) {
+                    AppToast.showSuccess(context, 'Codice di verifica inviato a ${utente.email}!');
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    AppToast.showError(context, 'Errore nell\'invio del codice: $e');
+                  }
+                }
+              },
+              child: Text('Invia Codice', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   Widget _buildBachecaTitoli() {
     return Container(
