@@ -4091,65 +4091,7 @@ class ApiService {
     required String giudice,
     int penalitaPunti = -10,
   }) async {
-    final payload = {
-      'eventoId': eventoId,
-      'eventoTitolo': eventoTitolo,
-      'tipo': tipo,
-      'bonusMalusId': bonusMalusId,
-      'bonusMalusTitolo': bonusMalusTitolo,
-      'punti': punti,
-      'richiedente': richiedente,
-      'bersaglio': bersaglio,
-      'descrizione': descrizione,
-      if (fotoBase64 != null && fotoBase64.isNotEmpty) 'fotoBase64': fotoBase64,
-      'testimoni': testimoni,
-      'giudice': giudice,
-      'penalitaPunti': penalitaPunti,
-    };
-
-    // 1. Prova prima via HTTPS protetto su backend Render
-    for (String url in baseUrls) {
-      try {
-        final response = await http.post(
-          Uri.parse('$url/var/crea'),
-          headers: defaultHeaders,
-          body: jsonEncode(payload),
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          final data = jsonDecode(response.body) as Map<String, dynamic>;
-          final varId = data['id']?.toString() ?? data['varId']?.toString();
-          if (varId != null && varId.isNotEmpty) {
-            final ptSign = punti >= 0 ? '+$punti' : '$punti';
-            final msgGiudice = tipo == 'bonus'
-                ? '$richiedente ha richiesto la verifica VAR per il bonus "$bonusMalusTitolo" ($ptSign PT).'
-                : '$richiedente ha denunciato $bersaglio al VAR per il malus "$bonusMalusTitolo" ($ptSign PT).';
-            try {
-              await PushNotificationService.instance.inviaPushAUtenti(
-                [giudice],
-                titolo: '📺 VAR: Richiesta da Esaminare!',
-                messaggio: msgGiudice,
-                data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
-              ).timeout(const Duration(seconds: 4), onTimeout: () {});
-            } catch (_) {}
-            if (testimoni.isNotEmpty) {
-              try {
-                await PushNotificationService.instance.inviaPushAUtenti(
-                  testimoni,
-                  titolo: '👀 Chiamata a Testimoniare al VAR',
-                  messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
-                  data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
-                ).timeout(const Duration(seconds: 4), onTimeout: () {});
-              } catch (_) {}
-            }
-            invalidateCache();
-            return varId;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 2. Fallback trasparente su MongoDB se il backend è offline o in cold-start
+    // Accesso diretto ultra-rapido a MongoDB Atlas
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return null;
@@ -4246,19 +4188,6 @@ class ApiService {
   }
 
   Future<RichiestaVar?> getRichiestaVar(String id) async {
-    for (String url in baseUrls) {
-      try {
-        final response = await http.get(
-          Uri.parse('$url/var/dettaglio?id=$id'),
-          headers: defaultHeaders,
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          final map = jsonDecode(response.body) as Map<String, dynamic>;
-          return RichiestaVar.fromJson(map);
-        }
-      } catch (_) {}
-    }
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return null;
@@ -4277,19 +4206,6 @@ class ApiService {
   }
 
   Future<List<RichiestaVar>> getRichiesteVarEvento(String eventoId) async {
-    for (String url in baseUrls) {
-      try {
-        final response = await http.get(
-          Uri.parse('$url/var/evento?eventoId=$eventoId'),
-          headers: defaultHeaders,
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          final list = jsonDecode(response.body) as List<dynamic>;
-          return list.map((item) => RichiestaVar.fromJson(Map<String, dynamic>.from(item as Map))).toList();
-        }
-      } catch (_) {}
-    }
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return [];
@@ -4304,19 +4220,6 @@ class ApiService {
   }
 
   Future<List<RichiestaVar>> getRichiesteVarInSospesoPerGiudice(String giudiceNick) async {
-    for (String url in baseUrls) {
-      try {
-        final response = await http.get(
-          Uri.parse('$url/var/giudice?giudice=${Uri.encodeComponent(giudiceNick)}'),
-          headers: defaultHeaders,
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          final list = jsonDecode(response.body) as List<dynamic>;
-          return list.map((item) => RichiestaVar.fromJson(Map<String, dynamic>.from(item as Map))).toList();
-        }
-      } catch (_) {}
-    }
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return [];
@@ -4340,24 +4243,6 @@ class ApiService {
     required String testimoneNick,
     required bool conferma,
   }) async {
-    for (String url in baseUrls) {
-      try {
-        final response = await http.post(
-          Uri.parse('$url/var/vota-testimone'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'varId': varId,
-            'testimone': testimoneNick,
-            'conferma': conferma,
-          }),
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.statusCode == 200) {
-          invalidateCache();
-          return true;
-        }
-      } catch (_) {}
-    }
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return false;
@@ -4397,25 +4282,6 @@ class ApiService {
     required bool approva,
     bool sanzionaFalsaTestimonianza = false,
   }) async {
-    for (String url in baseUrls) {
-      try {
-        final response = await http.post(
-          Uri.parse('$url/var/decidi'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'varId': varId,
-            'giudice': giudiceNick,
-            'approva': approva,
-            'sanzionaFalsaTestimonianza': sanzionaFalsaTestimonianza,
-          }),
-        ).timeout(const Duration(seconds: 6));
-
-        if (response.statusCode == 200) {
-          invalidateCache();
-          return true;
-        }
-      } catch (_) {}
-    }
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return false;
