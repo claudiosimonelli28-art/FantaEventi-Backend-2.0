@@ -270,6 +270,7 @@ class ApiService {
 
   Utente? get currentUser => _currentUser;
   List<Evento> get eventi => List.unmodifiable(_eventi);
+  List<BonusMalus> get bonusMalusList => List.unmodifiable(_bonusMalusList);
 
   static String hashPassword(String password) {
     const salt = 'FantaEventi2026_Secure_Salt_#99';
@@ -1646,7 +1647,9 @@ class ApiService {
 
       final utenti = await getUtenti();
       final match = utenti.firstWhere(
-        (u) => u.nome.trim().toLowerCase() == curUser.nome.trim().toLowerCase(),
+        (u) => (curUser.id.isNotEmpty && u.id == curUser.id) ||
+               u.nickname.trim().toLowerCase() == curUser.nickname.trim().toLowerCase() ||
+               u.nome.trim().toLowerCase() == curUser.nome.trim().toLowerCase(),
         orElse: () => curUser,
       );
       _currentUser = match;
@@ -1667,18 +1670,48 @@ class ApiService {
     final clean = username.replaceAll(' ', '').trim().toLowerCase();
     if (newAvatarUrl.isNotEmpty) {
       _avatarCache[clean] = newAvatarUrl;
+      if (clean == 'cloud') _avatarCache['claudio'] = newAvatarUrl;
+      if (clean == 'claudio') _avatarCache['cloud'] = newAvatarUrl;
+      if (_currentUser != null) {
+        final cNick = _currentUser!.nickname.trim().toLowerCase().replaceAll(' ', '');
+        final cNome = _currentUser!.nome.trim().toLowerCase().replaceAll(' ', '');
+        if (cNick.isNotEmpty) _avatarCache[cNick] = newAvatarUrl;
+        if (cNome.isNotEmpty) _avatarCache[cNome] = newAvatarUrl;
+      }
       await _saveCachedUsersAndAvatars();
     }
 
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
+        final curId = _currentUser?.id;
+        ObjectId? curObjId;
+        if (curId != null && curId.isNotEmpty) {
+          try { curObjId = ObjectId.fromHexString(curId); } catch (_) {}
+        }
+
         final uDocs = await db.collection('Utenti').find().toList();
         for (var uDoc in uDocs) {
-          final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-          if (uName == clean) {
+          final uName = (uDoc['nome'] ?? '').toString().trim().toLowerCase();
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? '').toString().trim().toLowerCase();
+          final uUser = (uDoc['username'] ?? '').toString().trim().toLowerCase();
+          final uIdStr = uDoc['_id']?.toHexString() ?? uDoc['_id']?.toString() ?? '';
+
+          final bool isMatchById = (curId != null && curId.isNotEmpty && uIdStr == curId) ||
+                                   (curObjId != null && uDoc['_id'] == curObjId);
+          final bool isMatchByNick = clean.isNotEmpty && (uNick == clean || uName == clean || uUser == clean);
+          final bool isClaudioAlias = (clean == 'cloud' && (uName.contains('claudio') || uNick == 'cloud')) ||
+                                      (clean == 'claudio' && (uNick == 'cloud' || uName.contains('claudio')));
+
+          if (isMatchById || isMatchByNick || isClaudioAlias) {
+            ObjectId? targetObjId;
+            try {
+              targetObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
+            } catch (_) {}
+            final sel = targetObjId != null ? where.id(targetObjId) : where.eq('_id', uDoc['_id']);
+
             await db.collection('Utenti').update(
-              where.id(uDoc['_id'] as ObjectId),
+              sel,
               modify.set('avatarUrl', newAvatarUrl),
             );
           }

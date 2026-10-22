@@ -699,13 +699,25 @@ class _EventDetailViewState extends State<EventDetailView> {
                         letterSpacing: 0.8,
                       ),
                     ),
-                    Text(
-                      'Maggioranza Assoluta Evento',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: const Color(0xFF94A3B8),
-                        fontWeight: FontWeight.w500,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          'Maggioranza Assoluta Evento',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF94A3B8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (_viewModel.isSyncing) ...[
+                          const SizedBox(width: 8),
+                          const SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF818CF8)),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -823,6 +835,25 @@ class _EventDetailViewState extends State<EventDetailView> {
                 style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
               ),
             ),
+            if (_viewModel.isSyncing)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF818CF8)),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Sincronizzazione...',
+                      style: GoogleFonts.inter(fontSize: 10.5, color: const Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+              ),
             if (isInCorso)
               const LivePulseBadge(text: 'LIVE', color: Color(0xFF10B981))
             else
@@ -866,13 +897,39 @@ class _EventDetailViewState extends State<EventDetailView> {
           const SizedBox(height: 12),
         ],
         Container(
+          clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: const Color(0xFF1E293B),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: const Color(0xFF334155)),
           ),
           child: Column(
-            children: List.generate(sortedEntries.length, (idx) {
+            children: [
+              if (_viewModel.isSyncing)
+                const LinearProgressIndicator(
+                  minHeight: 2.5,
+                  backgroundColor: Color(0xFF1E293B),
+                  color: Color(0xFF6366F1),
+                ),
+              if (sortedEntries.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.emoji_events_outlined, color: Color(0xFF64748B), size: 32),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Nessun punteggio ancora assegnato',
+                          style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                ...List.generate(sortedEntries.length, (idx) {
               final entry = sortedEntries[idx];
               final nick = entry.key;
               final pts = entry.value;
@@ -959,8 +1016,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                 ),
               );
             }),
-          ),
+          ],
         ),
+      ),
         if (isConcluso) ...[
           const SizedBox(height: 18),
           _buildSpecialTitlesSection(sortedEntries),

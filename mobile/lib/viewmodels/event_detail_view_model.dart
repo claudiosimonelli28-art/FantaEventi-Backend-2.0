@@ -52,10 +52,38 @@ class EventDetailViewModel extends BaseViewModel {
   Timer? _liveLeaderboardTimer;
   bool _isSyncing = false;
 
-  EventDetailViewModel(this._evento);
+  EventDetailViewModel(this._evento) {
+    _prepopolaDatiImmediati();
+  }
+
+  void _prepopolaDatiImmediati() {
+    final creatoreNick = creatore;
+    final List<String> confermati = [creatoreNick];
+    for (var p in _evento.partecipanti) {
+      if (!confermati.any((c) => c.trim().toLowerCase() == p.trim().toLowerCase())) {
+        confermati.add(p);
+      }
+    }
+    _partecipantiConfermati = confermati;
+
+    final Set<String> inSospeso = {};
+    for (var inv in _evento.invitati) {
+      if (!confermati.any((c) => c.trim().toLowerCase() == inv.trim().toLowerCase())) {
+        inSospeso.add(inv);
+      }
+    }
+    _invitatiInSospeso = inSospeso;
+
+    // Popola immediatamente i bonus/malus dalla memoria locale già presente in ApiService
+    final cachedBm = _apiService.bonusMalusList;
+    if (cachedBm.isNotEmpty) {
+      _allBonusMalus = List.from(cachedBm);
+    }
+  }
 
   // Getters
   Evento get evento => _evento;
+  bool get isSyncing => _isSyncing;
   List<Votazione> get votazioniEvento => List.unmodifiable(_votazioniEvento);
   List<BonusMalus> get allBonusMalus => List.unmodifiable(_allBonusMalus);
   List<RichiestaVar> get richiesteVarEvento => List.unmodifiable(_richiesteVarEvento);
@@ -110,6 +138,7 @@ class EventDetailViewModel extends BaseViewModel {
   Future<void> calcolaCoerenzaInvitiEVotazioni() async {
     if (_isSyncing) return;
     _isSyncing = true;
+    notifyListeners();
     try {
       final creatoreNick = creatore;
       final List<String> confermati = [creatoreNick];
@@ -150,10 +179,12 @@ class EventDetailViewModel extends BaseViewModel {
 
       _partecipantiConfermati = confermati;
       _invitatiInSospeso = inSospeso;
-      _allBonusMalus = bmList;
-      notifyListeners();
+      if (bmList.isNotEmpty) {
+        _allBonusMalus = bmList;
+      }
     } finally {
       _isSyncing = false;
+      notifyListeners();
     }
   }
 
