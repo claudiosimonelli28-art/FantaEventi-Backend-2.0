@@ -1204,6 +1204,11 @@ class _ProfileViewState extends State<ProfileView> {
               iconTheme: const IconThemeData(color: Colors.white),
               actions: [
                 IconButton(
+                  icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
+                  tooltip: 'Guida Profilo',
+                  onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.profilo),
+                ),
+                IconButton(
                   icon: Container(
                     padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
@@ -1215,16 +1220,6 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   tooltip: 'Area Riservata & Dati Account',
                   onPressed: _mostraModalGestioneAccount,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
-                  tooltip: 'Guida Profilo',
-                  onPressed: () => ContextInfoModal.mostra(context, tipo: ContextInfoType.profilo),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.logout, color: Colors.redAccent),
-                  tooltip: 'Logout',
-                  onPressed: () => _eseguiLogout(),
                 ),
               ],
             ),
@@ -1561,69 +1556,6 @@ class _ProfileViewState extends State<ProfileView> {
                 ),
               ),
               const SizedBox(height: 20),
-
-              // CARD AREA RISERVATA & GESTISCI ACCOUNT
-              InkWell(
-                onTap: _mostraModalGestioneAccount,
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.4)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6366F1).withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.shield_outlined, color: Color(0xFF818CF8), size: 22),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Area Riservata & Dati Account',
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            Text(
-                              'Informazioni personali, sicurezza e gestione account',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: const Color(0xFF94A3B8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF818CF8), size: 16),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
 
               // BACHECA TITOLI E RICONOSCIMENTI
               _buildBachecaTitoli(),

@@ -28,7 +28,7 @@ class ProfileViewModel extends BaseViewModel {
 
   late Utente _utente;
   File? _fotoLocaleFile;
-  int _filtroGiorniStorico = 7;
+  int _filtroGiorniStorico = 1;
   int _countCampione = 0;
   int _countReMalus = 0;
   int _countAvvocato = 0;

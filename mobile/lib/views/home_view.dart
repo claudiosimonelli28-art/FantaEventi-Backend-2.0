@@ -39,6 +39,23 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   late Animation<Offset> _fabSlideAnimation;
   bool _isFabMenuOpen = false;
 
+  // Filtro Tab 1: Feed Eventi
+  String _filtroFeedEventi = 'tutti'; // 'tutti', 'in_corso', 'in_programma', 'conclusi'
+
+  // Filtri Tab 2: Bonus & Malus per cartella evento
+  final Map<String, String> _bmSearchQueries = {};
+  final Map<String, String> _bmTipoFiltri = {}; // 'tutti', 'bonus', 'malus'
+  final Map<String, bool> _bmSoloRiassegnabili = {}; // true/false
+  final Map<String, int?> _bmFiltroPunti = {}; // null per tutti, altrimenti valore assoluto punti
+  final Map<String, TextEditingController> _bmSearchControllers = {};
+
+  TextEditingController _getSearchControllerForEvent(String eventId) {
+    return _bmSearchControllers.putIfAbsent(
+      eventId,
+      () => TextEditingController(text: _bmSearchQueries[eventId] ?? ''),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -537,6 +554,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
   @override
   void dispose() {
     TutorialController.instance.removeListener(_onTutorialChanged);
+    for (final c in _bmSearchControllers.values) {
+      c.dispose();
+    }
     _viewModel.dispose();
     _tabController.dispose();
     _fabAnimationController.dispose();
@@ -1158,122 +1178,499 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
     );
   }
 
+  String _getNomeFiltroEventi(String filtro) {
+    switch (filtro) {
+      case 'in_corso':
+        return 'in corso';
+      case 'in_programma':
+        return 'in programma';
+      case 'conclusi':
+        return 'concluso';
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildFeedEventiFilterBar(List<Evento> tuttiEventi) {
+    final countTutti = tuttiEventi.length;
+    final countInCorso = tuttiEventi.where((e) => e.isInCorso).length;
+    final countInProgramma = tuttiEventi.where((e) => e.isInProgramma).length;
+    final countConclusi = tuttiEventi.where((e) => e.isConcluso).length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            _buildEventFilterChip(
+              id: 'tutti',
+              label: 'Tutti',
+              count: countTutti,
+              icon: Icons.all_inclusive_rounded,
+              accentColor: const Color(0xFF818CF8),
+            ),
+            const SizedBox(width: 8),
+            _buildEventFilterChip(
+              id: 'in_corso',
+              label: 'In Corso',
+              count: countInCorso,
+              icon: Icons.play_circle_fill_rounded,
+              accentColor: const Color(0xFF10B981),
+            ),
+            const SizedBox(width: 8),
+            _buildEventFilterChip(
+              id: 'in_programma',
+              label: 'In Programma',
+              count: countInProgramma,
+              icon: Icons.schedule_rounded,
+              accentColor: const Color(0xFFF59E0B),
+            ),
+            const SizedBox(width: 8),
+            _buildEventFilterChip(
+              id: 'conclusi',
+              label: 'Conclusi',
+              count: countConclusi,
+              icon: Icons.check_circle_rounded,
+              accentColor: const Color(0xFF94A3B8),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEventFilterChip({
+    required String id,
+    required String label,
+    required int count,
+    required IconData icon,
+    required Color accentColor,
+  }) {
+    final isSelected = _filtroFeedEventi == id;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _filtroFeedEventi = id;
+        });
+      },
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? accentColor.withValues(alpha: 0.2) : const Color(0xFF1E293B),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? accentColor : const Color(0xFF334155),
+            width: isSelected ? 1.5 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: accentColor.withValues(alpha: 0.25),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected ? accentColor : const Color(0xFF94A3B8),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? accentColor.withValues(alpha: 0.35) : const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? Colors.white : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildEventiTab(String userNick) {
-    final eventi = _viewModel.eventi;
+    final tuttiEventi = _viewModel.eventi;
     final networkError = _viewModel.networkError;
 
-    Widget child;
-    if (eventi.isEmpty) {
-      child = SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.7,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  networkError ? Icons.wifi_off_rounded : Icons.event_busy_rounded,
-                  size: 64,
-                  color: networkError ? const Color(0xFFEF4444) : const Color(0xFF64748B),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  networkError ? 'Connessione non disponibile' : 'Nessun evento disponibile',
-                  style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  networkError
-                      ? 'Verifica la tua connessione internet o riprova tra poco.'
-                      : 'Tocca + in basso per creare il primo evento!',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
-                ),
-                if (networkError) ...[
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: () => _loadData(forceRefresh: true),
-                    icon: const Icon(Icons.refresh_rounded, size: 18),
-                    label: Text(
-                      'RIPROVA 🔄',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFACC15),
-                      foregroundColor: const Color(0xFF0F172A),
-                    ),
+    if (tuttiEventi.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => _loadData(forceRefresh: true),
+        color: const Color(0xFFFACC15),
+        backgroundColor: const Color(0xFF1E293B),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    networkError ? Icons.wifi_off_rounded : Icons.event_busy_rounded,
+                    size: 64,
+                    color: networkError ? const Color(0xFFEF4444) : const Color(0xFF64748B),
                   ),
+                  const SizedBox(height: 16),
+                  Text(
+                    networkError ? 'Connessione non disponibile' : 'Nessun evento disponibile',
+                    style: GoogleFonts.poppins(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    networkError
+                        ? 'Verifica la tua connessione internet o riprova tra poco.'
+                        : 'Tocca + in basso per creare il primo evento!',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
+                  ),
+                  if (networkError) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => _loadData(forceRefresh: true),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: Text(
+                        'RIPROVA 🔄',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFFACC15),
+                        foregroundColor: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
       );
-    } else {
-      child = ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        itemCount: eventi.length,
-        itemBuilder: (ctx, idx) {
-          final ev = eventi[idx];
-          final tutorialEv = eventi.cast<Evento?>().firstWhere(
-            (e) => e != null && TutorialController.instance.isTutorialEvent(e),
-            orElse: () => null,
-          );
-          final bool isTutorialTarget = TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
-              (tutorialEv != null ? ev.id == tutorialEv.id : idx == 0);
-          return Container(
-            key: isTutorialTarget ? TutorialController.instance.keyFirstEventCard : null,
-            child: EventCard(
-              evento: ev,
-              currentUserNickname: userNick,
-              onTap: () async {
-                final cleanUser = userNick.trim().toLowerCase();
-                final cleanCreator = ev.creatore.trim().toLowerCase();
-                final bool isCreatore = cleanCreator.isNotEmpty &&
-                    (cleanCreator == cleanUser ||
-                     (cleanUser == 'cloud' && (cleanCreator == 'claudio' || cleanCreator.contains('claudio'))) ||
-                     (cleanUser == 'claudio' && cleanCreator == 'cloud'));
-
-                final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
-                  final pClean = p.trim().toLowerCase();
-                  return pClean == cleanUser ||
-                      (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
-                      (cleanUser == 'claudio' && pClean == 'cloud');
-                });
-
-                if (!isPartecipante && (ev.isInCorso || ev.isConcluso)) {
-                  AppToast.showWarning(
-                    context,
-                    'Iscrizioni Chiuse',
-                    'Non puoi accedere a questo evento: le iscrizioni si sono chiuse con l\'inizio dell\'evento.',
-                  );
-                  return;
-                }
-
-                if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
-                    TutorialController.instance.isTutorialEvent(ev)) {
-                  TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
-                }
-                await Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
-                );
-                _loadData(forceRefresh: true);
-              },
-              onPartecipa: () => _partecipaEvento(ev),
-              onElimina: () => _confermaEliminazioneEvento(ev),
-            ),
-          );
-        },
-      );
     }
+
+    // Filtraggio in-memory istantaneo
+    final filteredEventi = tuttiEventi.where((ev) {
+      if (_filtroFeedEventi == 'in_corso') return ev.isInCorso;
+      if (_filtroFeedEventi == 'in_programma') return ev.isInProgramma;
+      if (_filtroFeedEventi == 'conclusi') return ev.isConcluso;
+      return true;
+    }).toList();
 
     return RefreshIndicator(
       onRefresh: () => _loadData(forceRefresh: true),
       color: const Color(0xFFFACC15),
       backgroundColor: const Color(0xFF1E293B),
-      child: child,
+      child: Column(
+        children: [
+          // Barra dei filtri feed eventi
+          _buildFeedEventiFilterBar(tuttiEventi),
+
+          // Lista eventi filtrati o messaggio vuoto
+          Expanded(
+            child: filteredEventi.isEmpty
+                ? SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: SizedBox(
+                      height: MediaQuery.of(context).size.height * 0.55,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.filter_alt_off_rounded, size: 54, color: Color(0xFF64748B)),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Nessun evento ${_getNomeFiltroEventi(_filtroFeedEventi)}',
+                              style: GoogleFonts.poppins(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Non sono presenti eventi in questo stato al momento.',
+                              style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                setState(() {
+                                  _filtroFeedEventi = 'tutti';
+                                });
+                              },
+                              icon: const Icon(Icons.clear_all_rounded, size: 18),
+                              label: Text('MOSTRA TUTTI GLI EVENTI', style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6366F1),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    itemCount: filteredEventi.length,
+                    itemBuilder: (ctx, idx) {
+                      final ev = filteredEventi[idx];
+                      final tutorialEv = tuttiEventi.cast<Evento?>().firstWhere(
+                        (e) => e != null && TutorialController.instance.isTutorialEvent(e),
+                        orElse: () => null,
+                      );
+                      final bool isTutorialTarget = TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
+                          (tutorialEv != null ? ev.id == tutorialEv.id : idx == 0);
+                      return Container(
+                        key: isTutorialTarget ? TutorialController.instance.keyFirstEventCard : null,
+                        child: EventCard(
+                          evento: ev,
+                          currentUserNickname: userNick,
+                          onTap: () async {
+                            final cleanUser = userNick.trim().toLowerCase();
+                            final cleanCreator = ev.creatore.trim().toLowerCase();
+                            final bool isCreatore = cleanCreator.isNotEmpty &&
+                                (cleanCreator == cleanUser ||
+                                 (cleanUser == 'cloud' && (cleanCreator == 'claudio' || cleanCreator.contains('claudio'))) ||
+                                 (cleanUser == 'claudio' && cleanCreator == 'cloud'));
+
+                            final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
+                              final pClean = p.trim().toLowerCase();
+                              return pClean == cleanUser ||
+                                  (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
+                                  (cleanUser == 'claudio' && pClean == 'cloud');
+                            });
+
+                            if (!isPartecipante && (ev.isInCorso || ev.isConcluso)) {
+                              AppToast.showWarning(
+                                context,
+                                'Iscrizioni Chiuse',
+                                'Non puoi accedere a questo evento: le iscrizioni si sono chiuse con l\'inizio dell\'evento.',
+                              );
+                              return;
+                            }
+
+                            if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
+                                TutorialController.instance.isTutorialEvent(ev)) {
+                              TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
+                            }
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
+                            );
+                            _loadData(forceRefresh: true);
+                          },
+                          onPartecipa: () => _partecipaEvento(ev),
+                          onElimina: () => _confermaEliminazioneEvento(ev),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBMFilterChip({
+    required String label,
+    required bool isSelected,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.25) : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? color : const Color(0xFF334155),
+            width: isSelected ? 1.4 : 1.0,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBonusMalusFolderFilters(Evento ev, List<BonusMalus> approvedForEvent) {
+    final searchCtrl = _getSearchControllerForEvent(ev.id);
+    final currentQuery = _bmSearchQueries[ev.id] ?? '';
+    final currentTipo = _bmTipoFiltri[ev.id] ?? 'tutti';
+    final soloRiassegnabili = _bmSoloRiassegnabili[ev.id] ?? false;
+    final filtroPunti = _bmFiltroPunti[ev.id];
+
+    // Punteggi unici presenti in questo evento
+    final uniquePoints = approvedForEvent
+        .map((b) => b.punti.abs())
+        .where((p) => p > 0)
+        .toSet()
+        .toList()
+      ..sort();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Barra di ricerca per titolo o descrizione
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF334155)),
+          ),
+          child: TextField(
+            controller: searchCtrl,
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+            onChanged: (val) {
+              setState(() {
+                _bmSearchQueries[ev.id] = val;
+              });
+            },
+            decoration: InputDecoration(
+              hintText: 'Cerca bonus o malus (nome o descrizione)...',
+              hintStyle: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 12),
+              prefixIcon: const Icon(Icons.search_rounded, color: Color(0xFF818CF8), size: 18),
+              suffixIcon: currentQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, color: Color(0xFF94A3B8), size: 16),
+                      onPressed: () {
+                        setState(() {
+                          _bmSearchQueries[ev.id] = '';
+                          searchCtrl.clear();
+                        });
+                      },
+                    )
+                  : null,
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              isDense: true,
+            ),
+          ),
+        ),
+
+        // 2. Chip Filtri (Scroll orizzontale privo di overflow)
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: [
+              // Chip Tipo: TUTTI
+              _buildBMFilterChip(
+                label: 'Tutti',
+                isSelected: currentTipo == 'tutti' && !soloRiassegnabili && filtroPunti == null,
+                color: const Color(0xFF818CF8),
+                onTap: () {
+                  setState(() {
+                    _bmTipoFiltri[ev.id] = 'tutti';
+                    _bmSoloRiassegnabili[ev.id] = false;
+                    _bmFiltroPunti[ev.id] = null;
+                  });
+                },
+              ),
+              const SizedBox(width: 6),
+
+              // Chip Tipo: BONUS (+)
+              _buildBMFilterChip(
+                label: 'Bonus (+)',
+                isSelected: currentTipo == 'bonus',
+                color: const Color(0xFF10B981),
+                onTap: () {
+                  setState(() {
+                    _bmTipoFiltri[ev.id] = currentTipo == 'bonus' ? 'tutti' : 'bonus';
+                  });
+                },
+              ),
+              const SizedBox(width: 6),
+
+              // Chip Tipo: MALUS (-)
+              _buildBMFilterChip(
+                label: 'Malus (-)',
+                isSelected: currentTipo == 'malus',
+                color: const Color(0xFFEF4444),
+                onTap: () {
+                  setState(() {
+                    _bmTipoFiltri[ev.id] = currentTipo == 'malus' ? 'tutti' : 'malus';
+                  });
+                },
+              ),
+              const SizedBox(width: 6),
+
+              // Chip: SOLO RIASSEGNABILI 🔁
+              _buildBMFilterChip(
+                label: 'Riassegnabili 🔁',
+                isSelected: soloRiassegnabili,
+                color: const Color(0xFFA855F7),
+                onTap: () {
+                  setState(() {
+                    _bmSoloRiassegnabili[ev.id] = !soloRiassegnabili;
+                  });
+                },
+              ),
+
+              // Chips per punteggio specifico (es. 10 PT, 20 PT, 50 PT)
+              if (uniquePoints.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  height: 16,
+                  width: 1,
+                  color: const Color(0xFF334155),
+                ),
+                const SizedBox(width: 8),
+                for (final pts in uniquePoints) ...[
+                  _buildBMFilterChip(
+                    label: '$pts PT',
+                    isSelected: filtroPunti == pts,
+                    color: const Color(0xFFFACC15),
+                    onTap: () {
+                      setState(() {
+                        _bmFiltroPunti[ev.id] = filtroPunti == pts ? null : pts;
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                ],
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 
@@ -1333,6 +1730,27 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
           final approvedForEvent = _viewModel.getApprovedBonusMalusForEvent(ev, cleanUser);
 
+          // Filtraggio in-memory locale per la cartella di questo evento
+          final query = (_bmSearchQueries[ev.id] ?? '').trim().toLowerCase();
+          final tipo = _bmTipoFiltri[ev.id] ?? 'tutti';
+          final soloRiassegnabili = _bmSoloRiassegnabili[ev.id] ?? false;
+          final filtroPunti = _bmFiltroPunti[ev.id];
+
+          final filteredForEvent = approvedForEvent.where((bm) {
+            if (tipo == 'bonus' && !bm.isBonus) return false;
+            if (tipo == 'malus' && bm.isBonus) return false;
+            if (soloRiassegnabili && !bm.riassegnabileMoltepliciVolte) return false;
+            if (filtroPunti != null && bm.punti.abs() != filtroPunti) return false;
+            if (query.isNotEmpty) {
+              final tMatch = bm.titolo.toLowerCase().contains(query);
+              final dMatch = bm.descrizione.toLowerCase().contains(query);
+              if (!tMatch && !dMatch) return false;
+            }
+            return true;
+          }).toList();
+
+          final bool hasActiveFilter = query.isNotEmpty || tipo != 'tutti' || soloRiassegnabili || filtroPunti != null;
+
           return Container(
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
@@ -1357,7 +1775,9 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                   style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
                 ),
                 subtitle: Text(
-                  '${approvedForEvent.length} Bonus/Malus approvati • Org: ${ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa}',
+                  hasActiveFilter
+                      ? '${filteredForEvent.length} di ${approvedForEvent.length} filtrati • Org: ${ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa}'
+                      : '${approvedForEvent.length} Bonus/Malus approvati • Org: ${ev.creatore.isNotEmpty ? ev.creatore : ev.propostoDa}',
                   style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
                 ),
                 children: [
@@ -1379,31 +1799,83 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
                             ),
                           )
                         : Column(
-                            children: approvedForEvent.map((bm) {
-                              final isMine = bm.propostoDa.trim().toLowerCase() == cleanUser;
-                              final isVarSanction = bm.categoria == 'VAR' || bm.titolo.contains('VAR');
-                              return BonusMalusCard(
-                                bonusMalus: bm,
-                                onElimina: (isMine && !isVarSanction)
-                                    ? () async {
-                                        await _viewModel.eliminaBonusMalus(bm.id);
-                                        if (!mounted) return;
-                                        AppToast.showSuccess(
-                                          context,
-                                          'Proposta Eliminata 🗑️',
-                                          'Proposta Bonus/Malus eliminata con successo!',
-                                        );
-                                        _loadData();
-                                      }
-                                    : null,
-                                onAssegna: (isOrganizzatore && !isVarSanction)
-                                    ? () => _apriSelettoreAssegnazione(ev, bm)
-                                    : null,
-                                onRichiediVar: ((isPartecipante || isOrganizzatore) && !isVarSanction)
-                                    ? () => _apriRichiestaVar(ev, bm)
-                                    : null,
-                              );
-                            }).toList(),
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Barra di ricerca e filtri chip per questa cartella
+                              _buildBonusMalusFolderFilters(ev, approvedForEvent),
+
+                              if (filteredForEvent.isEmpty)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F172A),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: const Color(0xFF334155)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      const Icon(Icons.search_off_rounded, size: 36, color: Color(0xFF64748B)),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Nessun elemento trovato',
+                                        style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Nessun bonus o malus corrisponde ai criteri cercati.',
+                                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextButton.icon(
+                                        onPressed: () {
+                                          setState(() {
+                                            _bmSearchQueries[ev.id] = '';
+                                            _bmTipoFiltri[ev.id] = 'tutti';
+                                            _bmSoloRiassegnabili[ev.id] = false;
+                                            _bmFiltroPunti[ev.id] = null;
+                                            _bmSearchControllers[ev.id]?.clear();
+                                          });
+                                        },
+                                        icon: const Icon(Icons.refresh_rounded, size: 16, color: Color(0xFFFACC15)),
+                                        label: Text(
+                                          'Reimposta filtri',
+                                          style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFFFACC15), fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                Column(
+                                  children: filteredForEvent.map((bm) {
+                                    final isMine = bm.propostoDa.trim().toLowerCase() == cleanUser;
+                                    final isVarSanction = bm.categoria == 'VAR' || bm.titolo.contains('VAR');
+                                    return BonusMalusCard(
+                                      bonusMalus: bm,
+                                      onElimina: (isMine && !isVarSanction)
+                                          ? () async {
+                                              await _viewModel.eliminaBonusMalus(bm.id);
+                                              if (!mounted) return;
+                                              AppToast.showSuccess(
+                                                context,
+                                                'Proposta Eliminata 🗑️',
+                                                'Proposta Bonus/Malus eliminata con successo!',
+                                              );
+                                              _loadData();
+                                            }
+                                          : null,
+                                      onAssegna: (isOrganizzatore && !isVarSanction)
+                                          ? () => _apriSelettoreAssegnazione(ev, bm)
+                                          : null,
+                                      onRichiediVar: ((isPartecipante || isOrganizzatore) && !isVarSanction)
+                                          ? () => _apriRichiestaVar(ev, bm)
+                                          : null,
+                                    );
+                                  }).toList(),
+                                ),
+                            ],
                           ),
                   ),
                 ],

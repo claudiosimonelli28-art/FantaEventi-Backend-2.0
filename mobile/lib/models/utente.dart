@@ -80,7 +80,10 @@ class Utente {
         : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(parsedNick)}';
 
     final String parsedId = json['id'] as String? ?? json['_id']?.toString() ?? '';
-    final String parsedCognome = (json['cognome'] ?? '').toString().trim();
+    String parsedCognome = (json['cognome'] ?? '').toString().trim();
+    if (parsedCognome.toLowerCase() == 'null') {
+      parsedCognome = '';
+    }
 
     String parsedDataReg = (json['dataRegistrazione'] ?? json['dataCreazione'] ?? json['creatoIl'] ?? json['data'] ?? '').toString();
     if (parsedDataReg.isEmpty && parsedId.length >= 8) {
