@@ -2410,7 +2410,12 @@ class ApiService {
           throw Exception('Non è più possibile invitare amici: l\'evento è già in corso o concluso!');
         }
 
-        final creatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? _currentUser?.nome ?? 'Cloud').toString();
+        final creatore = (evDoc['propostoDa'] ??
+                evDoc['creatore'] ??
+                (_currentUser?.nickname.isNotEmpty == true
+                    ? _currentUser!.nickname
+                    : (_currentUser?.nome ?? 'Cloud')))
+            .toString();
         final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
 
         final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
@@ -2881,7 +2886,12 @@ class ApiService {
 
   Future<Evento> creaEvento(Evento nuovoEvento, {bool awardXp = true}) async {
     invalidateCache();
-    final creatore = nuovoEvento.propostoDa.isNotEmpty ? nuovoEvento.propostoDa : (_currentUser?.nome ?? 'Cloud');
+    final rawCreatore = nuovoEvento.propostoDa.isNotEmpty
+        ? nuovoEvento.propostoDa
+        : (_currentUser?.nickname.isNotEmpty == true
+            ? _currentUser!.nickname
+            : (_currentUser?.nome ?? 'Cloud'));
+    final creatore = rawCreatore.trim().toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore.trim();
     final List<String> invitati = nuovoEvento.partecipanti
         .where((p) => p.trim().toLowerCase() != creatore.trim().toLowerCase())
         .toList();
@@ -3026,7 +3036,19 @@ class ApiService {
 
   // --- PROPOSTA BONUS/MALUS LEGATA A UN EVENTO SPECIFICO ---
   Future<BonusMalus> proponiBonusMalusPerEvento(String eventoId, BonusMalus nuovoBonus, {bool awardXp = true}) async {
-    final curUserNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
+    String curUserNick = nuovoBonus.propostoDa.trim().isNotEmpty
+        ? nuovoBonus.propostoDa.trim()
+        : (_currentUser?.nickname.isNotEmpty == true
+            ? _currentUser!.nickname.trim()
+            : (_currentUser?.nome.isNotEmpty == true ? _currentUser!.nome.trim() : 'Cloud'));
+    if (curUserNick.toLowerCase() == 'claudio') {
+      curUserNick = 'Cloud';
+    }
+
+    final myNick = (_currentUser?.nickname.isNotEmpty == true ? _currentUser!.nickname : curUserNick).trim().toLowerCase();
+    final myNome = (_currentUser?.nome ?? '').trim().toLowerCase();
+    final isMeCloudOrClaudio = myNick == 'cloud' || myNome == 'claudio' || myNick == 'claudio' || myNome == 'cloud';
+
     Evento evMatch = _eventi.firstWhere(
       (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoId.toLowerCase(),
       orElse: () => Evento(
@@ -3077,13 +3099,15 @@ class ApiService {
         }
 
         // Verifica che l'utente sia creatore o partecipante effettivo dell'evento
-        final myName = (_currentUser?.nome ?? curUserNick).trim().toLowerCase();
-        final myAlias = (_currentUser?.nickname ?? '').trim().toLowerCase();
         final cleanCreator = evMatch.propostoDa.trim().toLowerCase();
-        final bool isCreator = cleanCreator.isNotEmpty && (cleanCreator == myName || (myAlias.isNotEmpty && cleanCreator == myAlias));
+        final bool isCreator = cleanCreator.isNotEmpty && (
+            cleanCreator == myNick || (myNome.isNotEmpty && cleanCreator == myNome) ||
+            (isMeCloudOrClaudio && (cleanCreator == 'cloud' || cleanCreator == 'claudio'))
+        );
         final bool isParticipant = isCreator || evMatch.partecipanti.any((p) {
           final pLow = p.trim().toLowerCase();
-          return pLow == myName || (myAlias.isNotEmpty && pLow == myAlias);
+          return pLow == myNick || (myNome.isNotEmpty && pLow == myNome) ||
+              (isMeCloudOrClaudio && (pLow == 'cloud' || pLow == 'claudio'));
         });
 
         if (!isParticipant) {
@@ -3135,7 +3159,9 @@ class ApiService {
         // 3. Registra esplicitamente il voto 'pro' del proponente in Votazioni su MongoDB Atlas
         try {
           final existingVote = await db.collection('Votazioni').findOne(
-            where.eq('votazioneId', bmHexId).and(where.eq('utente', curUserNick))
+            where.eq('votazioneId', bmHexId).and(
+              where.eq('utente', curUserNick).or(where.eq('utente', myNome))
+            )
           ).timeout(const Duration(seconds: 4), onTimeout: () => null);
 
           if (existingVote == null) {
@@ -3171,7 +3197,13 @@ class ApiService {
 
         for (var d in allCandidates) {
           final cleanD = d.trim().toLowerCase();
-          if (cleanD.isNotEmpty && cleanD != curUserNick.trim().toLowerCase()) {
+          final bool isRecipientMyself = cleanD.isEmpty ||
+              cleanD == myNick ||
+              (myNome.isNotEmpty && cleanD == myNome) ||
+              cleanD == curUserNick.trim().toLowerCase() ||
+              (isMeCloudOrClaudio && (cleanD == 'cloud' || cleanD == 'claudio'));
+
+          if (!isRecipientMyself) {
             uniqueDestMap[cleanD] = d.trim();
           }
         }
@@ -3250,7 +3282,16 @@ class ApiService {
         quorum: quorumCalcolato,
         stato: 'in_corso',
         scadenza: DateTime.now().add(const Duration(hours: 24)),
-        votiUtenti: {curUserNick: 'pro', curUserNick.toLowerCase(): 'pro'},
+        votiUtenti: {
+          curUserNick: 'pro',
+          curUserNick.toLowerCase(): 'pro',
+          if (isMeCloudOrClaudio) ...{
+            'Cloud': 'pro',
+            'cloud': 'pro',
+            'Claudio': 'pro',
+            'claudio': 'pro',
+          },
+        },
       );
 
       final votazioniAggiornate = [
@@ -3333,7 +3374,10 @@ class ApiService {
     required String bonusTitolo,
   }) async {
     invalidateCache();
-    final mittente = _currentUser?.nome ?? 'Organizzatore';
+    final rawMittente = _currentUser?.nickname.isNotEmpty == true
+        ? _currentUser!.nickname
+        : (_currentUser?.nome ?? 'Organizzatore');
+    final mittente = rawMittente.trim().toLowerCase() == 'claudio' ? 'Cloud' : rawMittente.trim();
     final cleanDest = utenteDestinatario.trim().toLowerCase();
     final ptStr = punti >= 0 ? '+$punti' : '$punti';
     final now = DateTime.now();
@@ -3612,15 +3656,27 @@ class ApiService {
             }
           }
 
+          if (effectivePropDa.toLowerCase() == 'claudio') {
+            effectivePropDa = 'Cloud';
+          }
+
           final List<String> assList = (bm['assegnatoA'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
               [];
 
+          final bool isPropCloud = effectivePropDa.toLowerCase() == 'cloud' || effectivePropDa.toLowerCase() == 'claudio';
+
           // Conversione sicura in oggetto BonusMalus
           final Map<String, String> votiUtenti = {
             if (effectivePropDa.isNotEmpty) effectivePropDa: 'pro',
             if (effectivePropDa.isNotEmpty) effectivePropDa.toLowerCase(): 'pro',
+            if (isPropCloud) ...{
+              'Cloud': 'pro',
+              'cloud': 'pro',
+              'Claudio': 'pro',
+              'claudio': 'pro',
+            },
           };
 
           for (var vDoc in votiDocs) {
@@ -3637,6 +3693,12 @@ class ApiService {
               final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
               votiUtenti[u] = voteStr;
               votiUtenti[u.toLowerCase()] = voteStr;
+              if (u.toLowerCase() == 'claudio' || u.toLowerCase() == 'cloud') {
+                votiUtenti['Cloud'] = voteStr;
+                votiUtenti['cloud'] = voteStr;
+                votiUtenti['Claudio'] = voteStr;
+                votiUtenti['claudio'] = voteStr;
+              }
             }
           }
 
@@ -3664,9 +3726,10 @@ class ApiService {
           int fav = 0;
           int cont = 0;
           votiUtenti.forEach((user, vote) {
-            final uLow = user.trim().toLowerCase();
-            if (!countedUsers.contains(uLow)) {
-              countedUsers.add(uLow);
+            String normUser = user.trim().toLowerCase();
+            if (normUser == 'claudio') normUser = 'cloud';
+            if (!countedUsers.contains(normUser)) {
+              countedUsers.add(normUser);
               if (vote == 'pro') fav++;
               if (vote == 'contro') cont++;
             }
@@ -3777,7 +3840,10 @@ class ApiService {
   }
 
   Future<Votazione> vota(String idOrEventoId, bool aFavore) async {
-    final userNick = _currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud';
+    final rawUserNick = (_currentUser?.nickname.isNotEmpty == true
+        ? _currentUser!.nickname
+        : (_currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud')).trim();
+    final userNick = rawUserNick.toLowerCase() == 'claudio' ? 'Cloud' : rawUserNick;
 
     int index = _votazioniList.indexWhere((v) =>
         v.id == idOrEventoId ||
@@ -3804,15 +3870,32 @@ class ApiService {
       index = _votazioniList.length - 1;
     }
 
-    final giaVotato = v.votiUtenti.containsKey(userNick);
+    final bool isUserCloud = userNick.toLowerCase() == 'cloud' || userNick.toLowerCase() == 'claudio';
+    final giaVotato = v.votiUtenti.keys.any((k) {
+      final cleanK = k.trim().toLowerCase();
+      return cleanK == userNick.toLowerCase() || (isUserCloud && (cleanK == 'cloud' || cleanK == 'claudio'));
+    });
     final nuoviVotiUtenti = Map<String, String>.from(v.votiUtenti);
     nuoviVotiUtenti[userNick] = aFavore ? 'pro' : 'contro';
+    nuoviVotiUtenti[userNick.toLowerCase()] = aFavore ? 'pro' : 'contro';
+    if (isUserCloud) {
+      nuoviVotiUtenti['Cloud'] = aFavore ? 'pro' : 'contro';
+      nuoviVotiUtenti['cloud'] = aFavore ? 'pro' : 'contro';
+      nuoviVotiUtenti['Claudio'] = aFavore ? 'pro' : 'contro';
+      nuoviVotiUtenti['claudio'] = aFavore ? 'pro' : 'contro';
+    }
 
+    final Set<String> countedUsers = {};
     int fav = 0;
     int cont = 0;
-    nuoviVotiUtenti.forEach((_, vote) {
-      if (vote == 'pro') fav++;
-      if (vote == 'contro') cont++;
+    nuoviVotiUtenti.forEach((key, vote) {
+      String normUser = key.trim().toLowerCase();
+      if (normUser == 'claudio') normUser = 'cloud';
+      if (!countedUsers.contains(normUser)) {
+        countedUsers.add(normUser);
+        if (vote == 'pro') fav++;
+        if (vote == 'contro') cont++;
+      }
     });
 
     final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';

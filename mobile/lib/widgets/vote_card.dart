@@ -32,11 +32,21 @@ class _VoteCardState extends State<VoteCard> {
 
     final cleanUser = currentUserNickname.trim().toLowerCase();
     final propostoDa = (votazione.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
-    final isProponente = propostoDa.isNotEmpty && propostoDa == cleanUser ||
-        votazione.descrizione.toLowerCase().contains('proposto da $cleanUser');
+
+    final bool isUserCloudOrClaudio = cleanUser == 'cloud' || cleanUser == 'claudio';
+    final bool isPropostoDaCloudOrClaudio = propostoDa == 'cloud' || propostoDa == 'claudio';
+
+    final isProponente = (propostoDa.isNotEmpty && (propostoDa == cleanUser || (isUserCloudOrClaudio && isPropostoDaCloudOrClaudio))) ||
+        votazione.descrizione.toLowerCase().contains('proposto da $cleanUser') ||
+        (isUserCloudOrClaudio && (votazione.descrizione.toLowerCase().contains('proposto da cloud') || votazione.descrizione.toLowerCase().contains('proposto da claudio')));
 
     final giaVotatoKey = votazione.votiUtenti.keys.firstWhere(
-      (k) => k.trim().toLowerCase() == cleanUser,
+      (k) {
+        final cleanK = k.trim().toLowerCase();
+        if (cleanK == cleanUser) return true;
+        if (isUserCloudOrClaudio && (cleanK == 'cloud' || cleanK == 'claudio')) return true;
+        return false;
+      },
       orElse: () => '',
     );
     final giaVotato = giaVotatoKey.isNotEmpty;

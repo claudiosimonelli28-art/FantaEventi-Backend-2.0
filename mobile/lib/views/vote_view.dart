@@ -60,12 +60,18 @@ class _VoteViewState extends State<VoteView> {
         final isPartecipante = _viewModel.isPartecipante;
         final isProponente = _viewModel.isProponente;
 
-    final giaVotatoKey = _votazione.votiUtenti.keys.firstWhere(
-      (k) => k.trim().toLowerCase() == cleanUser,
-      orElse: () => '',
-    );
-    final haGiaVotato = giaVotatoKey.isNotEmpty;
-    final votoUtente = haGiaVotato ? _votazione.votiUtenti[giaVotatoKey] : null;
+        final isUserCloudOrClaudio = cleanUser == 'cloud' || cleanUser == 'claudio';
+        final giaVotatoKey = _votazione.votiUtenti.keys.firstWhere(
+          (k) {
+            final cleanK = k.trim().toLowerCase();
+            if (cleanK == cleanUser) return true;
+            if (isUserCloudOrClaudio && (cleanK == 'cloud' || cleanK == 'claudio')) return true;
+            return false;
+          },
+          orElse: () => '',
+        );
+        final haGiaVotato = giaVotatoKey.isNotEmpty;
+        final votoUtente = haGiaVotato ? _votazione.votiUtenti[giaVotatoKey] : null;
 
     final int totale = _votazione.totaleVoti;
     final double favRatio = totale > 0 ? (_votazione.votiFavorevoli / totale) : 0.5;

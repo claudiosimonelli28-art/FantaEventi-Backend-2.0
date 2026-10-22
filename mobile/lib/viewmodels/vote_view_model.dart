@@ -65,15 +65,25 @@ class VoteViewModel extends BaseViewModel {
 
   bool get isProponente {
     final curUser = _apiService.currentUser;
-    final curUserNick = curUser?.nome.isNotEmpty == true ? curUser!.nome : 'Cloud';
-    final cleanUser = curUserNick.trim().toLowerCase();
-    final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
-    final cleanId = (curUser?.id ?? '').trim().toLowerCase();
+    final curNick = (curUser?.nickname ?? '').trim().toLowerCase();
+    final curNome = (curUser?.nome ?? '').trim().toLowerCase();
+    final curId = (curUser?.id ?? '').trim().toLowerCase();
 
     final propostoDa = (_votazione.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
-    return (propostoDa.isNotEmpty && (propostoDa == cleanUser || (cleanNick.isNotEmpty && propostoDa == cleanNick) || (cleanId.isNotEmpty && propostoDa == cleanId))) ||
-        _votazione.descrizione.toLowerCase().contains('proposto da $cleanUser') ||
-        (cleanNick.isNotEmpty && _votazione.descrizione.toLowerCase().contains('proposto da $cleanNick'));
+    final isCloud = curNick == 'cloud' || curNome == 'claudio' || curNick == 'claudio' || curNome == 'cloud';
+    final isPropostoCloud = propostoDa == 'cloud' || propostoDa == 'claudio';
+
+    if (propostoDa.isNotEmpty) {
+      if (propostoDa == curNick || (curNome.isNotEmpty && propostoDa == curNome) || (curId.isNotEmpty && propostoDa == curId)) return true;
+      if (isCloud && isPropostoCloud) return true;
+    }
+
+    final desc = _votazione.descrizione.toLowerCase();
+    if (curNick.isNotEmpty && desc.contains('proposto da $curNick')) return true;
+    if (curNome.isNotEmpty && desc.contains('proposto da $curNome')) return true;
+    if (isCloud && (desc.contains('proposto da cloud') || desc.contains('proposto da claudio'))) return true;
+
+    return false;
   }
 
   Future<Votazione> vota(bool aFavore) async {

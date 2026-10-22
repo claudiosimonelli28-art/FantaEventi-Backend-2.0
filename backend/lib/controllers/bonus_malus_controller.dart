@@ -27,7 +27,10 @@ class BonusMalusController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final propostoDaUtente = data['utente']?.toString() ?? data['propostoDa']?.toString() ?? 'Un utente';
+      String propostoDaUtente = data['utente']?.toString() ?? data['propostoDa']?.toString() ?? 'Un utente';
+      if (propostoDaUtente.trim().toLowerCase() == 'claudio') {
+        propostoDaUtente = 'Cloud';
+      }
       final eventoId = data['eventoId']?.toString() ?? '';
       final eventoTitolo = data['eventoTitolo']?.toString() ?? data['titoloEvento']?.toString() ?? '';
       final nome = data['nome']?.toString() ?? '';
@@ -109,7 +112,14 @@ class BonusMalusController {
         final rawInv = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
         destinatariSet.addAll(rawInv);
 
-        destinatariSet.removeWhere((d) => d.trim().toLowerCase() == propostoDaUtente.trim().toLowerCase() || d.trim().isEmpty);
+        final cleanProp = propostoDaUtente.trim().toLowerCase();
+        destinatariSet.removeWhere((d) {
+          final cleanD = d.trim().toLowerCase();
+          if (cleanD.isEmpty) return true;
+          if (cleanD == cleanProp) return true;
+          if ((cleanProp == 'cloud' || cleanProp == 'claudio') && (cleanD == 'cloud' || cleanD == 'claudio')) return true;
+          return false;
+        });
 
         for (var destUser in destinatariSet) {
           final existingNot = await DbService.instance.db.collection('Notifiche').findOne(
