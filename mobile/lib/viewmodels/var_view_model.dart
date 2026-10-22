@@ -30,14 +30,32 @@ class VarSubmissionViewModel extends BaseViewModel {
   String? get selectedJudge => _selectedJudge;
   Set<String> get selectedWitnesses => Set.unmodifiable(_selectedWitnesses);
   bool get isSubmitting => _isSubmitting;
-  String get myNick => _apiService.currentUser?.nickname ?? '';
-  bool get isOrganizer => evento.creatore.trim().toLowerCase() == myNick.trim().toLowerCase();
+  String get myNick => (_apiService.currentUser?.nickname.isNotEmpty == true
+      ? _apiService.currentUser!.nickname
+      : (_apiService.currentUser?.nome ?? '')).trim();
+  String get myRealName => (_apiService.currentUser?.nome ?? '').trim();
+
+  bool isMe(String p) {
+    final pLow = p.trim().toLowerCase();
+    final n = myNick.toLowerCase();
+    final r = myRealName.toLowerCase();
+    return pLow == n ||
+        (r.isNotEmpty && pLow == r) ||
+        (n == 'cloud' && (pLow == 'claudio' || pLow.contains('claudio'))) ||
+        (r == 'claudio' && pLow == 'cloud');
+  }
+  bool get isOrganizer {
+    final c = evento.creatore.trim().toLowerCase();
+    final n = myNick.toLowerCase();
+    final r = myRealName.toLowerCase();
+    return c == n || (r.isNotEmpty && c == r) || (n == 'cloud' && (c == 'claudio' || c.contains('claudio')));
+  }
   bool get isBonus => bonusMalus.punti > 0;
 
   void _initDefaults() {
     if (isOrganizer) {
       final eligibleJudges = evento.partecipanti
-          .where((p) => p.trim().toLowerCase() != myNick.trim().toLowerCase())
+          .where((p) => !isMe(p))
           .toList();
       if (eligibleJudges.isNotEmpty) {
         _selectedJudge = eligibleJudges.first;
@@ -46,7 +64,7 @@ class VarSubmissionViewModel extends BaseViewModel {
 
     if (bonusMalus.punti < 0) {
       final eligibleCulprits = evento.partecipanti
-          .where((p) => p.trim().toLowerCase() != myNick.trim().toLowerCase())
+          .where((p) => !isMe(p))
           .toList();
       if (eligibleCulprits.isNotEmpty) {
         _selectedCulprit = eligibleCulprits.first;

@@ -1221,8 +1221,9 @@ class ApiService {
           );
         }
 
+        final cleanNome = nome.trim();
         final newDoc = {
-          'nome': cleanNick,
+          'nome': cleanNome.isNotEmpty ? cleanNome : cleanNick,
           'username': cleanNick,
           'nickname': cleanNick,
           'cognome': cognome.trim(),

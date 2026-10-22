@@ -44,7 +44,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
     super.initState();
     if (widget.evento != null && !widget.evento!.isConcluso) {
       final meUser = _apiService.currentUser;
-      final myNick = meUser?.nome.trim().toLowerCase() ?? '';
+      final myNick = (meUser?.nickname.isNotEmpty == true ? meUser!.nickname : meUser?.nome ?? '').trim().toLowerCase();
       final myAlias = meUser?.nickname.trim().toLowerCase() ?? '';
       final isCreatore = widget.evento!.creatore.trim().toLowerCase() == myNick || (myAlias.isNotEmpty && widget.evento!.creatore.trim().toLowerCase() == myAlias);
       final isPartecipante = isCreatore || widget.evento!.partecipanti.any((p) {
@@ -93,7 +93,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
       }
 
       final meUser = _apiService.getCurrentUser();
-      final myNick = meUser.nome.trim().toLowerCase();
+      final myNick = (meUser.nickname.isNotEmpty ? meUser.nickname : meUser.nome).trim().toLowerCase();
       final myAlias = meUser.nickname.trim().toLowerCase();
       final isCreatore = _eventoSelezionato!.creatore.trim().toLowerCase() == myNick || (myAlias.isNotEmpty && _eventoSelezionato!.creatore.trim().toLowerCase() == myAlias);
       final isPartecipante = isCreatore || _eventoSelezionato!.partecipanti.any((p) {
@@ -130,7 +130,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
           descrizione: _descrizioneController.text.trim(),
           punti: mePunti,
           categoria: _categoriaSelezionata,
-          propostoDa: meUser.nome,
+          propostoDa: meUser.nickname.isNotEmpty ? meUser.nickname : meUser.nome,
           approvato: false,
           riassegnabileMoltepliciVolte: _riassegnabileMoltepliciVolte,
         );
@@ -252,7 +252,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                     future: _apiService.getEventi(),
                     builder: (context, snapshot) {
                       final meUser = _apiService.currentUser;
-                      final myNick = meUser?.nome.trim().toLowerCase() ?? '';
+                      final myNick = (meUser?.nickname.isNotEmpty == true ? meUser!.nickname : meUser?.nome ?? '').trim().toLowerCase();
                       final myAlias = meUser?.nickname.trim().toLowerCase() ?? '';
 
                       // Filtra rigorosamente solo gli eventi attivi e non conclusi a cui l'utente partecipa

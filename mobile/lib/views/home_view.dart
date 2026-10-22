@@ -1646,7 +1646,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   Widget _buildVotazioniTab() {
     final curUser = _viewModel.currentUser;
-    final cleanUser = (curUser?.nome ?? 'Cloud').trim().toLowerCase();
+    final cleanUser = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : (curUser?.nome ?? 'Cloud')).trim().toLowerCase();
     final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
     final cleanId = (curUser?.id ?? '').trim().toLowerCase();
 

@@ -1336,7 +1336,7 @@ class _ProfileViewState extends State<ProfileView> {
                     const SizedBox(height: 16),
 
                     Text(
-                      utente.nome,
+                      utente.nickname.isNotEmpty ? utente.nickname : utente.nome,
                       style: GoogleFonts.poppins(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,

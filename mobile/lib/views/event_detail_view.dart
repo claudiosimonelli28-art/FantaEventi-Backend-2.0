@@ -2230,17 +2230,22 @@ class _EventDetailViewState extends State<EventDetailView> {
             final cleanQuery = searchQuery.trim().toLowerCase();
             final amiciFiltrati = amici.where((u) {
               if (cleanQuery.isEmpty) return true;
-              final nick = u.nome.toLowerCase();
+              final nick = (u.nickname.isNotEmpty ? u.nickname : u.nome).toLowerCase();
               final email = u.email.toLowerCase();
               return nick.contains(cleanQuery) || email.contains(cleanQuery);
             }).toList();
 
             final invitabiliCount = amici.where((amico) {
-              final aNorm = amico.nome.trim().toLowerCase();
-              final isGiaPart = _partecipantiConfermati.any((p) => p.trim().toLowerCase() == aNorm) ||
-                  _evento.propostoDa.trim().toLowerCase() == aNorm;
-              final isGiaInv = _invitatiInSospeso.any((i) => i.trim().toLowerCase() == aNorm) ||
-                  _evento.invitati.any((i) => i.trim().toLowerCase() == aNorm);
+              final aNick = (amico.nickname.isNotEmpty ? amico.nickname : amico.nome).trim().toLowerCase();
+              final aNome = amico.nome.trim().toLowerCase();
+              final isGiaPart = _partecipantiConfermati.any((p) {
+                final pLow = p.trim().toLowerCase();
+                return pLow == aNick || pLow == aNome || (aNick == 'cloud' && pLow == 'claudio');
+              }) || _evento.propostoDa.trim().toLowerCase() == aNick || _evento.propostoDa.trim().toLowerCase() == aNome;
+              final isGiaInv = _invitatiInSospeso.any((i) {
+                final iLow = i.trim().toLowerCase();
+                return iLow == aNick || iLow == aNome;
+              }) || _evento.invitati.any((i) => i.trim().toLowerCase() == aNick || i.trim().toLowerCase() == aNome);
               return !isGiaPart && !isGiaInv;
             }).length;
 
@@ -2353,23 +2358,29 @@ class _EventDetailViewState extends State<EventDetailView> {
                             separatorBuilder: (_, __) => const SizedBox(height: 8),
                             itemBuilder: (context, idx) {
                               final amico = amiciFiltrati[idx];
-                              final aNorm = amico.nome.trim().toLowerCase();
+                              final aEffectiveNick = amico.nickname.isNotEmpty ? amico.nickname : amico.nome;
+                              final aNorm = aEffectiveNick.trim().toLowerCase();
+                              final aNomeNorm = amico.nome.trim().toLowerCase();
 
-                              final bool isGiaPartecipante = _partecipantiConfermati.any((p) => p.trim().toLowerCase() == aNorm) ||
-                                  _evento.propostoDa.trim().toLowerCase() == aNorm;
-                              final bool isGiaInvitato = _invitatiInSospeso.any((i) => i.trim().toLowerCase() == aNorm) ||
-                                  _evento.invitati.any((i) => i.trim().toLowerCase() == aNorm);
+                              final bool isGiaPartecipante = _partecipantiConfermati.any((p) {
+                                final pLow = p.trim().toLowerCase();
+                                return pLow == aNorm || pLow == aNomeNorm || (aNorm == 'cloud' && pLow == 'claudio');
+                              }) || _evento.propostoDa.trim().toLowerCase() == aNorm || _evento.propostoDa.trim().toLowerCase() == aNomeNorm;
+                              final bool isGiaInvitato = _invitatiInSospeso.any((i) {
+                                final iLow = i.trim().toLowerCase();
+                                return iLow == aNorm || iLow == aNomeNorm;
+                              }) || _evento.invitati.any((i) => i.trim().toLowerCase() == aNorm || i.trim().toLowerCase() == aNomeNorm);
                               final bool isInvitabile = !isGiaPartecipante && !isGiaInvitato;
-                              final bool isSelected = amiciSelezionati.contains(amico.nome);
+                              final bool isSelected = amiciSelezionati.contains(aEffectiveNick);
 
                               return InkWell(
                                 onTap: isInvitabile
                                     ? () {
                                         setModalState(() {
                                           if (isSelected) {
-                                            amiciSelezionati.remove(amico.nome);
+                                            amiciSelezionati.remove(aEffectiveNick);
                                           } else {
-                                            amiciSelezionati.add(amico.nome);
+                                            amiciSelezionati.add(aEffectiveNick);
                                           }
                                         });
                                       }
@@ -2398,7 +2409,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       CircleAvatar(
                                         radius: 20,
                                         backgroundColor: const Color(0xFF334155),
-                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl.isNotEmpty ? amico.avatarUrl : _viewModel.getAvatarPerUtente(amico.nome.isNotEmpty ? amico.nome : amico.nickname)),
+                                        backgroundImage: getAvatarImageProvider(amico.avatarUrl.isNotEmpty ? amico.avatarUrl : _viewModel.getAvatarPerUtente(aEffectiveNick)),
                                       ),
                                       const SizedBox(width: 12),
 
@@ -2407,7 +2418,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              amico.nome,
+                                              aEffectiveNick,
                                               style: GoogleFonts.poppins(
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.bold,

@@ -163,7 +163,7 @@ class _CreateEventViewState extends State<CreateEventView> {
     super.initState();
     final curUser = _apiService.currentUser;
     if (curUser != null && curUser.nome.isNotEmpty) {
-      _creatorNick = curUser.nome;
+      _creatorNick = curUser.nickname.isNotEmpty ? curUser.nickname : curUser.nome;
     }
     if (!_partecipantiSelezionati.contains(_creatorNick)) {
       _partecipantiSelezionati.add(_creatorNick);
@@ -202,7 +202,7 @@ class _CreateEventViewState extends State<CreateEventView> {
         _utentiFiltrati = _utentiMongoDB;
       } else {
         _utentiFiltrati = _utentiMongoDB.where((u) {
-          final nick = u.nome.toLowerCase();
+          final nick = (u.nickname.isNotEmpty ? u.nickname : u.nome).toLowerCase();
           final email = u.email.toLowerCase();
           return nick.contains(cleanQuery) || email.contains(cleanQuery);
         }).toList();
@@ -259,7 +259,7 @@ class _CreateEventViewState extends State<CreateEventView> {
     }
 
     final curUser = _apiService.currentUser;
-    final creatore = curUser?.nome ?? 'Cloud';
+    final creatore = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
 
       if (_partecipantiSelezionati.isEmpty) {
         _partecipantiSelezionati.add(creatore);
@@ -854,7 +854,7 @@ class _CreateEventViewState extends State<CreateEventView> {
                               separatorBuilder: (ctx, idx) => const Divider(color: Color(0xFF334155), height: 1),
                               itemBuilder: (ctx, idx) {
                                 final user = _utentiFiltrati[idx];
-                                final nick = user.nome.isNotEmpty ? user.nome : 'Utente';
+                                final nick = user.nickname.isNotEmpty ? user.nickname : (user.nome.isNotEmpty ? user.nome : 'Utente');
                                 final isSelected = _partecipantiSelezionati.contains(nick);
                                 final isCreator = nick == _creatorNick;
 

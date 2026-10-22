@@ -302,6 +302,8 @@ class UtenteController {
 
       final utente = Utente(
         username: username,
+        nome: (data['nome'] ?? '').toString().trim(),
+        cognome: (data['cognome'] ?? '').toString().trim(),
         email: formattedEmail,
         password: hashedPassword,
         ruolo: 'partecipante',

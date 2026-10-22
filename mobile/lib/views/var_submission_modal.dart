@@ -99,8 +99,13 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
         // Testimoni selezionabili: partecipanti esclusi richiedente, bersaglio e arbitro
         final eligibleWitnesses = widget.evento.partecipanti.where((p) {
           final pLower = p.trim().toLowerCase();
-          if (pLower == myNick.trim().toLowerCase()) return false;
-          if (pLower == effectiveJudge.trim().toLowerCase()) return false;
+          if (_viewModel.isMe(p)) return false;
+          final effJudgeLower = effectiveJudge.trim().toLowerCase();
+          if (pLower == effJudgeLower ||
+              (effJudgeLower == 'cloud' && (pLower == 'claudio' || pLower.contains('claudio'))) ||
+              (effJudgeLower == 'claudio' && pLower == 'cloud')) {
+            return false;
+          }
           if (!isBonus && _viewModel.selectedCulprit != null && pLower == _viewModel.selectedCulprit!.trim().toLowerCase()) return false;
           return true;
         }).toList();

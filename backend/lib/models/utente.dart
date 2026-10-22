@@ -3,6 +3,8 @@ import 'package:mongo_dart/mongo_dart.dart';
 class Utente {
   final ObjectId? id;
   final String username;
+  final String nome;
+  final String cognome;
   final String email;
   final String password;
   final String ruolo;
@@ -14,6 +16,8 @@ class Utente {
   Utente({
     this.id,
     required this.username,
+    String? nome,
+    this.cognome = '',
     required this.email,
     this.password = '',
     this.ruolo = 'partecipante',
@@ -21,7 +25,8 @@ class Utente {
     this.livello = 1,
     this.squadra,
     DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+  })  : nome = (nome != null && nome.trim().isNotEmpty) ? nome.trim() : username,
+        createdAt = createdAt ?? DateTime.now();
 
   factory Utente.fromMap(Map<String, dynamic> map) {
     final uname = map['nickname'] ?? map['username'] ?? map['nome'] ?? 'Utente';
@@ -30,6 +35,8 @@ class Utente {
           ? map['_id'] as ObjectId
           : (map['_id'] != null ? ObjectId.fromHexString(map['_id'].toString()) : null),
       username: uname.toString(),
+      nome: (map['nome'] ?? '').toString(),
+      cognome: (map['cognome'] ?? '').toString(),
       email: map['email'] as String? ?? '',
       password: map['password'] as String? ?? '',
       ruolo: map['ruolo'] as String? ?? 'partecipante',
@@ -48,7 +55,8 @@ class Utente {
     final map = <String, dynamic>{
       'nickname': username,
       'username': username,
-      'nome': username,
+      'nome': nome.isNotEmpty ? nome : username,
+      'cognome': cognome,
       'email': email,
       'password': password,
       'ruolo': ruolo,
@@ -68,7 +76,8 @@ class Utente {
     return {
       'id': id?.oid ?? id?.toHexString(),
       'username': username,
-      'nome': username,
+      'nome': nome.isNotEmpty ? nome : username,
+      'cognome': cognome,
       'nickname': username,
       'email': email,
       'ruolo': ruolo,
