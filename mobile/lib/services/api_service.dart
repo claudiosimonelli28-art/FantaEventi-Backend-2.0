@@ -2410,12 +2410,14 @@ class ApiService {
           throw Exception('Non è più possibile invitare amici: l\'evento è già in corso o concluso!');
         }
 
-        final creatore = (evDoc['propostoDa'] ??
+        final rawCreatore = (evDoc['propostoDa'] ??
                 evDoc['creatore'] ??
                 (_currentUser?.nickname.isNotEmpty == true
                     ? _currentUser!.nickname
                     : (_currentUser?.nome ?? 'Cloud')))
-            .toString();
+            .toString()
+            .trim();
+        final creatore = rawCreatore.toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore;
         final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
 
         final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
@@ -2886,12 +2888,12 @@ class ApiService {
 
   Future<Evento> creaEvento(Evento nuovoEvento, {bool awardXp = true}) async {
     invalidateCache();
-    final rawCreatore = nuovoEvento.propostoDa.isNotEmpty
-        ? nuovoEvento.propostoDa
-        : (_currentUser?.nickname.isNotEmpty == true
-            ? _currentUser!.nickname
-            : (_currentUser?.nome ?? 'Cloud'));
-    final creatore = rawCreatore.trim().toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore.trim();
+    final rawCreatore = (_currentUser?.nickname.isNotEmpty == true
+        ? _currentUser!.nickname
+        : (nuovoEvento.propostoDa.isNotEmpty
+            ? nuovoEvento.propostoDa
+            : (_currentUser?.nome ?? 'Cloud'))).trim();
+    final creatore = rawCreatore.toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore;
     final List<String> invitati = nuovoEvento.partecipanti
         .where((p) => p.trim().toLowerCase() != creatore.trim().toLowerCase())
         .toList();
@@ -3719,7 +3721,16 @@ class ApiService {
             ),
           );
 
-          final numPartecipanti = evMatch.partecipanti.length >= 2 ? evMatch.partecipanti.length : 3;
+          int effectiveParticipants = evMatch.partecipanti.length;
+          if (effectiveParticipants < 2) {
+            final evInList = _eventi.firstWhere(
+              (e) => e.partecipanti.length >= 2 &&
+                  (e.id == evId || e.titolo.toLowerCase() == evId.toLowerCase()),
+              orElse: () => evMatch,
+            );
+            effectiveParticipants = evInList.partecipanti.length;
+          }
+          final numPartecipanti = effectiveParticipants >= 2 ? effectiveParticipants : 3;
           final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
 
           final Set<String> countedUsers = {};
@@ -3735,22 +3746,26 @@ class ApiService {
             }
           });
 
-          final bool giaApprovatoDaDb = bm['approvato'] == true ||
+          final bool isPropostaUtente = effectivePropDa.isNotEmpty;
+          final bool giaApprovatoDaDb = !isPropostaUtente && (bm['approvato'] == true ||
               bm['stato'] == 'approvato' ||
-              bm['stato'] == 'confermato';
-          final bool giaRespintoDaDb = bm['approvato'] == false && bm['stato'] == 'respinto';
+              bm['stato'] == 'confermato');
+          final bool giaRespintoDaDb = !isPropostaUtente && (bm['approvato'] == false && bm['stato'] == 'respinto');
 
           final totalVotiEspressi = fav + cont;
           bool isApprovato = giaApprovatoDaDb || (fav >= quorumCalcolato);
           bool isRespinto = (!giaApprovatoDaDb && (giaRespintoDaDb || (cont >= quorumCalcolato)));
 
           bool paritaDecisaDaOrganizzatore = false;
-          final nomeOrganizzatore = evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa;
+          final rawNomeOrg = evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa;
+          final nomeOrganizzatore = rawNomeOrg.toLowerCase() == 'claudio' ? 'Cloud' : rawNomeOrg;
 
+          // Parità: si attiva ESCLUSIVAMENTE se TUTTI i partecipanti hanno votato,
+          // il numero di partecipanti è pari, e nessuno ha raggiunto il quorum perché fav == cont.
           if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
             final cleanCreatore = nomeOrganizzatore.trim().toLowerCase();
             final creatoreVoteKey = votiUtenti.keys.firstWhere(
-              (k) => k.trim().toLowerCase() == cleanCreatore,
+              (k) => k.trim().toLowerCase() == cleanCreatore || (cleanCreatore == 'cloud' && k.trim().toLowerCase() == 'claudio'),
               orElse: () => '',
             );
             if (creatoreVoteKey.isNotEmpty) {
@@ -3758,14 +3773,10 @@ class ApiService {
               if (creatoreVote == 'pro') {
                 isApprovato = true;
                 paritaDecisaDaOrganizzatore = true;
-              }
-              if (creatoreVote == 'contro') {
+              } else if (creatoreVote == 'contro') {
                 isRespinto = true;
                 paritaDecisaDaOrganizzatore = true;
               }
-            } else if (cleanCreatore.isNotEmpty && cleanCreatore == effectivePropDa.trim().toLowerCase()) {
-              isApprovato = true;
-              paritaDecisaDaOrganizzatore = true;
             }
           }
 
@@ -3917,25 +3928,33 @@ class ApiService {
       ),
     );
 
-    final numPartecipanti = evMatch.partecipanti.length >= 2
-        ? evMatch.partecipanti.length
-        : (v.quorum > 0 ? (v.quorum - 1) * 2 : 3);
+    int effectiveParticipants = evMatch.partecipanti.length;
+    if (effectiveParticipants < 2) {
+      final evInList = _eventi.firstWhere(
+        (e) => e.partecipanti.length >= 2 &&
+            (e.id == evId || e.titolo.toLowerCase() == evId.toLowerCase()),
+        orElse: () => evMatch,
+      );
+      effectiveParticipants = evInList.partecipanti.length;
+    }
+    final numPartecipanti = effectiveParticipants >= 2 ? effectiveParticipants : 3;
     final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
     final int totalVotiEspressi = fav + cont;
 
     bool isApprovato = (fav >= quorumCalcolato);
     bool isRespinto = (cont >= quorumCalcolato);
     bool paritaDecisaDaOrganizzatore = false;
-    final nomeOrganizzatore = evMatch.creatore.isNotEmpty
+    final rawNomeOrg = evMatch.creatore.isNotEmpty
         ? evMatch.creatore
         : (evMatch.propostoDa.isNotEmpty ? evMatch.propostoDa : (v.nomeOrganizzatore ?? ''));
+    final nomeOrganizzatore = rawNomeOrg.toLowerCase() == 'claudio' ? 'Cloud' : rawNomeOrg;
 
-    final propDa = v.bonusMalus?.propostoDa ?? '';
-
+    // Tie-breaker: si attiva SOLO SE tutti i partecipanti hanno votato,
+    // il numero di partecipanti è pari, e nessuno ha raggiunto il quorum perché fav == cont.
     if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
       final cleanCreatore = nomeOrganizzatore.trim().toLowerCase();
       final creatoreVoteKey = nuoviVotiUtenti.keys.firstWhere(
-        (k) => k.trim().toLowerCase() == cleanCreatore,
+        (k) => k.trim().toLowerCase() == cleanCreatore || (cleanCreatore == 'cloud' && k.trim().toLowerCase() == 'claudio'),
         orElse: () => '',
       );
       if (creatoreVoteKey.isNotEmpty) {
@@ -3947,9 +3966,6 @@ class ApiService {
           isRespinto = true;
           paritaDecisaDaOrganizzatore = true;
         }
-      } else if (cleanCreatore.isNotEmpty && cleanCreatore == propDa.trim().toLowerCase()) {
-        isApprovato = true;
-        paritaDecisaDaOrganizzatore = true;
       }
     }
 

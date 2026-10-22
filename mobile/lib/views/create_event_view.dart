@@ -259,7 +259,10 @@ class _CreateEventViewState extends State<CreateEventView> {
     }
 
     final curUser = _apiService.currentUser;
-    final creatore = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+    final rawCreatore = (curUser?.nickname.isNotEmpty == true
+        ? curUser!.nickname
+        : (curUser?.nome.isNotEmpty == true ? curUser!.nome : 'Cloud')).trim();
+    final creatore = rawCreatore.toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore;
 
       if (_partecipantiSelezionati.isEmpty) {
         _partecipantiSelezionati.add(creatore);

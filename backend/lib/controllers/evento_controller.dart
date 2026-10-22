@@ -205,7 +205,10 @@ class EventoController {
       final data = jsonDecode(body) as Map<String, dynamic>;
 
       final titolo = data['titolo'] ?? data['nome'] ?? 'Evento FantaEventi';
-      final propostoDa = data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud';
+      String propostoDa = (data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud').toString().trim();
+      if (propostoDa.toLowerCase() == 'claudio') {
+        propostoDa = 'Cloud';
+      }
       final rawPartecipanti = (data['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final rawInvitati = (data['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final Set<String> invitatiSet = {...rawPartecipanti, ...rawInvitati};

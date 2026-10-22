@@ -123,6 +123,8 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         }
 
         final meUser = _apiService.getCurrentUser();
+        final rawUserNick = (meUser.nickname.isNotEmpty ? meUser.nickname : meUser.nome).trim();
+        final finalPropostoDa = rawUserNick.toLowerCase() == 'claudio' ? 'Cloud' : rawUserNick;
 
         final nuovoBonus = BonusMalus(
           id: 'bm_${DateTime.now().millisecondsSinceEpoch}',
@@ -130,7 +132,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
           descrizione: _descrizioneController.text.trim(),
           punti: mePunti,
           categoria: _categoriaSelezionata,
-          propostoDa: meUser.nickname.isNotEmpty ? meUser.nickname : meUser.nome,
+          propostoDa: finalPropostoDa,
           approvato: false,
           riassegnabileMoltepliciVolte: _riassegnabileMoltepliciVolte,
         );

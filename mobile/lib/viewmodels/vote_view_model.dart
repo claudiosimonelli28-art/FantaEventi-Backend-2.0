@@ -18,9 +18,8 @@ class VoteViewModel extends BaseViewModel {
   String get currentUserNick {
     final u = _apiService.currentUser;
     if (u == null) return 'Cloud';
-    if (u.nickname.isNotEmpty) return u.nickname;
-    if (u.nome.isNotEmpty) return u.nome;
-    return 'Cloud';
+    final nick = u.nickname.isNotEmpty ? u.nickname : (u.nome.isNotEmpty ? u.nome : 'Cloud');
+    return nick.trim().toLowerCase() == 'claudio' ? 'Cloud' : nick.trim();
   }
 
   bool get isPartecipante {
