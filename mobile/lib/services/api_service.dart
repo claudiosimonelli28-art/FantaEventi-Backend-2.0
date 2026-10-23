@@ -3555,16 +3555,20 @@ class ApiService {
           destList.add(utenteDestinatario);
         }
 
+        final bool isBonus = punti >= 0;
+        final String notificaTipo = isBonus ? 'assegnazione_bonus' : 'assegnazione_malus';
+        final String notificaTitolo = isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!';
+
         final int ts = now.millisecondsSinceEpoch;
         for (var d in destList) {
           await db.collection('Notifiche').insertOne({
             'notificaId': 'bm_ass_${ts}_${d.toLowerCase()}',
             'mittente': mittente,
             'destinatario': d,
-            'titolo': '🏆 Bonus/Malus Assegnato!',
+            'titolo': notificaTitolo,
             'messaggio': '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
             'eventoId': eventoId,
-            'tipo': 'assegnazione_bonus',
+            'tipo': notificaTipo,
             'stato': 'consegnato',
             'letto': false,
             'votoEspresso': 'pro',
@@ -3576,10 +3580,10 @@ class ApiService {
           try {
             await PushNotificationService.instance.inviaPushAUtenti(
               destList,
-              titolo: '🏆 Bonus/Malus Assegnato!',
+              titolo: notificaTitolo,
               messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
               data: {
-                'tipo': 'assegnazione_bonus',
+                'tipo': notificaTipo,
                 'eventoId': eventoId,
               },
             ).timeout(const Duration(seconds: 4), onTimeout: () {});

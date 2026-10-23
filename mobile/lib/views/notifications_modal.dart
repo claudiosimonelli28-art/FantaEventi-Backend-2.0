@@ -263,6 +263,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
 
                             // 3. Notifica di assegnazione o riassegnazione bonus/malus
                             final bool isAssegnazioneBonusMalus = tipo == 'assegnazione_bonus' ||
+                                tipo == 'assegnazione_malus' ||
                                 titolo.contains('assegnat') ||
                                 titolo.contains('ricevuto') ||
                                 messaggio.contains('ha ricevuto') ||
