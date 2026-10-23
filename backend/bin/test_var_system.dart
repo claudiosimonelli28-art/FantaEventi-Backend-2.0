@@ -5,7 +5,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 void main() async {
   print('--- TEST AUTOMATICO SISTEMA VAR DI FANTAEVENTI ---');
 
-  const mongoUri =
+  final mongoUri =
       Platform.environment["MONGODB_URI"] ?? (File(".env").existsSync() ? File(".env").readAsLinesSync().firstWhere((l) => l.startsWith("MONGODB_URI=")).split("=")[1] : "");
 
   final db = await Db.create(mongoUri);

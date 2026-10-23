@@ -36,19 +36,10 @@ class VarSubmissionViewModel extends BaseViewModel {
   String get myRealName => (_apiService.currentUser?.nome ?? '').trim();
 
   bool isMe(String p) {
-    final pLow = p.trim().toLowerCase();
-    final n = myNick.toLowerCase();
-    final r = myRealName.toLowerCase();
-    return pLow == n ||
-        (r.isNotEmpty && pLow == r) ||
-        (n == 'cloud' && (pLow == 'claudio' || pLow.contains('claudio'))) ||
-        (r == 'claudio' && pLow == 'cloud');
+    return _apiService.isSamePerson(p, myNick) || _apiService.isSamePerson(p, myRealName);
   }
   bool get isOrganizer {
-    final c = evento.creatore.trim().toLowerCase();
-    final n = myNick.toLowerCase();
-    final r = myRealName.toLowerCase();
-    return c == n || (r.isNotEmpty && c == r) || (n == 'cloud' && (c == 'claudio' || c.contains('claudio')));
+    return _apiService.isSamePerson(evento.creatore, myNick) || _apiService.isSamePerson(evento.creatore, myRealName);
   }
   bool get isBonus => bonusMalus.punti > 0;
 

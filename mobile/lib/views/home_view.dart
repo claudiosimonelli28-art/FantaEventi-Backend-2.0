@@ -17,6 +17,7 @@ import 'var_submission_modal.dart';
 import '../widgets/guida_regolamento_modal.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../services/tutorial_controller.dart';
+import '../services/push_notification_service.dart';
 import '../viewmodels/home_view_model.dart';
 import '../widgets/app_toast.dart';
 
@@ -27,7 +28,7 @@ class HomeView extends StatefulWidget {
   State<HomeView> createState() => _HomeViewState();
 }
 
-class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
+class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, WidgetsBindingObserver {
   final HomeViewModel _viewModel = HomeViewModel();
 
   late TabController _tabController;
@@ -110,8 +111,21 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
       }
     });
 
+    WidgetsBinding.instance.addObserver(this);
+    PushNotificationService.instance.onNotificationReceived = () {
+      if (mounted) {
+        _viewModel.refreshNotifications();
+      }
+    };
     _viewModel.inizializza();
     _checkInitialModals();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _viewModel.loadData(forceRefresh: true, silent: true);
+    }
   }
 
   Future<void> _checkInitialModals() async {
@@ -553,6 +567,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     TutorialController.instance.removeListener(_onTutorialChanged);
     for (final c in _bmSearchControllers.values) {
       c.dispose();

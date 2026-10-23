@@ -111,7 +111,7 @@ class HomeViewModel extends BaseViewModel {
       final meVoti = await _apiService.getVotazioni();
 
       final curUser = _apiService.currentUser;
-      final nick = curUser?.nome ?? 'Cloud';
+      final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
       final nots = await _apiService.getNotifiche(nick);
       final unreadNots = nots.where((n) {
         final nId = (n['id'] ?? '').toString();
@@ -148,6 +148,22 @@ class HomeViewModel extends BaseViewModel {
     } finally {
       _isFetchingData = false;
     }
+  }
+
+  /// Aggiorna istantaneamente il contatore notifiche non lette per la campanellina
+  Future<void> refreshNotifications() async {
+    final curUser = _apiService.currentUser;
+    if (curUser == null) return;
+    final nick = curUser.nickname.isNotEmpty ? curUser.nickname : curUser.nome;
+    final nots = await _apiService.getNotifiche(nick);
+    final unreadNots = nots.where((n) {
+      final nId = (n['id'] ?? '').toString();
+      if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
+      if (n['letto'] == true || n['stato'] == 'letto') return false;
+      return true;
+    }).toList();
+    _numeroNotifiche = unreadNots.length;
+    notifyListeners();
   }
 
   // --- CONTROLLO GUIDA REGOLE ---

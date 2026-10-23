@@ -357,24 +357,68 @@ class ApiService {
     }
   }
 
+  /// Risolve rigorosamente qualsiasi nome o alias nel NICKNAME ufficiale del giocatore.
+  /// Il Nome e Cognome NON devono MAI apparire nel gameplay, notifiche, votazioni o feed.
+  String resolveNickname(String? candidate) {
+    if (candidate == null) return _currentUser?.nickname ?? 'Cloud';
+    final trimmed = candidate.trim();
+    if (trimmed.isEmpty) return _currentUser?.nickname ?? 'Cloud';
+    final lower = trimmed.toLowerCase();
+
+    // Mappe statiche di sicurezza blindata per gli account principali
+    if (lower == 'claudio' || lower == 'cloud') return 'Cloud';
+    if (lower == 'filippo' || lower == 'pippoforte' || lower == 'pippo forte') return 'Pippoforte';
+    if (lower == 'antonio' || lower == 'ugnom' || lower == 'ugnome') return 'Ugnom';
+
+    // Ricerca dinamica su utenti caricati in memoria
+    for (var u in _utenti) {
+      if (u.nickname.isNotEmpty) {
+        if (u.nickname.toLowerCase() == lower) return u.nickname;
+        if (u.nome.isNotEmpty && u.nome.toLowerCase() == lower) return u.nickname;
+        if (u.cognome.isNotEmpty && '${u.nome} ${u.cognome}'.toLowerCase() == lower) return u.nickname;
+        if (u.username.isNotEmpty && u.username.toLowerCase() == lower) return u.nickname;
+      }
+    }
+
+    // Se corrisponde all'utente corrente
+    if (_currentUser != null && _currentUser!.nickname.isNotEmpty) {
+      if (_currentUser!.nome.toLowerCase() == lower ||
+          _currentUser!.username.toLowerCase() == lower ||
+          _currentUser!.nickname.toLowerCase() == lower) {
+        return _currentUser!.nickname;
+      }
+    }
+
+    return trimmed;
+  }
+
+  /// Verifica se due stringhe (nome, nickname o alias) appartengono alla stessa persona
+  bool isSamePerson(String? a, String? b) {
+    if (a == null || b == null) return false;
+    final nickA = resolveNickname(a).toLowerCase();
+    final nickB = resolveNickname(b).toLowerCase();
+    if (nickA.isNotEmpty && nickA == nickB) return true;
+    final cleanA = a.trim().toLowerCase();
+    final cleanB = b.trim().toLowerCase();
+    if (cleanA.isNotEmpty && cleanA == cleanB) return true;
+    return false;
+  }
+
   Future<List<String>> getFcmTokensPerUtenti(List<String> nicknames) async {
     if (nicknames.isEmpty) return [];
-    final cleanNicks = nicknames.map((n) => n.trim().toLowerCase()).toSet();
+    final resolvedTargets = nicknames.map((n) => resolveNickname(n).trim().toLowerCase()).toSet();
     final List<String> allTokens = [];
 
     // 1. Prova prima in-memory / cache locale istantanea (0 ms, zero carico DB, zero conflitti di socket)
     for (var u in _utenti) {
-      final uNome = u.nome.trim().toLowerCase();
-      final uNick = u.nickname.trim().toLowerCase();
-      final uUser = u.username.trim().toLowerCase();
-      if (cleanNicks.contains(uNome) || cleanNicks.contains(uNick) || cleanNicks.contains(uUser)) {
+      final uNick = resolveNickname(u.nickname.isNotEmpty ? u.nickname : u.nome).trim().toLowerCase();
+      if (resolvedTargets.contains(uNick) || resolvedTargets.any((t) => isSamePerson(t, uNick))) {
         allTokens.addAll(u.fcmTokens);
       }
     }
     if (_currentUser != null) {
-      final curNome = _currentUser!.nome.trim().toLowerCase();
-      final curNick = _currentUser!.nickname.trim().toLowerCase();
-      if (cleanNicks.contains(curNome) || cleanNicks.contains(curNick)) {
+      final curNick = resolveNickname(_currentUser!.nickname.isNotEmpty ? _currentUser!.nickname : _currentUser!.nome).trim().toLowerCase();
+      if (resolvedTargets.contains(curNick) || resolvedTargets.any((t) => isSamePerson(t, curNick))) {
         allTokens.addAll(_currentUser!.fcmTokens);
       }
     }
@@ -387,16 +431,14 @@ class ApiService {
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
-        // Query ultra-veloce mirata solo sui campi essenziali (esclude immagini profilo pesanti)
         final users = await db.collection('Utenti').find(
           where.fields(['fcmTokens', 'nome', 'nickname', 'username'])
         ).toList().timeout(const Duration(seconds: 4));
 
         for (var u in users) {
-          final uNome = (u['nome'] ?? '').toString().trim().toLowerCase();
-          final uNick = (u['nickname'] ?? '').toString().trim().toLowerCase();
-          final uUser = (u['username'] ?? '').toString().trim().toLowerCase();
-          if (cleanNicks.contains(uNome) || cleanNicks.contains(uNick) || cleanNicks.contains(uUser)) {
+          final raw = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString();
+          final uNick = resolveNickname(raw).trim().toLowerCase();
+          if (resolvedTargets.contains(uNick) || resolvedTargets.any((t) => isSamePerson(t, uNick))) {
             final tokens = List<String>.from(u['fcmTokens'] ?? []);
             allTokens.addAll(tokens);
           }
@@ -1749,7 +1791,12 @@ class ApiService {
         for (var d in docs) {
           final jsonMap = Map<String, dynamic>.from(d);
           jsonMap['id'] = d['_id']?.toHexString() ?? d['_id']?.toString() ?? '';
-          jsonMap['nome'] = d['nome'] ?? d['username'] ?? d['nickname'] ?? 'Utente';
+          final rawNome = (d['nome'] ?? '').toString().trim();
+          final rawNick = (d['nickname'] ?? d['username'] ?? '').toString().trim();
+          final resolvedNick = resolveNickname(rawNick.isNotEmpty ? rawNick : rawNome);
+          jsonMap['nome'] = rawNome.isNotEmpty ? rawNome : resolvedNick;
+          jsonMap['nickname'] = resolvedNick;
+          jsonMap['username'] = resolvedNick;
           jsonMap['email'] = d['email'] ?? '';
           jsonMap['avatarUrl'] = d['avatarUrl'] ?? '';
           jsonMap['livello'] = d['livello'] ?? 1;
@@ -1777,8 +1824,8 @@ class ApiService {
           }
 
           if (_currentUser != null &&
-              (uObj.nickname.trim().toLowerCase() == _currentUser!.nickname.trim().toLowerCase() ||
-               uObj.nome.trim().toLowerCase() == _currentUser!.nome.trim().toLowerCase())) {
+              (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
+               isSamePerson(uObj.nome, _currentUser!.nome))) {
             _currentUser = uObj;
             await _saveSession(_currentUser!);
           }
@@ -2417,7 +2464,7 @@ class ApiService {
                     : (_currentUser?.nome ?? 'Cloud')))
             .toString()
             .trim();
-        final creatore = rawCreatore.toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore;
+        final creatore = resolveNickname(rawCreatore);
         final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
 
         final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
@@ -2425,13 +2472,13 @@ class ApiService {
 
         final List<String> aggiuntiEffettivi = [];
         for (var amico in nuoviInvitati) {
-          final aNorm = amico.trim().toLowerCase();
-          final giaPart = currentPartecipanti.any((p) => p.toString().trim().toLowerCase() == aNorm);
-          final giaInv = currentInvitati.any((i) => i.toString().trim().toLowerCase() == aNorm);
+          final resolvedAmico = resolveNickname(amico);
+          final giaPart = currentPartecipanti.any((p) => isSamePerson(p.toString(), resolvedAmico));
+          final giaInv = currentInvitati.any((i) => isSamePerson(i.toString(), resolvedAmico));
 
-          if (!giaPart && !giaInv) {
-            currentInvitati.add(amico);
-            aggiuntiEffettivi.add(amico);
+          if (!giaPart && !giaInv && !isSamePerson(resolvedAmico, creatore)) {
+            currentInvitati.add(resolvedAmico);
+            aggiuntiEffettivi.add(resolvedAmico);
           }
         }
 
@@ -2589,7 +2636,7 @@ class ApiService {
 
   // --- REPERIMENTO NOTIFICHE & INVITI (DEDUPLICAZIONE RIGIDA) ---
   Future<List<Map<String, dynamic>>> getNotifiche(String nickname) async {
-    final cleanNick = nickname.trim().toLowerCase();
+    final cleanNick = resolveNickname(nickname).trim().toLowerCase();
     final List<Map<String, dynamic>> notificheList = [];
 
     // Connessione DIRETTA e ROBUSTA a MongoDB Atlas (Singola Fonte di Verità)
@@ -2641,8 +2688,9 @@ class ApiService {
         final docs = await db.collection('Notifiche').find().toList();
 
         final matchDocs = docs.where((d) {
-          final dDest = (d['destinatario'] ?? '').toString().trim().toLowerCase();
-          return dDest == cleanNick || cleanNick.isEmpty;
+          final dDest = (d['destinatario'] ?? '').toString().trim();
+          if (cleanNick.isEmpty) return true;
+          return isSamePerson(dDest, cleanNick);
         }).toList();
 
         final Set<String> seenKeys = {};
@@ -2775,12 +2823,24 @@ class ApiService {
           final String evDataInizio = evDoc != null ? (evDoc['data'] ?? '').toString() : '';
 
           seenKeys.add(idStr);
+          final rawMittente = (d['mittente'] ?? 'FantaEventi').toString();
+          final resolvedMittente = resolveNickname(rawMittente);
+
+          String rawMessaggio = (d['messaggio'] ?? '').toString();
+          rawMessaggio = rawMessaggio
+              .replaceAll('Filippo ha proposto', '$resolvedMittente ha proposto')
+              .replaceAll('Claudio ha proposto', 'Cloud ha proposto')
+              .replaceAll('Antonio ha proposto', 'Ugnom ha proposto')
+              .replaceAll('Claudio ti ha invitato', 'Cloud ti ha invitato')
+              .replaceAll('Filippo ti ha invitato', 'Pippoforte ti ha invitato')
+              .replaceAll('Antonio ti ha invitato', 'Ugnom ti ha invitato');
+
           notificheList.add({
             'id': idStr,
-            'mittente': d['mittente'] ?? 'FantaEventi',
-            'destinatario': d['destinatario'] ?? '',
+            'mittente': resolvedMittente,
+            'destinatario': resolveNickname((d['destinatario'] ?? '').toString()),
             'titolo': d['titolo'] ?? 'Nuova Notifica',
-            'messaggio': d['messaggio'] ?? '',
+            'messaggio': rawMessaggio,
             'eventoId': d['eventoId'] ?? '',
             'eventoStato': evStato,
             'eventoDataInizio': evDataInizio,
@@ -2893,9 +2953,10 @@ class ApiService {
         : (nuovoEvento.propostoDa.isNotEmpty
             ? nuovoEvento.propostoDa
             : (_currentUser?.nome ?? 'Cloud'))).trim();
-    final creatore = rawCreatore.toLowerCase() == 'claudio' ? 'Cloud' : rawCreatore;
+    final creatore = resolveNickname(rawCreatore);
     final List<String> invitati = nuovoEvento.partecipanti
-        .where((p) => p.trim().toLowerCase() != creatore.trim().toLowerCase())
+        .where((p) => !isSamePerson(p, creatore))
+        .map((p) => resolveNickname(p))
         .toList();
 
     final eventPayload = nuovoEvento.copyWith(
@@ -3038,18 +3099,12 @@ class ApiService {
 
   // --- PROPOSTA BONUS/MALUS LEGATA A UN EVENTO SPECIFICO ---
   Future<BonusMalus> proponiBonusMalusPerEvento(String eventoId, BonusMalus nuovoBonus, {bool awardXp = true}) async {
-    String curUserNick = nuovoBonus.propostoDa.trim().isNotEmpty
-        ? nuovoBonus.propostoDa.trim()
-        : (_currentUser?.nickname.isNotEmpty == true
-            ? _currentUser!.nickname.trim()
-            : (_currentUser?.nome.isNotEmpty == true ? _currentUser!.nome.trim() : 'Cloud'));
-    if (curUserNick.toLowerCase() == 'claudio') {
-      curUserNick = 'Cloud';
-    }
-
-    final myNick = (_currentUser?.nickname.isNotEmpty == true ? _currentUser!.nickname : curUserNick).trim().toLowerCase();
-    final myNome = (_currentUser?.nome ?? '').trim().toLowerCase();
-    final isMeCloudOrClaudio = myNick == 'cloud' || myNome == 'claudio' || myNick == 'claudio' || myNome == 'cloud';
+    final rawAuthor = (_currentUser?.nickname.isNotEmpty == true
+        ? _currentUser!.nickname
+        : (nuovoBonus.propostoDa.trim().isNotEmpty
+            ? nuovoBonus.propostoDa.trim()
+            : (_currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud'))).trim();
+    final String curUserNick = resolveNickname(rawAuthor);
 
     Evento evMatch = _eventi.firstWhere(
       (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoId.toLowerCase(),
@@ -3101,16 +3156,8 @@ class ApiService {
         }
 
         // Verifica che l'utente sia creatore o partecipante effettivo dell'evento
-        final cleanCreator = evMatch.propostoDa.trim().toLowerCase();
-        final bool isCreator = cleanCreator.isNotEmpty && (
-            cleanCreator == myNick || (myNome.isNotEmpty && cleanCreator == myNome) ||
-            (isMeCloudOrClaudio && (cleanCreator == 'cloud' || cleanCreator == 'claudio'))
-        );
-        final bool isParticipant = isCreator || evMatch.partecipanti.any((p) {
-          final pLow = p.trim().toLowerCase();
-          return pLow == myNick || (myNome.isNotEmpty && pLow == myNome) ||
-              (isMeCloudOrClaudio && (pLow == 'cloud' || pLow == 'claudio'));
-        });
+        final bool isCreator = isSamePerson(evMatch.propostoDa, curUserNick) || isSamePerson(evMatch.creatore, curUserNick);
+        final bool isParticipant = isCreator || evMatch.partecipanti.any((p) => isSamePerson(p, curUserNick));
 
         if (!isParticipant) {
           throw Exception('Non puoi proporre bonus/malus per un evento a cui non partecipi!');
@@ -3162,7 +3209,7 @@ class ApiService {
         try {
           final existingVote = await db.collection('Votazioni').findOne(
             where.eq('votazioneId', bmHexId).and(
-              where.eq('utente', curUserNick).or(where.eq('utente', myNome))
+              where.eq('utente', curUserNick)
             )
           ).timeout(const Duration(seconds: 4), onTimeout: () => null);
 
@@ -3198,15 +3245,15 @@ class ApiService {
         }
 
         for (var d in allCandidates) {
-          final cleanD = d.trim().toLowerCase();
-          final bool isRecipientMyself = cleanD.isEmpty ||
-              cleanD == myNick ||
-              (myNome.isNotEmpty && cleanD == myNome) ||
-              cleanD == curUserNick.trim().toLowerCase() ||
-              (isMeCloudOrClaudio && (cleanD == 'cloud' || cleanD == 'claudio'));
+          final cleanD = d.trim();
+          if (cleanD.isEmpty) continue;
+          final dResolved = resolveNickname(cleanD);
+          final bool isRecipientMyself = isSamePerson(cleanD, curUserNick) ||
+              isSamePerson(cleanD, _currentUser?.nickname) ||
+              isSamePerson(cleanD, _currentUser?.nome);
 
           if (!isRecipientMyself) {
-            uniqueDestMap[cleanD] = d.trim();
+            uniqueDestMap[dResolved.toLowerCase()] = dResolved;
           }
         }
 
@@ -3287,12 +3334,6 @@ class ApiService {
         votiUtenti: {
           curUserNick: 'pro',
           curUserNick.toLowerCase(): 'pro',
-          if (isMeCloudOrClaudio) ...{
-            'Cloud': 'pro',
-            'cloud': 'pro',
-            'Claudio': 'pro',
-            'claudio': 'pro',
-          },
         },
       );
 
@@ -3658,49 +3699,34 @@ class ApiService {
             }
           }
 
-          if (effectivePropDa.toLowerCase() == 'claudio') {
-            effectivePropDa = 'Cloud';
-          }
+          effectivePropDa = resolveNickname(effectivePropDa);
 
           final List<String> assList = (bm['assegnatoA'] as List<dynamic>?)
                   ?.map((e) => e.toString())
                   .toList() ??
               [];
 
-          final bool isPropCloud = effectivePropDa.toLowerCase() == 'cloud' || effectivePropDa.toLowerCase() == 'claudio';
-
           // Conversione sicura in oggetto BonusMalus
           final Map<String, String> votiUtenti = {
             if (effectivePropDa.isNotEmpty) effectivePropDa: 'pro',
             if (effectivePropDa.isNotEmpty) effectivePropDa.toLowerCase(): 'pro',
-            if (isPropCloud) ...{
-              'Cloud': 'pro',
-              'cloud': 'pro',
-              'Claudio': 'pro',
-              'claudio': 'pro',
-            },
           };
 
           for (var vDoc in votiDocs) {
             final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
             final bTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
-            final u = (vDoc['utente'] ?? '').toString().trim();
+            final rawU = (vDoc['utente'] ?? '').toString().trim();
             final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
 
             final isMatch = (vId == bmId.toLowerCase()) ||
                             (bTit.isNotEmpty && bTit == nomeBM.toLowerCase()) ||
                             (vId.isNotEmpty && vId == nomeBM.toLowerCase());
 
-            if (isMatch && u.isNotEmpty) {
+            if (isMatch && rawU.isNotEmpty) {
               final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
+              final u = resolveNickname(rawU);
               votiUtenti[u] = voteStr;
               votiUtenti[u.toLowerCase()] = voteStr;
-              if (u.toLowerCase() == 'claudio' || u.toLowerCase() == 'cloud') {
-                votiUtenti['Cloud'] = voteStr;
-                votiUtenti['cloud'] = voteStr;
-                votiUtenti['Claudio'] = voteStr;
-                votiUtenti['claudio'] = voteStr;
-              }
             }
           }
 
@@ -3737,8 +3763,7 @@ class ApiService {
           int fav = 0;
           int cont = 0;
           votiUtenti.forEach((user, vote) {
-            String normUser = user.trim().toLowerCase();
-            if (normUser == 'claudio') normUser = 'cloud';
+            String normUser = resolveNickname(user).trim().toLowerCase();
             if (!countedUsers.contains(normUser)) {
               countedUsers.add(normUser);
               if (vote == 'pro') fav++;
@@ -3758,14 +3783,13 @@ class ApiService {
 
           bool paritaDecisaDaOrganizzatore = false;
           final rawNomeOrg = evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa;
-          final nomeOrganizzatore = rawNomeOrg.toLowerCase() == 'claudio' ? 'Cloud' : rawNomeOrg;
+          final nomeOrganizzatore = resolveNickname(rawNomeOrg);
 
           // Parità: si attiva ESCLUSIVAMENTE se TUTTI i partecipanti hanno votato,
           // il numero di partecipanti è pari, e nessuno ha raggiunto il quorum perché fav == cont.
           if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
-            final cleanCreatore = nomeOrganizzatore.trim().toLowerCase();
             final creatoreVoteKey = votiUtenti.keys.firstWhere(
-              (k) => k.trim().toLowerCase() == cleanCreatore || (cleanCreatore == 'cloud' && k.trim().toLowerCase() == 'claudio'),
+              (k) => isSamePerson(k, nomeOrganizzatore),
               orElse: () => '',
             );
             if (creatoreVoteKey.isNotEmpty) {
@@ -3854,7 +3878,7 @@ class ApiService {
     final rawUserNick = (_currentUser?.nickname.isNotEmpty == true
         ? _currentUser!.nickname
         : (_currentUser?.nome.isNotEmpty == true ? _currentUser!.nome : 'Cloud')).trim();
-    final userNick = rawUserNick.toLowerCase() == 'claudio' ? 'Cloud' : rawUserNick;
+    final userNick = resolveNickname(rawUserNick);
 
     int index = _votazioniList.indexWhere((v) =>
         v.id == idOrEventoId ||
@@ -3881,27 +3905,16 @@ class ApiService {
       index = _votazioniList.length - 1;
     }
 
-    final bool isUserCloud = userNick.toLowerCase() == 'cloud' || userNick.toLowerCase() == 'claudio';
-    final giaVotato = v.votiUtenti.keys.any((k) {
-      final cleanK = k.trim().toLowerCase();
-      return cleanK == userNick.toLowerCase() || (isUserCloud && (cleanK == 'cloud' || cleanK == 'claudio'));
-    });
+    final giaVotato = v.votiUtenti.keys.any((k) => isSamePerson(k, userNick));
     final nuoviVotiUtenti = Map<String, String>.from(v.votiUtenti);
     nuoviVotiUtenti[userNick] = aFavore ? 'pro' : 'contro';
     nuoviVotiUtenti[userNick.toLowerCase()] = aFavore ? 'pro' : 'contro';
-    if (isUserCloud) {
-      nuoviVotiUtenti['Cloud'] = aFavore ? 'pro' : 'contro';
-      nuoviVotiUtenti['cloud'] = aFavore ? 'pro' : 'contro';
-      nuoviVotiUtenti['Claudio'] = aFavore ? 'pro' : 'contro';
-      nuoviVotiUtenti['claudio'] = aFavore ? 'pro' : 'contro';
-    }
 
     final Set<String> countedUsers = {};
     int fav = 0;
     int cont = 0;
     nuoviVotiUtenti.forEach((key, vote) {
-      String normUser = key.trim().toLowerCase();
-      if (normUser == 'claudio') normUser = 'cloud';
+      String normUser = resolveNickname(key).trim().toLowerCase();
       if (!countedUsers.contains(normUser)) {
         countedUsers.add(normUser);
         if (vote == 'pro') fav++;
@@ -3947,14 +3960,13 @@ class ApiService {
     final rawNomeOrg = evMatch.creatore.isNotEmpty
         ? evMatch.creatore
         : (evMatch.propostoDa.isNotEmpty ? evMatch.propostoDa : (v.nomeOrganizzatore ?? ''));
-    final nomeOrganizzatore = rawNomeOrg.toLowerCase() == 'claudio' ? 'Cloud' : rawNomeOrg;
+    final nomeOrganizzatore = resolveNickname(rawNomeOrg);
 
     // Tie-breaker: si attiva SOLO SE tutti i partecipanti hanno votato,
     // il numero di partecipanti è pari, e nessuno ha raggiunto il quorum perché fav == cont.
     if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
-      final cleanCreatore = nomeOrganizzatore.trim().toLowerCase();
       final creatoreVoteKey = nuoviVotiUtenti.keys.firstWhere(
-        (k) => k.trim().toLowerCase() == cleanCreatore || (cleanCreatore == 'cloud' && k.trim().toLowerCase() == 'claudio'),
+        (k) => isSamePerson(k, nomeOrganizzatore),
         orElse: () => '',
       );
       if (creatoreVoteKey.isNotEmpty) {

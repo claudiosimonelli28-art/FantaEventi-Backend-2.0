@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/votazione.dart';
+import '../services/api_service.dart';
 
 class VoteCard extends StatefulWidget {
   final Votazione votazione;
@@ -30,23 +31,15 @@ class _VoteCardState extends State<VoteCard> {
     final totalVoti = votazione.totaleVoti;
     final double proPercent = totalVoti > 0 ? (votazione.votiFavorevoli / totalVoti) : 0.5;
 
-    final cleanUser = currentUserNickname.trim().toLowerCase();
-    final propostoDa = (votazione.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
+    final cleanUser = currentUserNickname.trim();
+    final propostoDa = (votazione.bonusMalus?.propostoDa ?? '').trim();
 
-    final bool isUserCloudOrClaudio = cleanUser == 'cloud' || cleanUser == 'claudio';
-    final bool isPropostoDaCloudOrClaudio = propostoDa == 'cloud' || propostoDa == 'claudio';
-
-    final isProponente = (propostoDa.isNotEmpty && (propostoDa == cleanUser || (isUserCloudOrClaudio && isPropostoDaCloudOrClaudio))) ||
-        votazione.descrizione.toLowerCase().contains('proposto da $cleanUser') ||
-        (isUserCloudOrClaudio && (votazione.descrizione.toLowerCase().contains('proposto da cloud') || votazione.descrizione.toLowerCase().contains('proposto da claudio')));
+    final isProponente = ApiService().isSamePerson(propostoDa, cleanUser) ||
+        votazione.descrizione.toLowerCase().contains('proposto da ${cleanUser.toLowerCase()}') ||
+        votazione.descrizione.toLowerCase().contains('proposto da ${ApiService().resolveNickname(cleanUser).toLowerCase()}');
 
     final giaVotatoKey = votazione.votiUtenti.keys.firstWhere(
-      (k) {
-        final cleanK = k.trim().toLowerCase();
-        if (cleanK == cleanUser) return true;
-        if (isUserCloudOrClaudio && (cleanK == 'cloud' || cleanK == 'claudio')) return true;
-        return false;
-      },
+      (k) => ApiService().isSamePerson(k, cleanUser),
       orElse: () => '',
     );
     final giaVotato = giaVotatoKey.isNotEmpty;
@@ -330,7 +323,30 @@ class _VoteCardState extends State<VoteCard> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  // Spiegazione Quorum concorde
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFF334155)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline, size: 14, color: Color(0xFFFACC15)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Quorum concorde: servono almeno ${votazione.quorum} voti UGUALI (${votazione.quorum} SÌ o ${votazione.quorum} NO) per validare la proposta.',
+                            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
 
                   // Stato o Pulsante Vota
                   if (votazione.stato == 'approvato')

@@ -15,18 +15,16 @@ class VoteViewModel extends BaseViewModel {
   Votazione get votazione => _votazione;
   bool get isSubmitting => _isSubmitting;
   Utente? get currentUser => _apiService.currentUser;
+
   String get currentUserNick {
     final u = _apiService.currentUser;
     if (u == null) return 'Cloud';
     final nick = u.nickname.isNotEmpty ? u.nickname : (u.nome.isNotEmpty ? u.nome : 'Cloud');
-    return nick.trim().toLowerCase() == 'claudio' ? 'Cloud' : nick.trim();
+    return _apiService.resolveNickname(nick);
   }
 
   bool get isPartecipante {
-    final curUser = _apiService.currentUser;
-    final cleanNick = (curUser?.nickname ?? '').trim().toLowerCase();
-    final cleanNome = (curUser?.nome ?? '').trim().toLowerCase();
-    final cleanId = (curUser?.id ?? '').trim().toLowerCase();
+    final cleanNick = currentUserNick;
 
     final evId = _votazione.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
     final evMatch = _apiService.eventi.firstWhere(
@@ -48,39 +46,25 @@ class VoteViewModel extends BaseViewModel {
     );
 
     if (evMatch.id.isNotEmpty) {
-      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
-      final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
-      final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
-
-      return cleanCreatore == cleanNick || cleanCreatore == cleanNome || cleanCreatore == cleanId ||
-             (cleanNick == 'cloud' && cleanCreatore == 'claudio') || (cleanNome == 'claudio' && cleanCreatore == 'cloud') ||
-             pList.contains(cleanNick) || pList.contains(cleanNome) || pList.contains(cleanId) ||
-             (cleanNick == 'cloud' && pList.contains('claudio')) || (cleanNome == 'claudio' && pList.contains('cloud')) ||
-             iList.contains(cleanNick) || iList.contains(cleanNome) || iList.contains(cleanId) ||
-             (cleanNick == 'cloud' && iList.contains('claudio')) || (cleanNome == 'claudio' && iList.contains('cloud'));
+      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim();
+      return _apiService.isSamePerson(cleanCreatore, cleanNick) ||
+             evMatch.partecipanti.any((p) => _apiService.isSamePerson(p, cleanNick)) ||
+             evMatch.invitati.any((p) => _apiService.isSamePerson(p, cleanNick));
     }
     return true;
   }
 
   bool get isProponente {
-    final curUser = _apiService.currentUser;
-    final curNick = (curUser?.nickname ?? '').trim().toLowerCase();
-    final curNome = (curUser?.nome ?? '').trim().toLowerCase();
-    final curId = (curUser?.id ?? '').trim().toLowerCase();
+    final curNick = currentUserNick;
+    final propostoDa = (_votazione.bonusMalus?.propostoDa ?? '').trim();
 
-    final propostoDa = (_votazione.bonusMalus?.propostoDa ?? '').trim().toLowerCase();
-    final isCloud = curNick == 'cloud' || curNome == 'claudio' || curNick == 'claudio' || curNome == 'cloud';
-    final isPropostoCloud = propostoDa == 'cloud' || propostoDa == 'claudio';
-
-    if (propostoDa.isNotEmpty) {
-      if (propostoDa == curNick || (curNome.isNotEmpty && propostoDa == curNome) || (curId.isNotEmpty && propostoDa == curId)) return true;
-      if (isCloud && isPropostoCloud) return true;
+    if (propostoDa.isNotEmpty && _apiService.isSamePerson(propostoDa, curNick)) {
+      return true;
     }
 
     final desc = _votazione.descrizione.toLowerCase();
-    if (curNick.isNotEmpty && desc.contains('proposto da $curNick')) return true;
-    if (curNome.isNotEmpty && desc.contains('proposto da $curNome')) return true;
-    if (isCloud && (desc.contains('proposto da cloud') || desc.contains('proposto da claudio'))) return true;
+    if (curNick.isNotEmpty && desc.contains('proposto da ${curNick.toLowerCase()}')) return true;
+    if (desc.contains('proposto da ${_apiService.resolveNickname(curNick).toLowerCase()}')) return true;
 
     return false;
   }

@@ -43,7 +43,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
     });
 
     final curUser = _apiService.currentUser;
-    final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+    final nick = _apiService.resolveNickname(curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome);
     final res = await _apiService.getNotifiche(nick);
 
     if (mounted) {
@@ -63,7 +63,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
     });
 
     final curUser = _apiService.currentUser;
-    final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+    final nick = _apiService.resolveNickname(curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome);
 
     try {
       if (tipo == 'richiesta_amicizia' && mittente != null) {
@@ -122,7 +122,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
 
   Future<void> _segnaTutteComeLette() async {
     final curUser = _apiService.currentUser;
-    final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+    final nick = _apiService.resolveNickname(curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome);
     setState(() {
       for (var n in _notifiche) {
         n['letto'] = true;

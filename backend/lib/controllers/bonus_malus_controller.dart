@@ -3,6 +3,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/bonus_malus.dart';
+import '../utils/nickname_helper.dart';
 
 class BonusMalusController {
   // GET /api/bonusmalus
@@ -27,10 +28,15 @@ class BonusMalusController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      String propostoDaUtente = data['utente']?.toString() ?? data['propostoDa']?.toString() ?? 'Un utente';
-      if (propostoDaUtente.trim().toLowerCase() == 'claudio') {
-        propostoDaUtente = 'Cloud';
-      }
+
+      List<Map<String, dynamic>> allUtenti = [];
+      try {
+        allUtenti = await DbService.instance.utentiCollection.find().toList();
+      } catch (_) {}
+
+      final rawProposto = data['utente']?.toString() ?? data['propostoDa']?.toString() ?? 'Cloud';
+      final String propostoDaUtente = NicknameHelper.resolve(rawProposto, allUtenti);
+
       final eventoId = data['eventoId']?.toString() ?? '';
       final eventoTitolo = data['eventoTitolo']?.toString() ?? data['titoloEvento']?.toString() ?? '';
       final nome = data['nome']?.toString() ?? '';
@@ -45,6 +51,15 @@ class BonusMalusController {
         bmHexId = existing['_id'] is ObjectId
             ? (existing['_id'] as ObjectId).toHexString()
             : (existing['_id']?.toString() ?? '');
+
+        await DbService.instance.bonusMalusCollection.update(
+          where.id(existing['_id'] as ObjectId),
+          modify
+            .set('propostoDa', propostoDaUtente)
+            .set('stato', 'in_votazione')
+            .set('categoria', data['categoria'] ?? 'Goliardia')
+            .set('riassegnabileMoltepliciVolte', data['riassegnabileMoltepliciVolte'] == true),
+        );
       } else {
         final bmMap = {
           'eventoId': eventoId,
@@ -112,16 +127,15 @@ class BonusMalusController {
         final rawInv = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
         destinatariSet.addAll(rawInv);
 
-        final cleanProp = propostoDaUtente.trim().toLowerCase();
+        // Esclude categoricamente il proponente da ricezione notifiche (anche sotto alias o nome reale)
         destinatariSet.removeWhere((d) {
-          final cleanD = d.trim().toLowerCase();
+          final cleanD = d.trim();
           if (cleanD.isEmpty) return true;
-          if (cleanD == cleanProp) return true;
-          if ((cleanProp == 'cloud' || cleanProp == 'claudio') && (cleanD == 'cloud' || cleanD == 'claudio')) return true;
-          return false;
+          return NicknameHelper.isSame(cleanD, propostoDaUtente, allUtenti);
         });
 
-        for (var destUser in destinatariSet) {
+        for (var rawDest in destinatariSet) {
+          final destUser = NicknameHelper.resolve(rawDest, allUtenti);
           final existingNot = await DbService.instance.db.collection('Notifiche').findOne(
             where.eq('destinatario', destUser).and(where.eq('bonusId', bmHexId)),
           );

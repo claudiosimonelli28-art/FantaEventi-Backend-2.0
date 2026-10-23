@@ -4,6 +4,7 @@ import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
+import '../utils/nickname_helper.dart';
 
 class EventoController {
   // GET /api/eventi (con risoluzione dei Nickname reali per i partecipanti)
@@ -17,9 +18,10 @@ class EventoController {
       for (var u in utentiDocs) {
         final utente = Utente.fromMap(u);
         final idStr = u['_id']?.toHexString() ?? utente.id?.toHexString() ?? '';
-        final nick = utente.username.isNotEmpty ? utente.username : 'Utente';
+        final nick = NicknameHelper.resolve(utente.username, utentiDocs);
         userMap[idStr] = nick;
-        if (utente.username.isNotEmpty) userMap[utente.username] = utente.username;
+        if (utente.username.isNotEmpty) userMap[utente.username] = nick;
+        if (utente.nome.isNotEmpty) userMap[utente.nome] = nick;
       }
 
       final List<Map<String, dynamic>> resultList = [];
@@ -29,7 +31,7 @@ class EventoController {
         
         final List<String> nicksPartecipanti = rawPartecipanti.map((p) {
           final cleanP = p.replaceAll('ObjectId("', '').replaceAll('")', '');
-          return userMap[cleanP] ?? userMap[p] ?? p;
+          return userMap[cleanP] ?? userMap[p] ?? NicknameHelper.resolve(p, utentiDocs);
         }).toList();
 
         final json = evento.toJson();
@@ -49,8 +51,9 @@ class EventoController {
         }
 
         json['partecipanti'] = nicksPartecipanti;
-        json['invitati'] = (d['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-        json['propostoDa'] = d['propostoDa'] ?? d['creatore'] ?? 'Cloud';
+        json['invitati'] = (d['invitati'] as List<dynamic>?)?.map((e) => NicknameHelper.resolve(e.toString(), utentiDocs)).toList() ?? [];
+        final rawCreator = d['propostoDa'] ?? d['creatore'] ?? 'Cloud';
+        json['propostoDa'] = NicknameHelper.resolve(rawCreator.toString(), utentiDocs);
         resultList.add(json);
       }
 
@@ -100,9 +103,13 @@ class EventoController {
         );
       }
 
+      List<Map<String, dynamic>> allUtenti = [];
+      try {
+        allUtenti = await DbService.instance.utentiCollection.find().toList();
+      } catch (_) {}
+
       final creatoreDoc = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
-      final cleanUser = utente.trim().toLowerCase();
-      final isAllowed = creatoreDoc.isEmpty || creatoreDoc.toLowerCase() == cleanUser;
+      final isAllowed = creatoreDoc.isEmpty || NicknameHelper.isSame(creatoreDoc, utente, allUtenti);
 
       if (!isAllowed) {
         return Response.forbidden(
@@ -204,18 +211,25 @@ class EventoController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
+      List<Map<String, dynamic>> allUtenti = [];
+      try {
+        allUtenti = await DbService.instance.utentiCollection.find().toList();
+      } catch (_) {}
+
       final titolo = data['titolo'] ?? data['nome'] ?? 'Evento FantaEventi';
-      String propostoDa = (data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud').toString().trim();
-      if (propostoDa.toLowerCase() == 'claudio') {
-        propostoDa = 'Cloud';
-      }
+      final rawProposto = (data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud').toString().trim();
+      final String propostoDa = NicknameHelper.resolve(rawProposto, allUtenti);
+
       final rawPartecipanti = (data['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final rawInvitati = (data['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
       final Set<String> invitatiSet = {...rawPartecipanti, ...rawInvitati};
 
       // Solamente il Creatore fa parte dei partecipanti CONFERMATI all'inizio!
       final List<String> partecipantiConfermati = [propostoDa];
-      final List<String> invitatiFinali = invitatiSet.where((p) => p.trim().toLowerCase() != propostoDa.trim().toLowerCase()).toList();
+      final List<String> invitatiFinali = invitatiSet
+          .where((p) => !NicknameHelper.isSame(p, propostoDa, allUtenti))
+          .map((p) => NicknameHelper.resolve(p, allUtenti))
+          .toList();
 
       final evento = Evento(
         titolo: titolo,

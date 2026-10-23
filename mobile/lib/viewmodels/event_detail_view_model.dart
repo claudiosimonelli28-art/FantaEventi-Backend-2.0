@@ -94,33 +94,21 @@ class EventDetailViewModel extends BaseViewModel {
   String get currentUserNick {
     final u = _apiService.currentUser;
     if (u == null) return 'Cloud';
-    if (u.nickname.isNotEmpty) return u.nickname;
-    if (u.nome.isNotEmpty) return u.nome;
-    return 'Cloud';
+    final nick = u.nickname.isNotEmpty ? u.nickname : (u.nome.isNotEmpty ? u.nome : 'Cloud');
+    return _apiService.resolveNickname(nick);
   }
-  String get creatore => _evento.propostoDa.isNotEmpty ? _evento.propostoDa : 'Cloud';
+  String get creatore => _evento.propostoDa.isNotEmpty ? _apiService.resolveNickname(_evento.propostoDa) : 'Cloud';
   bool get isCreatore {
-    final cNick = currentUserNick.trim().toLowerCase();
-    final cReal = (_apiService.currentUser?.nome ?? '').trim().toLowerCase();
-    final evCreatore = creatore.trim().toLowerCase();
-    return evCreatore == cNick ||
-        evCreatore == cReal ||
-        (cNick == 'cloud' && evCreatore == 'claudio') ||
-        (cReal == 'claudio' && evCreatore == 'cloud');
+    return _apiService.isSamePerson(creatore, currentUserNick) ||
+        _apiService.isSamePerson(creatore, _apiService.currentUser?.nome);
   }
   bool get isConcluso => _evento.isConcluso;
   bool get giaPartecipa {
-    final cNick = currentUserNick.trim().toLowerCase();
-    final cReal = (_apiService.currentUser?.nome ?? '').trim().toLowerCase();
     final curId = _apiService.currentUser?.id.trim().toLowerCase() ?? '';
-
     return _partecipantiConfermati.any((p) {
-      final pClean = p.trim().toLowerCase();
-      return pClean == cNick ||
-          pClean == cReal ||
-          (cNick == 'cloud' && pClean == 'claudio') ||
-          (cReal == 'claudio' && pClean == 'cloud') ||
-          (curId.isNotEmpty && pClean == curId);
+      if (curId.isNotEmpty && p.trim().toLowerCase() == curId) return true;
+      return _apiService.isSamePerson(p, currentUserNick) ||
+             _apiService.isSamePerson(p, _apiService.currentUser?.nome);
     });
   }
 

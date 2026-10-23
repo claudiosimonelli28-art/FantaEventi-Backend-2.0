@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/votazione.dart';
 import '../viewmodels/vote_view_model.dart';
 import '../widgets/app_toast.dart';
+import '../services/api_service.dart';
 import '../widgets/context_info_modal.dart';
 
 class VoteView extends StatefulWidget {
@@ -60,14 +61,8 @@ class _VoteViewState extends State<VoteView> {
         final isPartecipante = _viewModel.isPartecipante;
         final isProponente = _viewModel.isProponente;
 
-        final isUserCloudOrClaudio = cleanUser == 'cloud' || cleanUser == 'claudio';
         final giaVotatoKey = _votazione.votiUtenti.keys.firstWhere(
-          (k) {
-            final cleanK = k.trim().toLowerCase();
-            if (cleanK == cleanUser) return true;
-            if (isUserCloudOrClaudio && (cleanK == 'cloud' || cleanK == 'claudio')) return true;
-            return false;
-          },
+          (k) => ApiService().isSamePerson(k, cleanUser),
           orElse: () => '',
         );
         final haGiaVotato = giaVotatoKey.isNotEmpty;
@@ -75,7 +70,10 @@ class _VoteViewState extends State<VoteView> {
 
     final int totale = _votazione.totaleVoti;
     final double favRatio = totale > 0 ? (_votazione.votiFavorevoli / totale) : 0.5;
-    final double quorumPercent = (_votazione.totaleVoti / _votazione.quorum).clamp(0.0, 1.0);
+    final int maxVotiConcordi = _votazione.maxVotiConcordi;
+    final double quorumPercent = _votazione.quorum > 0
+        ? (maxVotiConcordi / _votazione.quorum).clamp(0.0, 1.0)
+        : 0.0;
 
     final bm = _votazione.bonusMalus;
     final int punti = bm?.punti ?? 0;
@@ -168,17 +166,22 @@ class _VoteViewState extends State<VoteView> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Quorum Richiesto',
+                                'Quorum Concorde Richiesto',
                                 style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                '${_votazione.totaleVoti} / ${_votazione.quorum} voti',
+                                '$maxVotiConcordi / ${_votazione.quorum} voti concordi',
                                 style: GoogleFonts.poppins(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
                                   color: Colors.white,
                                 ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Servono almeno ${_votazione.quorum} voti concordi (${_votazione.quorum} SÌ o ${_votazione.quorum} NO)',
+                                style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFFACC15), fontWeight: FontWeight.w600),
                               ),
                             ],
                           ),
@@ -465,6 +468,27 @@ class _VoteViewState extends State<VoteView> {
                             ],
                           ),
                         ),
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, size: 16, color: Color(0xFFFACC15)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Per convalidare la decisione servono almeno ${_votazione.quorum} voti UGUALI (${_votazione.quorum} SÌ o ${_votazione.quorum} NO) tra i partecipanti.',
+                                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFFE2E8F0)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                       Row(
                         children: [
                           Expanded(

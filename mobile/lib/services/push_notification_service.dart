@@ -31,6 +31,9 @@ class PushNotificationService {
   /// Dati della notifica cliccata quando l'utente non era ancora autenticato (in attesa di login)
   static Map<String, dynamic>? pendingNotificationData;
 
+  /// Callback invocato alla ricezione di una notifica push in primo piano
+  VoidCallback? onNotificationReceived;
+
   FirebaseMessaging? _messaging;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
@@ -115,6 +118,7 @@ class PushNotificationService {
       try {
         FirebaseMessaging.onMessage.listen((RemoteMessage message) {
           _showForegroundNotification(message);
+          onNotificationReceived?.call();
         });
 
         // 2. Notifica cliccata con App in BACKGROUND

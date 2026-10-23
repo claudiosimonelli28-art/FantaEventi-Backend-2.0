@@ -124,7 +124,7 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
 
         final meUser = _apiService.getCurrentUser();
         final rawUserNick = (meUser.nickname.isNotEmpty ? meUser.nickname : meUser.nome).trim();
-        final finalPropostoDa = rawUserNick.toLowerCase() == 'claudio' ? 'Cloud' : rawUserNick;
+        final finalPropostoDa = _apiService.resolveNickname(rawUserNick);
 
         final nuovoBonus = BonusMalus(
           id: 'bm_${DateTime.now().millisecondsSinceEpoch}',

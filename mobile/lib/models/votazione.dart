@@ -30,7 +30,10 @@ class Votazione {
   });
 
   int get totaleVoti => votiFavorevoli + votiContrari;
-  bool get quorumRaggiunto => totaleVoti >= quorum;
+  int get maxVotiConcordi => votiFavorevoli >= votiContrari ? votiFavorevoli : votiContrari;
+  bool get quorumRaggiunto => votiFavorevoli >= quorum || votiContrari >= quorum;
+  bool get isApprovata => stato == 'approvato' || votiFavorevoli >= quorum;
+  bool get isRespinta => stato == 'respinto' || votiContrari >= quorum;
 
   factory Votazione.fromJson(Map<String, dynamic> json) {
     return Votazione(
