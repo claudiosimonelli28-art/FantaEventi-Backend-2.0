@@ -407,47 +407,56 @@ class ApiService {
   Future<List<String>> getFcmTokensPerUtenti(List<String> nicknames) async {
     if (nicknames.isEmpty) return [];
     final resolvedTargets = nicknames.map((n) => resolveNickname(n).trim().toLowerCase()).toSet();
-    final List<String> allTokens = [];
+    final Set<String> allTokens = {};
+    final Set<String> matchedTargets = {};
 
-    // 1. Prova prima in-memory / cache locale istantanea (0 ms, zero carico DB, zero conflitti di socket)
+    // 1. Prova prima in-memory / cache locale istantanea
     for (var u in _utenti) {
       final uNick = resolveNickname(u.nickname.isNotEmpty ? u.nickname : u.nome).trim().toLowerCase();
-      if (resolvedTargets.contains(uNick) || resolvedTargets.any((t) => isSamePerson(t, uNick))) {
-        allTokens.addAll(u.fcmTokens);
+      for (var target in resolvedTargets) {
+        if (target == uNick || isSamePerson(target, uNick)) {
+          allTokens.addAll(u.fcmTokens);
+          matchedTargets.add(target);
+        }
       }
     }
     if (_currentUser != null) {
       final curNick = resolveNickname(_currentUser!.nickname.isNotEmpty ? _currentUser!.nickname : _currentUser!.nome).trim().toLowerCase();
-      if (resolvedTargets.contains(curNick) || resolvedTargets.any((t) => isSamePerson(t, curNick))) {
-        allTokens.addAll(_currentUser!.fcmTokens);
-      }
-    }
-
-    if (allTokens.isNotEmpty) {
-      return allTokens.toSet().toList();
-    }
-
-    // 2. Fallback rapido su MongoDB con proiezione mirata
-    try {
-      final db = await _getSafeMongoDb();
-      if (db != null && db.isConnected) {
-        final users = await db.collection('Utenti').find(
-          where.fields(['fcmTokens', 'nome', 'nickname', 'username'])
-        ).toList().timeout(const Duration(seconds: 4));
-
-        for (var u in users) {
-          final raw = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString();
-          final uNick = resolveNickname(raw).trim().toLowerCase();
-          if (resolvedTargets.contains(uNick) || resolvedTargets.any((t) => isSamePerson(t, uNick))) {
-            final tokens = List<String>.from(u['fcmTokens'] ?? []);
-            allTokens.addAll(tokens);
-          }
+      for (var target in resolvedTargets) {
+        if (target == curNick || isSamePerson(target, curNick)) {
+          allTokens.addAll(_currentUser!.fcmTokens);
+          matchedTargets.add(target);
         }
       }
-    } catch (e) {
-      debugPrint('Errore getFcmTokensPerUtenti: $e');
     }
-    return allTokens.toSet().toList();
+
+    // Se mancano target da trovare, interroga sempre MongoDB per recuperare i loro token reali!
+    final bool allTargetsMatched = resolvedTargets.every((t) => matchedTargets.contains(t) || matchedTargets.any((m) => isSamePerson(m, t)));
+
+    if (!allTargetsMatched || allTokens.isEmpty) {
+      try {
+        final db = await _getSafeMongoDb();
+        if (db != null && db.isConnected) {
+          final users = await db.collection('Utenti').find(
+            where.fields(['fcmTokens', 'nome', 'nickname', 'username'])
+          ).toList().timeout(const Duration(seconds: 4));
+
+          for (var u in users) {
+            final raw = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString();
+            final uNick = resolveNickname(raw).trim().toLowerCase();
+            for (var target in resolvedTargets) {
+              if (target == uNick || isSamePerson(target, uNick)) {
+                final tokens = List<String>.from(u['fcmTokens'] ?? []);
+                allTokens.addAll(tokens);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Errore getFcmTokensPerUtenti MongoDB: $e');
+      }
+    }
+    return allTokens.toList();
   }
 
   Future<Map<String, dynamic>?> getFirebaseServiceAccountConfig() async {
@@ -3576,14 +3585,29 @@ class ApiService {
           });
         }
 
-        if (destList.isNotEmpty) {
+        // 1. Invia notifica push mirata con SUONO DEDICATO al destinatario che riceve il bonus o malus
+        try {
+          await PushNotificationService.instance.inviaPushAUtenti(
+            [utenteDestinatario],
+            titolo: notificaTitolo,
+            messaggio: 'Hai ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+            data: {
+              'tipo': notificaTipo,
+              'eventoId': eventoId,
+            },
+          ).timeout(const Duration(seconds: 4), onTimeout: () {});
+        } catch (_) {}
+
+        // 2. Invia notifica informativa agli altri partecipanti (esclusi destinatario e chi assegna)
+        final altriPartecipanti = destList.where((d) => !isSamePerson(d, utenteDestinatario) && !isSamePerson(d, mittente)).toList();
+        if (altriPartecipanti.isNotEmpty) {
           try {
             await PushNotificationService.instance.inviaPushAUtenti(
-              destList,
-              titolo: notificaTitolo,
+              altriPartecipanti,
+              titolo: isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!',
               messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
               data: {
-                'tipo': notificaTipo,
+                'tipo': 'evento_aggiornamento',
                 'eventoId': eventoId,
               },
             ).timeout(const Duration(seconds: 4), onTimeout: () {});
