@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -44,17 +45,63 @@ class PushNotificationService {
   static String? _cachedAccessToken;
   static DateTime? _tokenExpiry;
 
-  /// Canale di notifica nativo Android ad alta priorità (suono + vibrazione + pop-up)
-  static const AndroidNotificationChannel _androidChannel = AndroidNotificationChannel(
-    'fantaeventi_channel',
-    'Notifiche FantaEventi',
-    description: 'Canale per notifiche su inviti, proposte bonus, votazioni e VAR',
+  static const MethodChannel _settingsMethodChannel = MethodChannel('com.fantaeventi.mobile/settings');
+
+  /// Canali di notifica nativi Android categorizzati (permettono la personalizzazione del suono nel sistema)
+  static const AndroidNotificationChannel channelBonus = AndroidNotificationChannel(
+    'fantaeventi_bonus',
+    '🏆 Assegnazione Bonus',
+    description: 'Suono e notifiche quando ricevi un bonus o punti positivi',
     importance: Importance.max,
     playSound: true,
     enableVibration: true,
   );
 
+  static const AndroidNotificationChannel channelMalus = AndroidNotificationChannel(
+    'fantaeventi_malus',
+    '💀 Assegnazione Malus',
+    description: 'Suono e notifiche quando ricevi un malus o penalità',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
 
+  static const AndroidNotificationChannel channelVar = AndroidNotificationChannel(
+    'fantaeventi_var',
+    '⚖️ VAR & Giudice Arbitro',
+    description: 'Suono e notifiche per verifiche VAR, testimonianze e sentenze',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  static const AndroidNotificationChannel channelInvites = AndroidNotificationChannel(
+    'fantaeventi_invites',
+    '🎉 Inviti & Amicizie',
+    description: 'Notifiche per nuovi inviti ad eventi o richieste di amicizia',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  static const AndroidNotificationChannel channelGeneral = AndroidNotificationChannel(
+    'fantaeventi_channel',
+    '🔔 Notifiche Generali',
+    description: 'Canale per votazioni di gruppo e aggiornamenti generali',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
+  /// Ritorna il canale nativo Android appropriato in base alla tipologia di notifica
+  static AndroidNotificationChannel getChannelForType(String? tipo) {
+    final t = (tipo ?? '').toLowerCase();
+    if (t == 'bonus') return channelBonus;
+    if (t == 'malus') return channelMalus;
+    if (t.startsWith('var')) return channelVar;
+    if (t == 'invito' || t == 'amicizia') return channelInvites;
+    return channelGeneral;
+  }
 
   /// Inizializza Firebase Messaging e le notifiche locali
   Future<void> initialize() async {
@@ -82,7 +129,7 @@ class PushNotificationService {
         }
       }
 
-      // Crea il canale di notifica nativo principale su Android
+      // Registra tutti i canali di notifica su Android
       final androidPlugin = _localNotifications
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidPlugin != null) {
@@ -92,7 +139,12 @@ class PushNotificationService {
           await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_bonus_channel_v2');
           await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_malus_channel_v2');
         } catch (_) {}
-        await androidPlugin.createNotificationChannel(_androidChannel);
+
+        await androidPlugin.createNotificationChannel(channelBonus);
+        await androidPlugin.createNotificationChannel(channelMalus);
+        await androidPlugin.createNotificationChannel(channelVar);
+        await androidPlugin.createNotificationChannel(channelInvites);
+        await androidPlugin.createNotificationChannel(channelGeneral);
       }
 
       // Configurazione iniziale di flutter_local_notifications
@@ -190,15 +242,17 @@ class PushNotificationService {
 
     if (body.isEmpty) return;
 
+    final targetChannel = getChannelForType(message.data['tipo']);
+
     _localNotifications.show(
       id: message.hashCode,
       title: title,
       body: body,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          _androidChannel.id,
-          _androidChannel.name,
-          channelDescription: _androidChannel.description,
+          targetChannel.id,
+          targetChannel.name,
+          channelDescription: targetChannel.description,
           icon: '@mipmap/ic_launcher',
           importance: Importance.max,
           priority: Priority.high,
@@ -213,6 +267,55 @@ class PushNotificationService {
         ),
       ),
       payload: jsonEncode(message.data),
+    );
+  }
+
+  /// Apre le impostazioni native di sistema Android per un canale di notifica (o per l'app)
+  Future<void> openChannelSettings([String? channelId]) async {
+    try {
+      await _settingsMethodChannel.invokeMethod('openNotificationSettings', {
+        'channelId': channelId,
+      });
+    } catch (e) {
+      debugPrint('Errore apertura impostazioni canale $channelId: $e');
+    }
+  }
+
+  /// Invia una notifica di test istantanea su un canale specifico per verificare suoni e vibrazione
+  Future<void> triggerTestNotification({
+    required String channelId,
+    required String title,
+    required String body,
+  }) async {
+    AndroidNotificationChannel ch = channelGeneral;
+    if (channelId == channelBonus.id) ch = channelBonus;
+    if (channelId == channelMalus.id) ch = channelMalus;
+    if (channelId == channelVar.id) ch = channelVar;
+    if (channelId == channelInvites.id) ch = channelInvites;
+
+    await _localNotifications.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title,
+      body: body,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          ch.id,
+          ch.name,
+          channelDescription: ch.description,
+          icon: '@mipmap/ic_launcher',
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          color: const Color(0xFFFACC15),
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: jsonEncode({'tipo': 'test', 'channelId': ch.id}),
     );
   }
 
@@ -525,6 +628,8 @@ class PushNotificationService {
       stringData['messaggio'] = messaggio;
       stringData['click_action'] = 'FLUTTER_NOTIFICATION_CLICK';
 
+      final targetChannel = getChannelForType(data['tipo']?.toString());
+
       final payload = {
         'message': {
           'token': token,
@@ -536,7 +641,7 @@ class PushNotificationService {
           'android': {
             'priority': 'high',
             'notification': {
-              'channel_id': 'fantaeventi_channel',
+              'channel_id': targetChannel.id,
               'sound': 'default',
               'default_sound': true,
               'default_vibrate_timings': true,
