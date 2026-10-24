@@ -54,27 +54,7 @@ class PushNotificationService {
     enableVibration: true,
   );
 
-  /// Canale dedicato per Assegnazione Bonus (suono personalizzato fanta_bonus) v2
-  static const AndroidNotificationChannel _bonusChannel = AndroidNotificationChannel(
-    'fantaeventi_bonus_channel_v2',
-    'Assegnazione Bonus 🏆',
-    description: 'Notifiche con suono speciale per i bonus assegnati',
-    importance: Importance.max,
-    playSound: true,
-    sound: RawResourceAndroidNotificationSound('fanta_bonus'),
-    enableVibration: true,
-  );
 
-  /// Canale dedicato per Assegnazione Malus (suono personalizzato fanta_malus) v2
-  static const AndroidNotificationChannel _malusChannel = AndroidNotificationChannel(
-    'fantaeventi_malus_channel_v2',
-    'Assegnazione Malus 💀',
-    description: 'Notifiche con suono speciale per i malus assegnati',
-    importance: Importance.max,
-    playSound: true,
-    sound: RawResourceAndroidNotificationSound('fanta_malus'),
-    enableVibration: true,
-  );
 
   /// Inizializza Firebase Messaging e le notifiche locali
   Future<void> initialize() async {
@@ -102,17 +82,17 @@ class PushNotificationService {
         }
       }
 
-      // Crea i canali di notifica nativi su Android
+      // Crea il canale di notifica nativo principale su Android
       final androidPlugin = _localNotifications
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidPlugin != null) {
         try {
           await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_bonus_channel');
           await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_malus_channel');
+          await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_bonus_channel_v2');
+          await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_malus_channel_v2');
         } catch (_) {}
         await androidPlugin.createNotificationChannel(_androidChannel);
-        await androidPlugin.createNotificationChannel(_bonusChannel);
-        await androidPlugin.createNotificationChannel(_malusChannel);
       }
 
       // Configurazione iniziale di flutter_local_notifications
@@ -210,32 +190,19 @@ class PushNotificationService {
 
     if (body.isEmpty) return;
 
-    final String tipo = (message.data['tipo'] ?? '').toString();
-    AndroidNotificationChannel targetChannel = _androidChannel;
-    RawResourceAndroidNotificationSound? customSound;
-
-    if (tipo == 'assegnazione_bonus') {
-      targetChannel = _bonusChannel;
-      customSound = const RawResourceAndroidNotificationSound('fanta_bonus');
-    } else if (tipo == 'assegnazione_malus') {
-      targetChannel = _malusChannel;
-      customSound = const RawResourceAndroidNotificationSound('fanta_malus');
-    }
-
     _localNotifications.show(
       id: message.hashCode,
       title: title,
       body: body,
       notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
-          targetChannel.id,
-          targetChannel.name,
-          channelDescription: targetChannel.description,
+          _androidChannel.id,
+          _androidChannel.name,
+          channelDescription: _androidChannel.description,
           icon: '@mipmap/ic_launcher',
           importance: Importance.max,
           priority: Priority.high,
           playSound: true,
-          sound: customSound,
           enableVibration: true,
           color: const Color(0xFFFACC15),
         ),
@@ -558,21 +525,6 @@ class PushNotificationService {
       stringData['messaggio'] = messaggio;
       stringData['click_action'] = 'FLUTTER_NOTIFICATION_CLICK';
 
-      final String pushTipo = stringData['tipo'] ?? '';
-      String targetChannelId = 'fantaeventi_channel';
-      String targetSound = 'default';
-      bool isDefaultSound = true;
-
-      if (pushTipo == 'assegnazione_bonus') {
-        targetChannelId = 'fantaeventi_bonus_channel_v2';
-        targetSound = 'fanta_bonus';
-        isDefaultSound = false;
-      } else if (pushTipo == 'assegnazione_malus') {
-        targetChannelId = 'fantaeventi_malus_channel_v2';
-        targetSound = 'fanta_malus';
-        isDefaultSound = false;
-      }
-
       final payload = {
         'message': {
           'token': token,
@@ -584,9 +536,9 @@ class PushNotificationService {
           'android': {
             'priority': 'high',
             'notification': {
-              'channel_id': targetChannelId,
-              'sound': targetSound,
-              'default_sound': isDefaultSound,
+              'channel_id': 'fantaeventi_channel',
+              'sound': 'default',
+              'default_sound': true,
               'default_vibrate_timings': true,
               'notification_priority': 'PRIORITY_MAX',
               'visibility': 'PUBLIC',

@@ -168,11 +168,11 @@ class ApiService {
       return envUri;
     }
     return utf8.decode(base64.decode(
-        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOmNsYXVkaW9zaW1vbmVsbGlAY2x1c3RlcjAuemJicWZjci5tb25nb2RiLm5ldC9GYW50YUV2ZW50aT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHkmYXBwTmFtZT1DbHVzdGVyMA=='));
+        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOlQzUlVINEdKRGZhWGVlZUBjbHVzdGVyMC56YmJxZmNyLm1vbmdvZGIubmV0L0ZhbnRhRXZlbnRpP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eSZhcHBOYW1lPUNsdXN0ZXIw'));
   }
 
   static String get _directMongoSeedlist => utf8.decode(base64.decode(
-      'bW9uZ29kYjovL0xvcmVuem86Y2xhdWRpb3NpbW9uZWxsaUBhYy16YWw0NzN3LXNoYXJkLTAwLTAwLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMS56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3LGFjLXphbDQ3M3ctc2hhcmQtMDAtMDIuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNy9GYW50YUV2ZW50aT9zc2w9dHJ1ZSZyZXBsaWNhU2V0PWF0bGFzLXphbDQ3M3ctc2hhcmQtMCZhdXRoU291cmNlPWFkbWluJnJldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ=='));
+      'bW9uZ29kYjovL0xvcmVuem86VDNSVUg0R0pEZmFYZWVlQGFjLXphbDQ3M3ctc2hhcmQtMDAtMDAuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNyxhYy16YWw0NzN3LXNoYXJkLTAwLTAxLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMi56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3L0ZhbnRhRXZlbnRpP3NzbD10cnVlJnJlcGxpY2FTZXQ9YXRsYXMtemFsNDczdy1zaGFyZC0wJmF1dGhTb3VyY2U9YWRtaW4mcmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5'));
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
