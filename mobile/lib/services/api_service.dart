@@ -164,10 +164,15 @@ class ApiService {
 
   static String get _mongoUri {
     const envUri = String.fromEnvironment('MONGODB_URI');
-    if (envUri.isNotEmpty && envUri.startsWith('mongodb') && envUri.contains('appName=Cluster0')) return envUri;
+    if (envUri.isNotEmpty && envUri.startsWith('mongodb') && envUri.contains('appName=Cluster0') && !envUri.contains('^')) {
+      return envUri;
+    }
     return utf8.decode(base64.decode(
         'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOmNsYXVkaW9zaW1vbmVsbGlAY2x1c3RlcjAuemJicWZjci5tb25nb2RiLm5ldC9GYW50YUV2ZW50aT9yZXRyeVdyaXRlcz10cnVlJnc9bWFqb3JpdHkmYXBwTmFtZT1DbHVzdGVyMA=='));
   }
+
+  static String get _directMongoSeedlist => utf8.decode(base64.decode(
+      'bW9uZ29kYjovL0xvcmVuem86Y2xhdWRpb3NpbW9uZWxsaUBhYy16YWw0NzN3LXNoYXJkLTAwLTAwLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMS56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3LGFjLXphbDQ3M3ctc2hhcmQtMDAtMDIuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNy9GYW50YUV2ZW50aT9zc2w9dHJ1ZSZyZXBsaWNhU2V0PWF0bGFzLXphbDQ3M3ctc2hhcmQtMCZhdXRoU291cmNlPWFkbWluJnJldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eQ=='));
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
@@ -198,15 +203,15 @@ class ApiService {
 
     try {
       final newDb = await Db.create(_mongoUri);
-      await newDb.open().timeout(const Duration(seconds: 8));
+      await newDb.open().timeout(const Duration(seconds: 5));
       _db = newDb;
       completer.complete(_db);
       return _db;
     } catch (_) {
       try {
-        final newDb = await Db.create(_mongoUri);
-        await newDb.open().timeout(const Duration(seconds: 10));
-        _db = newDb;
+        final directDb = await Db.create(_directMongoSeedlist);
+        await directDb.open().timeout(const Duration(seconds: 6));
+        _db = directDb;
         completer.complete(_db);
         return _db;
       } catch (_) {
@@ -408,54 +413,51 @@ class ApiService {
     if (nicknames.isEmpty) return [];
     final resolvedTargets = nicknames.map((n) => resolveNickname(n).trim().toLowerCase()).toSet();
     final Set<String> allTokens = {};
-    final Set<String> matchedTargets = {};
 
-    // 1. Prova prima in-memory / cache locale istantanea
-    for (var u in _utenti) {
-      final uNick = resolveNickname(u.nickname.isNotEmpty ? u.nickname : u.nome).trim().toLowerCase();
-      for (var target in resolvedTargets) {
-        if (target == uNick || isSamePerson(target, uNick)) {
-          allTokens.addAll(u.fcmTokens);
-          matchedTargets.add(target);
-        }
-      }
-    }
-    if (_currentUser != null) {
-      final curNick = resolveNickname(_currentUser!.nickname.isNotEmpty ? _currentUser!.nickname : _currentUser!.nome).trim().toLowerCase();
-      for (var target in resolvedTargets) {
-        if (target == curNick || isSamePerson(target, curNick)) {
-          allTokens.addAll(_currentUser!.fcmTokens);
-          matchedTargets.add(target);
-        }
-      }
-    }
+    // 1. Interroga SEMPRE direttamente MongoDB per recuperare i token FCM più aggiornati di tutti i destinatari
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final users = await db.collection('Utenti').find(
+          where.fields(['fcmTokens', 'nome', 'nickname', 'username', 'cognome'])
+        ).toList().timeout(const Duration(seconds: 4));
 
-    // Se mancano target da trovare, interroga sempre MongoDB per recuperare i loro token reali!
-    final bool allTargetsMatched = resolvedTargets.every((t) => matchedTargets.contains(t) || matchedTargets.any((m) => isSamePerson(m, t)));
-
-    if (!allTargetsMatched || allTokens.isEmpty) {
-      try {
-        final db = await _getSafeMongoDb();
-        if (db != null && db.isConnected) {
-          final users = await db.collection('Utenti').find(
-            where.fields(['fcmTokens', 'nome', 'nickname', 'username'])
-          ).toList().timeout(const Duration(seconds: 4));
-
-          for (var u in users) {
-            final raw = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString();
-            final uNick = resolveNickname(raw).trim().toLowerCase();
-            for (var target in resolvedTargets) {
-              if (target == uNick || isSamePerson(target, uNick)) {
-                final tokens = List<String>.from(u['fcmTokens'] ?? []);
-                allTokens.addAll(tokens);
-              }
+        for (var u in users) {
+          final raw = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString();
+          final uNick = resolveNickname(raw).trim().toLowerCase();
+          final rawNome = (u['nome'] ?? '').toString().trim().toLowerCase();
+          for (var target in resolvedTargets) {
+            if (target == uNick || isSamePerson(target, uNick) || target == rawNome) {
+              final tokens = List<String>.from(u['fcmTokens'] ?? []);
+              allTokens.addAll(tokens.where((t) => t.trim().isNotEmpty));
             }
           }
         }
-      } catch (e) {
-        debugPrint('Errore getFcmTokensPerUtenti MongoDB: $e');
+      }
+    } catch (e) {
+      debugPrint('Errore getFcmTokensPerUtenti MongoDB: $e');
+    }
+
+    // 2. Fallback offline: se MongoDB non è momentaneamente raggiungibile, usa la memoria locale
+    if (allTokens.isEmpty) {
+      for (var u in _utenti) {
+        final uNick = resolveNickname(u.nickname.isNotEmpty ? u.nickname : u.nome).trim().toLowerCase();
+        for (var target in resolvedTargets) {
+          if (target == uNick || isSamePerson(target, uNick)) {
+            allTokens.addAll(u.fcmTokens.where((t) => t.trim().isNotEmpty));
+          }
+        }
+      }
+      if (_currentUser != null) {
+        final curNick = resolveNickname(_currentUser!.nickname.isNotEmpty ? _currentUser!.nickname : _currentUser!.nome).trim().toLowerCase();
+        for (var target in resolvedTargets) {
+          if (target == curNick || isSamePerson(target, curNick)) {
+            allTokens.addAll(_currentUser!.fcmTokens.where((t) => t.trim().isNotEmpty));
+          }
+        }
       }
     }
+
     return allTokens.toList();
   }
 

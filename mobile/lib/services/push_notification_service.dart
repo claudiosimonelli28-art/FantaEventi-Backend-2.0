@@ -592,6 +592,15 @@ class PushNotificationService {
               'visibility': 'PUBLIC',
             },
           },
+          'apns': {
+            'payload': {
+              'aps': {
+                'sound': 'default',
+                'badge': 1,
+                'content-available': 1,
+              },
+            },
+          },
         },
       };
 
