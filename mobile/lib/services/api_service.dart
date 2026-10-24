@@ -50,6 +50,14 @@ class NicknameAlreadyTakenException implements Exception {
 }
 
 class ApiService {
+  static String formattaVoceStorico(String logText) {
+    if (logText.startsWith('[')) return logText;
+    final now = DateTime.now();
+    final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final dateTag = '[${now.toIso8601String().substring(0, 10)} $timeStr]';
+    return '$dateTag $logText';
+  }
+
   static List<String> filtraStorico(List<String> storico, {int maxGiorni = 7}) {
     final now = DateTime.now();
     final List<String> result = [];
@@ -80,8 +88,10 @@ class ApiService {
           }
           result.add(item);
         }
+      } else if (item.trim().isNotEmpty) {
+        // Le voci senza timestamp esplicito (es. proposte recenti o legacy) vengono preservate
+        result.add(item);
       }
-      // Gli elementi senza data valida (legacy) vengono scartati per non mostrare elementi di settimane/mesi fa
     }
     return result;
   }
@@ -406,6 +416,21 @@ class ApiService {
     final cleanA = a.trim().toLowerCase();
     final cleanB = b.trim().toLowerCase();
     if (cleanA.isNotEmpty && cleanA == cleanB) return true;
+    return false;
+  }
+
+  /// Verifica se un documento Utente da MongoDB corrisponde al nickname/alias specificato.
+  /// Evita il bug del mismatch con il campo 'nome' anagrafico (es. Claudio vs Cloud).
+  bool matchesUserDoc(Map<String, dynamic> uDoc, String? candidate) {
+    if (candidate == null) return false;
+    final c = resolveNickname(candidate).trim().toLowerCase();
+    if (c.isEmpty) return false;
+    final uNick = resolveNickname((uDoc['nickname'] ?? uDoc['username'] ?? '').toString()).trim().toLowerCase();
+    if (uNick.isNotEmpty && (uNick == c || isSamePerson(uNick, c))) return true;
+    final uName = (uDoc['nome'] ?? '').toString().trim().toLowerCase();
+    if (uName.isNotEmpty && (uName == c || isSamePerson(uName, c))) return true;
+    final raw = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+    if (isSamePerson(raw, candidate)) return true;
     return false;
   }
 
@@ -1676,8 +1701,7 @@ class ApiService {
         if (amiciDaNotifiche.isNotEmpty) {
           final uDocs = await db.collection('Utenti').find().toList();
           for (var uDoc in uDocs) {
-            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == cleanNick) {
+            if (matchesUserDoc(uDoc, cleanNick)) {
               final List<dynamic> currentAmici = List.from(uDoc['amici'] ?? []);
               bool changed = false;
               for (var a in amiciDaNotifiche) {
@@ -1901,6 +1925,205 @@ class ApiService {
     return null;
   }
 
+  DateTime? _lastReconciliationTime;
+
+  /// Esegue la sanificazione e riconciliazione retroattiva di tutti gli eventi conclusi su MongoDB.
+  /// Accredita badge vincitore, badge di partecipazione, titoli onorari e storico attività
+  /// a tutti i partecipanti e vincitori (@Cloud, @Ugnom, @Pippoforte, ecc.).
+  Future<void> sanificaERiconciliaEventiETitoli({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force && _lastReconciliationTime != null && now.difference(_lastReconciliationTime!).inSeconds < 10) {
+      return;
+    }
+    _lastReconciliationTime = now;
+
+    try {
+      final db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) return;
+
+      final evDocs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 8));
+      final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 8));
+      final bmList = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 8));
+
+      bool userDocsModified = false;
+
+      final Map<String, int> reMalusTotali = {};
+      final Map<String, int> avvocatoTotali = {};
+      final Map<String, int> fantasmaTotali = {};
+      final Map<String, int> sbirroTotali = {};
+      final Map<String, int> giustiziereTotali = {};
+
+      for (var ev in evDocs) {
+        final evId = ev['_id']?.toHexString() ?? ev['_id']?.toString() ?? '';
+        final evTitolo = (ev['titolo'] ?? ev['nome'] ?? 'Evento Fanta').toString().trim();
+        final dtEndStr = ev['dataFine']?.toString() ?? ev['data']?.toString() ?? now.toIso8601String();
+        final dtEnd = DateTime.tryParse(dtEndStr) ?? now;
+        final bool isConcluso = now.isAfter(dtEnd) || ev['stato'] == 'concluso';
+
+        if (!isConcluso) continue;
+
+        final partecipanti = (ev['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final dateStr = '${dtEnd.day.toString().padLeft(2, '0')}/${dtEnd.month.toString().padLeft(2, '0')}/${dtEnd.year}';
+        final partBadge = '🎉 Partecipato a "$evTitolo" ($dateStr)';
+
+        // 1. Identifica o ricalcola il vincitore
+        String? vincitoreNick = ev['titoliVincitori']?['campione']?.toString();
+        int maxPoints = (ev['titoliVincitori']?['campionePunti'] as num?)?.toInt() ?? 0;
+
+        if (vincitoreNick == null || vincitoreNick.isEmpty) {
+          final evBm = bmList.where((b) {
+            final bEvId = (b['eventoId'] ?? '').toString().trim().toLowerCase();
+            return bEvId == evId.toLowerCase() || bEvId == evTitolo.toLowerCase();
+          }).toList();
+
+          final Map<String, int> punteggi = {for (var p in partecipanti) p: 0};
+          for (var bm in evBm) {
+            final bool approvato = bm['approvato'] == true || bm['stato'] == 'approvato';
+            if (!approvato) continue;
+            final ass = (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+            final pt = (bm['punti'] as num?)?.toInt() ?? 0;
+            for (var u in ass) {
+              punteggi[u] = (punteggi[u] ?? 0) + pt;
+            }
+          }
+          if (punteggi.isNotEmpty) {
+            final sorted = punteggi.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+            vincitoreNick = sorted.first.key;
+            maxPoints = sorted.first.value;
+          }
+        }
+
+        if (vincitoreNick != null && vincitoreNick.isNotEmpty) {
+          final resolvedWinner = resolveNickname(vincitoreNick);
+          final badgeMap = {
+            'titolo': '🏆 Vincitore Evento',
+            'evento': evTitolo,
+            'punti': maxPoints,
+            'data': dtEnd.toIso8601String(),
+          };
+
+          for (var uDoc in uDocs) {
+            if (matchesUserDoc(uDoc, resolvedWinner)) {
+              final List<dynamic> currentBadgeVincitore = List.from(uDoc['badgeVincitore'] ?? []);
+              final bool giaAssegnato = currentBadgeVincitore.any((b) => b['evento'] == evTitolo);
+              if (!giaAssegnato) {
+                currentBadgeVincitore.add(badgeMap);
+                uDoc['badgeVincitore'] = currentBadgeVincitore;
+
+                final List<dynamic> currentStorico = List.from(uDoc['storicoVoti'] ?? []);
+                final logVoce = formattaVoceStorico('🏆 Vincitore dell\'evento "$evTitolo" ($maxPoints PT)');
+                if (!currentStorico.any((s) => s.toString().contains('Vincitore dell\'evento "$evTitolo"'))) {
+                  currentStorico.insert(0, logVoce);
+                  uDoc['storicoVoti'] = currentStorico;
+                }
+
+                await db.collection('Utenti').update(
+                  where.id(uDoc['_id'] as ObjectId),
+                  modify.set('badgeVincitore', currentBadgeVincitore).set('storicoVoti', uDoc['storicoVoti']),
+                );
+                userDocsModified = true;
+              }
+            }
+          }
+        }
+
+        // 2. Accredito Badge di Partecipazione
+        for (var part in partecipanti) {
+          for (var uDoc in uDocs) {
+            if (matchesUserDoc(uDoc, part)) {
+              final List<dynamic> currentBadgeList = List.from(uDoc['badgeList'] ?? []);
+              if (!currentBadgeList.any((b) => b.toString().contains(evTitolo))) {
+                currentBadgeList.add(partBadge);
+                uDoc['badgeList'] = currentBadgeList;
+                await db.collection('Utenti').update(
+                  where.id(uDoc['_id'] as ObjectId),
+                  modify.set('badgeList', currentBadgeList),
+                );
+                userDocsModified = true;
+              }
+            }
+          }
+        }
+
+        // 3. Conteggio titoli maturati
+        final titoli = ev['titoliVincitori'] as Map<String, dynamic>?;
+        if (titoli != null) {
+          final rm = titoli['reMalus']?.toString();
+          if (rm != null && rm.isNotEmpty) {
+            final resolved = resolveNickname(rm);
+            reMalusTotali[resolved] = (reMalusTotali[resolved] ?? 0) + 1;
+          }
+          final avv = (titoli['avvocato'] ?? titoli['giudice'])?.toString();
+          if (avv != null && avv.isNotEmpty) {
+            final resolved = resolveNickname(avv);
+            avvocatoTotali[resolved] = (avvocatoTotali[resolved] ?? 0) + 1;
+          }
+          final fts = titoli['fantasma']?.toString();
+          if (fts != null && fts.isNotEmpty) {
+            final resolved = resolveNickname(fts);
+            fantasmaTotali[resolved] = (fantasmaTotali[resolved] ?? 0) + 1;
+          }
+          final sb = titoli['sbirro']?.toString();
+          if (sb != null && sb.isNotEmpty) {
+            final resolved = resolveNickname(sb);
+            sbirroTotali[resolved] = (sbirroTotali[resolved] ?? 0) + 1;
+          }
+          final gst = titoli['giustiziere']?.toString();
+          if (gst != null && gst.isNotEmpty) {
+            final resolved = resolveNickname(gst);
+            giustiziereTotali[resolved] = (giustiziereTotali[resolved] ?? 0) + 1;
+          }
+        }
+      }
+
+      // Applica i titoli ricalcolati agli utenti
+      for (var uDoc in uDocs) {
+        final uId = uDoc['_id'] as ObjectId;
+        var mod = modify;
+        bool shouldUpdate = false;
+
+        void checkAndUpdateTitle(String field, Map<String, int> map) {
+          int count = 0;
+          for (var entry in map.entries) {
+            if (matchesUserDoc(uDoc, entry.key)) {
+              count += entry.value;
+            }
+          }
+          final curVal = (uDoc[field] as num?)?.toInt() ?? 0;
+          if (count > curVal) {
+            mod = mod.set(field, count);
+            uDoc[field] = count;
+            shouldUpdate = true;
+          }
+        }
+
+        checkAndUpdateTitle('countReMalus', reMalusTotali);
+        checkAndUpdateTitle('countGiudice', avvocatoTotali);
+        checkAndUpdateTitle('countAvvocato', avvocatoTotali);
+        checkAndUpdateTitle('countFantasma', fantasmaTotali);
+        checkAndUpdateTitle('countSbirro', sbirroTotali);
+        checkAndUpdateTitle('countGiustiziere', giustiziereTotali);
+
+        if (shouldUpdate) {
+          await db.collection('Utenti').update(where.id(uId), mod);
+          userDocsModified = true;
+        }
+      }
+
+      if (userDocsModified && _currentUser != null) {
+        final freshUsers = await getUtenti();
+        final match = freshUsers.firstWhere(
+          (u) => matchesUserDoc(u.toJson(), _currentUser!.nickname),
+          orElse: () => _currentUser!,
+        );
+        _currentUser = match;
+        await _saveSession(_currentUser!);
+      }
+    } catch (e) {
+      debugPrint('Errore sanificaERiconciliaEventiETitoli: $e');
+    }
+  }
+
   // --- REPERIMENTO EVENTI REALI DA MONGODB ATLAS (CON MANTENIMENTO FINITI 7 GG E BADGE VINCITORE) ---
   Future<List<Evento>> getEventi({bool forceRefresh = false}) async {
     if (!forceRefresh && _lastFetchTime != null && DateTime.now().difference(_lastFetchTime!) < _cacheDuration && _eventi.isNotEmpty) {
@@ -1914,6 +2137,8 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
+        await sanificaERiconciliaEventiETitoli();
+
         final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 8));
 
         final now = DateTime.now();
@@ -1929,7 +2154,7 @@ class ApiService {
           DateTime dtEnd = DateTime.tryParse(dtEndStr) ?? dtStart.add(const Duration(hours: 24));
 
           final partecipanti = (d['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-          final bool isConcluso = now.isAfter(dtEnd);
+          final bool isConcluso = now.isAfter(dtEnd) || (d['stato'] == 'concluso');
           final int giorniDaConclusione = isConcluso ? now.difference(dtEnd).inDays : 0;
 
           // Se l'evento e' finito da piu' di 7 giorni, archivialo dal DB
@@ -2034,14 +2259,18 @@ class ApiService {
                 };
 
                 for (var uDoc in uDocs) {
-                  final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-                  if (uName == vincitoreNick.toLowerCase()) {
+                  if (matchesUserDoc(uDoc, vincitoreNick)) {
                     final List<dynamic> currentBadgeVincitore = List.from(uDoc['badgeVincitore'] ?? []);
                     if (!currentBadgeVincitore.any((b) => b['evento'] == badgeMap['evento'])) {
                       currentBadgeVincitore.add(badgeMap);
+                      final List<dynamic> currentStorico = List.from(uDoc['storicoVoti'] ?? []);
+                      final logVoce = formattaVoceStorico('🏆 Vincitore dell\'evento "$evTitolo" (+${sorted.first.value} PT)');
+                      currentStorico.insert(0, logVoce);
                       await db.collection('Utenti').update(
                         where.id(uDoc['_id'] as ObjectId),
-                        modify.set('badgeVincitore', currentBadgeVincitore),
+                        modify
+                          .set('badgeVincitore', currentBadgeVincitore)
+                          .set('storicoVoti', currentStorico),
                       );
                     }
                   }
@@ -2050,10 +2279,8 @@ class ApiService {
 
               // 2. Assegna Badge Partecipazione a TUTTI i partecipanti
               for (var part in partecipanti) {
-                final partNorm = part.trim().toLowerCase();
                 for (var uDoc in uDocs) {
-                  final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-                  if (uName == partNorm) {
+                  if (matchesUserDoc(uDoc, part)) {
                     final List<dynamic> currentBadgeList = List.from(uDoc['badgeList'] ?? []);
                     if (!currentBadgeList.any((b) => b.toString().contains(evTitolo))) {
                       currentBadgeList.add(partBadge);
@@ -2154,32 +2381,31 @@ class ApiService {
                 });
 
                 for (var uDoc in uDocs) {
-                  final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
                   final uId = uDoc['_id'] as ObjectId;
                   var mod = modify;
                   bool shouldUpdate = false;
 
-                  if (bestMalusUser != null && uName == bestMalusUser && maxMalus > 0) {
+                  if (bestMalusUser != null && matchesUserDoc(uDoc, bestMalusUser) && maxMalus > 0) {
                     final cur = (uDoc['countReMalus'] as num?)?.toInt() ?? 0;
                     mod = mod.set('countReMalus', cur + 1);
                     shouldUpdate = true;
                   }
-                  if (bestGiudiceUser != null && uName == bestGiudiceUser && maxAtt > 0) {
+                  if (bestGiudiceUser != null && matchesUserDoc(uDoc, bestGiudiceUser) && maxAtt > 0) {
                     final cur = (uDoc['countGiudice'] as num?)?.toInt() ?? (uDoc['countAvvocato'] as num?)?.toInt() ?? 0;
                     mod = mod.set('countGiudice', cur + 1).set('countAvvocato', cur + 1);
                     shouldUpdate = true;
                   }
-                  if (bestFantasmaUser != null && uName == bestFantasmaUser) {
+                  if (bestFantasmaUser != null && matchesUserDoc(uDoc, bestFantasmaUser)) {
                     final cur = (uDoc['countFantasma'] as num?)?.toInt() ?? 0;
                     mod = mod.set('countFantasma', cur + 1);
                     shouldUpdate = true;
                   }
-                  if (bestSbirroUser != null && uName == bestSbirroUser && maxSbirro > 0) {
+                  if (bestSbirroUser != null && matchesUserDoc(uDoc, bestSbirroUser) && maxSbirro > 0) {
                     final cur = (uDoc['countSbirro'] as num?)?.toInt() ?? 0;
                     mod = mod.set('countSbirro', cur + 1);
                     shouldUpdate = true;
                   }
-                  if (bestGiustiziereUser != null && uName == bestGiustiziereUser && maxGiustiziere > 0) {
+                  if (bestGiustiziereUser != null && matchesUserDoc(uDoc, bestGiustiziereUser) && maxGiustiziere > 0) {
                     final cur = (uDoc['countGiustiziere'] as num?)?.toInt() ?? 0;
                     mod = mod.set('countGiustiziere', cur + 1);
                     shouldUpdate = true;
@@ -3064,14 +3290,31 @@ class ApiService {
     if (_currentUser != null && awardXp) {
       final nuoviXp = _currentUser!.xp + 100;
       final nuovoLivello = (nuoviXp / 1000).floor() + 1;
+      final logVoce = formattaVoceStorico('Creato evento "${nuovoEvento.titolo}" (+100 XP)');
       _currentUser = _currentUser!.copyWith(
         xp: nuoviXp,
         livello: nuovoLivello,
         storicoVoti: [
-          'Creato evento "${nuovoEvento.titolo}" (+100 XP)',
+          logVoce,
           ..._currentUser!.storicoVoti,
         ],
       );
+      try {
+        final db = await _getSafeMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+        if (db != null && db.isConnected) {
+          final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
+          for (var uDoc in uDocs) {
+            if (matchesUserDoc(uDoc, _currentUser!.nickname)) {
+              final curStorico = List<dynamic>.from(uDoc['storicoVoti'] ?? []);
+              curStorico.insert(0, logVoce);
+              await db.collection('Utenti').update(
+                where.id(uDoc['_id'] as ObjectId),
+                modify.set('xp', _currentUser!.xp).set('livello', _currentUser!.livello).set('storicoVoti', curStorico),
+              ).timeout(const Duration(seconds: 4));
+            }
+          }
+        }
+      } catch (_) {}
     }
 
     return savedEvento;
@@ -3364,23 +3607,25 @@ class ApiService {
 
     if (_currentUser != null && awardXp) {
       final nuoviXp = _currentUser!.xp + 50;
+      final logVoce = formattaVoceStorico('Proposto ${nuovoBonus.isBonus ? "Bonus" : "Malus"} "${nuovoBonus.titolo}" (+50 XP)');
       _currentUser = _currentUser!.copyWith(
         xp: nuoviXp,
         storicoVoti: [
-          'Proposto ${nuovoBonus.isBonus ? "Bonus" : "Malus"} "${nuovoBonus.titolo}" (+50 XP)',
+          logVoce,
           ..._currentUser!.storicoVoti,
         ],
       );
       try {
-        final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+        final db = await _getSafeMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
         if (db != null && db.isConnected) {
           final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
           for (var uDoc in uDocs) {
-            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == _currentUser!.nome.trim().toLowerCase()) {
+            if (matchesUserDoc(uDoc, _currentUser!.nickname)) {
+              final curStorico = List<dynamic>.from(uDoc['storicoVoti'] ?? []);
+              curStorico.insert(0, logVoce);
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
-                modify.set('xp', _currentUser!.xp).set('storicoVoti', _currentUser!.storicoVoti),
+                modify.set('xp', _currentUser!.xp).set('storicoVoti', curStorico),
               ).timeout(const Duration(seconds: 4));
             }
           }
@@ -3509,15 +3754,11 @@ class ApiService {
         // 3. Aggiorna i punti e lo storico dell'utente destinatario nel DB
         final uDocs = await db.collection('Utenti').find().toList();
         for (var uDoc in uDocs) {
-          final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-          if (uName == cleanDest) {
+          if (matchesUserDoc(uDoc, cleanDest)) {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
             final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
-            final now = DateTime.now();
-            final String timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-            final String dateTag = '[${now.toIso8601String().substring(0, 10)} $timeStr]';
-            final String formattedLog = logText.startsWith('[') ? logText : '$dateTag $logText';
+            final formattedLog = formattaVoceStorico(logText);
             oldStorico.insert(0, formattedLog);
 
             ObjectId? uObjId;
@@ -3534,12 +3775,13 @@ class ApiService {
                   .set('storicoVoti', oldStorico),
             );
 
-            if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanDest) {
+            if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
               _currentUser = _currentUser!.copyWith(
                 puntiTotali: oldPunti + punti,
                 xp: oldXp + (punti > 0 ? punti * 10 : 0),
                 storicoVoti: oldStorico.map((e) => e.toString()).toList(),
               );
+              await _saveSession(_currentUser!);
             }
           }
         }
@@ -4153,14 +4395,31 @@ class ApiService {
     if (_currentUser != null && !giaVotato) {
       final nuoviXp = _currentUser!.xp + 25;
       final nuovoLivello = (nuoviXp / 1000).floor() + 1;
+      final logVoce = formattaVoceStorico('Votato ${aFavore ? "FAVOREVOLE" : "CONTRARIO"} a "${v.titolo}" (+25 XP)');
       _currentUser = _currentUser!.copyWith(
         xp: nuoviXp,
         livello: nuovoLivello,
         storicoVoti: [
-          'Votato ${aFavore ? "FAVOREVOLE" : "CONTRARIO"} a "${v.titolo}" (+25 XP)',
+          logVoce,
           ..._currentUser!.storicoVoti,
         ],
       );
+      try {
+        final db = await _getSafeMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+        if (db != null && db.isConnected) {
+          final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
+          for (var uDoc in uDocs) {
+            if (matchesUserDoc(uDoc, _currentUser!.nickname)) {
+              final curStorico = List<dynamic>.from(uDoc['storicoVoti'] ?? []);
+              curStorico.insert(0, logVoce);
+              await db.collection('Utenti').update(
+                where.id(uDoc['_id'] as ObjectId),
+                modify.set('xp', _currentUser!.xp).set('livello', _currentUser!.livello).set('storicoVoti', curStorico),
+              ).timeout(const Duration(seconds: 4));
+            }
+          }
+        }
+      } catch (_) {}
     }
 
     final updatedFromList = _votazioniList.firstWhere(
@@ -4218,15 +4477,14 @@ class ApiService {
         // Storna i punti dall'utente
         final uDocs = await db.collection('Utenti').find().toList();
         for (var uDoc in uDocs) {
-          final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-          if (uName == cleanDest) {
+          if (matchesUserDoc(uDoc, cleanDest)) {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
             final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
             final now = DateTime.now();
             final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-            final dateTag = '[${now.toIso8601String().substring(0, 10)} $timeStr]';
-            oldStorico.insert(0, '$dateTag ⚠️ Annullata assegnazione bonus (-$punti PT) (ore $timeStr)');
+            final logVoce = formattaVoceStorico('⚠️ Annullata assegnazione bonus (-$punti PT) (ore $timeStr)');
+            oldStorico.insert(0, logVoce);
 
             ObjectId? uObjId;
             try {
@@ -4245,7 +4503,7 @@ class ApiService {
                   .set('storicoVoti', oldStorico),
             );
 
-            if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanDest) {
+            if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
               _currentUser = _currentUser!.copyWith(
                 puntiTotali: newPunti,
                 xp: newXp,
@@ -4638,8 +4896,7 @@ class ApiService {
         if (richiesta.tipo == 'malus') {
           final uDocs = await db.collection('Utenti').find().toList();
           for (var uDoc in uDocs) {
-            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == richiesta.richiedente.trim().toLowerCase()) {
+            if (matchesUserDoc(uDoc, richiesta.richiedente)) {
               final curXp = (uDoc['xp'] as num?)?.toInt() ?? ((uDoc['puntiEsperienza'] as num?)?.toInt() ?? 100);
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
@@ -4694,19 +4951,19 @@ class ApiService {
           final cleanEvId = richiesta.eventoId.trim();
           final uDocs = await db.collection('Utenti').find().toList();
           for (var uDoc in uDocs) {
-            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == cleanRichiedente.toLowerCase()) {
+            if (matchesUserDoc(uDoc, cleanRichiedente)) {
               final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
               final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
               final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-              curStorico.add('🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
+              final logVoce = formattaVoceStorico('🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
+              curStorico.insert(0, logVoce);
 
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
                 modify.set('puntiTotali', curPts + penalty).set('storicoVoti', curStorico),
               );
 
-              if (_currentUser != null && _currentUser!.nome.trim().toLowerCase() == cleanRichiedente.toLowerCase()) {
+              if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
                 _currentUser = _currentUser!.copyWith(
                   puntiTotali: curPts + penalty,
                   storicoVoti: curStorico,

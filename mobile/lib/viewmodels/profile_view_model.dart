@@ -98,6 +98,7 @@ class ProfileViewModel extends BaseViewModel {
 
   Future<void> caricaProfiloAggiornato() async {
     try {
+      await _apiService.sanificaERiconciliaEventiETitoli();
       final updatedUser = await _apiService.syncCurrentUserFromDb();
       final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
       if (isDisposed) return;
@@ -134,6 +135,8 @@ class ProfileViewModel extends BaseViewModel {
       rethrow;
     }
   }
+
+  String resolveNickname(String? candidate) => _apiService.resolveNickname(candidate);
 
   Utente? getUtenteInMemoria(String nickname) => _apiService.getUtenteInMemoria(nickname);
 

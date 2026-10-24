@@ -466,12 +466,12 @@ class _ProfileViewState extends State<ProfileView> {
                             controller: scrollController,
                             itemCount: amiciList.length,
                             itemBuilder: (context, index) {
-                              final amicoNick = amiciList[index];
-                              final amicoUtente = _viewModel.getUtenteInMemoria(amicoNick);
-                              final displayName = (amicoUtente?.nome.isNotEmpty == true)
-                                  ? amicoUtente!.nome
-                                  : amicoNick;
-                              final avatarUrl = (amicoUtente?.avatarUrl.isNotEmpty == true) ? amicoUtente!.avatarUrl : _viewModel.getAvatarPerUtente(amicoNick);
+                              final rawAmico = amiciList[index];
+                              final amicoUtente = _viewModel.getUtenteInMemoria(rawAmico);
+                              final resolvedNick = _viewModel.resolveNickname(
+                                  amicoUtente?.nickname.isNotEmpty == true ? amicoUtente!.nickname : rawAmico);
+                              final displayName = '@$resolvedNick';
+                              final avatarUrl = (amicoUtente?.avatarUrl.isNotEmpty == true) ? amicoUtente!.avatarUrl : _viewModel.getAvatarPerUtente(resolvedNick);
                               final friendCode = amicoUtente?.codiceAmico ?? '';
                               final points = amicoUtente?.puntiTotali ?? 0;
                               final level = amicoUtente?.livello ?? 1;
@@ -519,9 +519,9 @@ class _ProfileViewState extends State<ProfileView> {
                                                   ),
                                                 ),
                                               ),
-                                              if (FounderBadge.isFounder(amicoNick) || FounderBadge.isFounder(displayName)) ...[
+                                              if (FounderBadge.isFounder(resolvedNick) || FounderBadge.isFounder(rawAmico)) ...[
                                                 const SizedBox(width: 8),
-                                                FounderBadge(nickname: amicoNick, isLarge: false),
+                                                FounderBadge(nickname: resolvedNick, isLarge: false),
                                               ],
                                             ],
                                           ),
