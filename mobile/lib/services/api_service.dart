@@ -3679,6 +3679,56 @@ class ApiService {
     } catch (_) {}
   }
 
+  Future<void> eliminaNotificheMultiple(List<String> notificaIds) async {
+    if (notificaIds.isEmpty) return;
+    try {
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
+      if (db != null && db.isConnected) {
+        for (var id in notificaIds) {
+          ObjectId? objId;
+          try {
+            objId = ObjectId.fromHexString(id);
+          } catch (_) {}
+          final selector = objId != null
+              ? where.id(objId)
+              : where.eq('notificaId', id).or(where.eq('_id', id));
+          await db.collection('Notifiche').remove(selector);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> eliminaTutteNotifiche({required String destinatario, bool soloLette = false}) async {
+    try {
+      Db? db = await _getSafeMongoDb();
+      if (db == null || !db.isConnected) {
+        markMongoDbDisconnected();
+        db = await _getSafeMongoDb();
+      }
+      if (db != null && db.isConnected) {
+        final cleanNick = destinatario.trim().toLowerCase();
+        final docs = await db.collection('Notifiche').find().toList();
+        for (var d in docs) {
+          final dest = (d['destinatario'] ?? '').toString().trim().toLowerCase();
+          final bool isLetto = d['letto'] == true;
+          if (dest == cleanNick || cleanNick.isEmpty) {
+            if (!soloLette || isLetto) {
+              if (d['_id'] is ObjectId) {
+                await db.collection('Notifiche').remove(where.id(d['_id'] as ObjectId));
+              } else {
+                await db.collection('Notifiche').remove(where.eq('_id', d['_id']));
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<List<BonusMalus>> getBonusMalusList() async {
     await getVotazioni();
     return List.unmodifiable(_bonusMalusList);
