@@ -3600,8 +3600,8 @@ class ApiService {
           ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
 
-        // 2. Invia notifica informativa agli altri partecipanti (esclusi destinatario e chi assegna)
-        final altriPartecipanti = destList.where((d) => !isSamePerson(d, utenteDestinatario) && !isSamePerson(d, mittente)).toList();
+        // 2. Invia notifica broadcast a TUTTI gli altri partecipanti dell'evento (incluso chi ha assegnato)
+        final altriPartecipanti = destList.where((d) => !isSamePerson(d, utenteDestinatario)).toList();
         if (altriPartecipanti.isNotEmpty) {
           try {
             await PushNotificationService.instance.inviaPushAUtenti(
@@ -3609,7 +3609,7 @@ class ApiService {
               titolo: isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!',
               messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
               data: {
-                'tipo': 'evento_aggiornamento',
+                'tipo': notificaTipo,
                 'eventoId': eventoId,
               },
             ).timeout(const Duration(seconds: 4), onTimeout: () {});

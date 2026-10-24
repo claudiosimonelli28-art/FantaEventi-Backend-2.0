@@ -95,11 +95,11 @@ class PushNotificationService {
 
   /// Ritorna il canale nativo Android appropriato in base alla tipologia di notifica
   static AndroidNotificationChannel getChannelForType(String? tipo) {
-    final t = (tipo ?? '').toLowerCase();
-    if (t == 'bonus') return channelBonus;
-    if (t == 'malus') return channelMalus;
+    final t = (tipo ?? '').toLowerCase().trim();
+    if (t.contains('bonus')) return channelBonus;
+    if (t.contains('malus')) return channelMalus;
     if (t.startsWith('var')) return channelVar;
-    if (t == 'invito' || t == 'amicizia') return channelInvites;
+    if (t.contains('invito') || t.contains('amicizia')) return channelInvites;
     return channelGeneral;
   }
 
@@ -642,8 +642,6 @@ class PushNotificationService {
             'priority': 'high',
             'notification': {
               'channel_id': targetChannel.id,
-              'sound': 'default',
-              'default_sound': true,
               'default_vibrate_timings': true,
               'notification_priority': 'PRIORITY_MAX',
               'visibility': 'PUBLIC',
