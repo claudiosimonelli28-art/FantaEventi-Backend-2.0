@@ -54,9 +54,9 @@ class PushNotificationService {
     enableVibration: true,
   );
 
-  /// Canale dedicato per Assegnazione Bonus (suono personalizzato fanta_bonus)
+  /// Canale dedicato per Assegnazione Bonus (suono personalizzato fanta_bonus) v2
   static const AndroidNotificationChannel _bonusChannel = AndroidNotificationChannel(
-    'fantaeventi_bonus_channel',
+    'fantaeventi_bonus_channel_v2',
     'Assegnazione Bonus 🏆',
     description: 'Notifiche con suono speciale per i bonus assegnati',
     importance: Importance.max,
@@ -65,9 +65,9 @@ class PushNotificationService {
     enableVibration: true,
   );
 
-  /// Canale dedicato per Assegnazione Malus (suono personalizzato fanta_malus)
+  /// Canale dedicato per Assegnazione Malus (suono personalizzato fanta_malus) v2
   static const AndroidNotificationChannel _malusChannel = AndroidNotificationChannel(
-    'fantaeventi_malus_channel',
+    'fantaeventi_malus_channel_v2',
     'Assegnazione Malus 💀',
     description: 'Notifiche con suono speciale per i malus assegnati',
     importance: Importance.max,
@@ -106,6 +106,10 @@ class PushNotificationService {
       final androidPlugin = _localNotifications
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidPlugin != null) {
+        try {
+          await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_bonus_channel');
+          await androidPlugin.deleteNotificationChannel(channelId: 'fantaeventi_malus_channel');
+        } catch (_) {}
         await androidPlugin.createNotificationChannel(_androidChannel);
         await androidPlugin.createNotificationChannel(_bonusChannel);
         await androidPlugin.createNotificationChannel(_malusChannel);
@@ -560,11 +564,11 @@ class PushNotificationService {
       bool isDefaultSound = true;
 
       if (pushTipo == 'assegnazione_bonus') {
-        targetChannelId = 'fantaeventi_bonus_channel';
+        targetChannelId = 'fantaeventi_bonus_channel_v2';
         targetSound = 'fanta_bonus';
         isDefaultSound = false;
       } else if (pushTipo == 'assegnazione_malus') {
-        targetChannelId = 'fantaeventi_malus_channel';
+        targetChannelId = 'fantaeventi_malus_channel_v2';
         targetSound = 'fanta_malus';
         isDefaultSound = false;
       }

@@ -19,6 +19,12 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = getSystemService(NotificationManager::class.java) ?: return
 
+            // 0. Elimina i canali v1 silenti per resettare la cache di sistema Android
+            try {
+                notificationManager.deleteNotificationChannel("fantaeventi_bonus_channel")
+                notificationManager.deleteNotificationChannel("fantaeventi_malus_channel")
+            } catch (_: Exception) {}
+
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
@@ -35,10 +41,10 @@ class MainActivity : FlutterActivity() {
             }
             notificationManager.createNotificationChannel(defaultChannel)
 
-            // 2. Canale Assegnazione Bonus (suono fanta_bonus)
+            // 2. Canale Assegnazione Bonus v2 (suono dedicato fanta_bonus)
             val bonusSoundUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${packageName}/raw/fanta_bonus")
             val bonusChannel = NotificationChannel(
-                "fantaeventi_bonus_channel",
+                "fantaeventi_bonus_channel_v2",
                 "Assegnazione Bonus 🏆",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
@@ -48,10 +54,10 @@ class MainActivity : FlutterActivity() {
             }
             notificationManager.createNotificationChannel(bonusChannel)
 
-            // 3. Canale Assegnazione Malus (suono fanta_malus)
+            // 3. Canale Assegnazione Malus v2 (suono dedicato fanta_malus)
             val malusSoundUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${packageName}/raw/fanta_malus")
             val malusChannel = NotificationChannel(
-                "fantaeventi_malus_channel",
+                "fantaeventi_malus_channel_v2",
                 "Assegnazione Malus 💀",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
@@ -60,6 +66,10 @@ class MainActivity : FlutterActivity() {
                 setSound(malusSoundUri, audioAttributes)
             }
             notificationManager.createNotificationChannel(malusChannel)
+
+            // Riferimento statico alle risorse R per garantire inclusione e integrità
+            val _keepBonus = R.raw.fanta_bonus
+            val _keepMalus = R.raw.fanta_malus
         }
     }
 }
