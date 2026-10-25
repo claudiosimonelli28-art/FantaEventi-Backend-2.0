@@ -4344,10 +4344,11 @@ class ApiService {
         final notDocs = await db.collection('Notifiche').find().toList();
         for (var notDoc in notDocs) {
           final dest = (notDoc['destinatario'] ?? '').toString().trim().toLowerCase();
-          final evId = (notDoc['eventoId'] ?? '').toString().trim().toLowerCase();
           final bId = (notDoc['bonusId'] ?? '').toString().trim().toLowerCase();
           final notId = notDoc['_id']?.toHexString() ?? notDoc['_id']?.toString() ?? '';
-          if (dest == userNick.toLowerCase() && (evId == idOrEventoId.toLowerCase() || bId == idOrEventoId.toLowerCase() || notId == idOrEventoId)) {
+          final bool isBonusMatch = (bId.isNotEmpty && (bId == targetBmId.toLowerCase() || bId == idOrEventoId.toLowerCase())) ||
+              (targetBmTitle.isNotEmpty && notDoc['bonusTitolo']?.toString().trim().toLowerCase() == targetBmTitle.toLowerCase());
+          if (isSamePerson(dest, userNick) && (isBonusMatch || notId == idOrEventoId)) {
             await db.collection('Notifiche').update(
               where.id(notDoc['_id'] as ObjectId),
               modify.set('stato', aFavore ? 'accettato' : 'rifiutato').set('votoEspresso', aFavore ? 'pro' : 'contro').set('letto', true),
