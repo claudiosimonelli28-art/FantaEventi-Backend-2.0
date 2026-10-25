@@ -57,12 +57,14 @@ class EventCard extends StatelessWidget {
               ? const Color(0xFFEF4444).withValues(alpha: 0.5)
               : isInCorso
                   ? const Color(0xFF10B981).withValues(alpha: 0.8)
-                  : isPartecipante
-                      ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                      : isInvitato
-                          ? const Color(0xFFFACC15).withValues(alpha: 0.5)
-                          : Colors.white.withValues(alpha: 0.08),
-          width: (isPartecipante || isInvitato || isConcluso || isInCorso) ? 1.5 : 1.0,
+                  : isCreatore
+                      ? const Color(0xFF8B5CF6).withValues(alpha: 0.7)
+                      : isPartecipante
+                          ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                          : isInvitato
+                              ? const Color(0xFFFACC15).withValues(alpha: 0.5)
+                              : Colors.white.withValues(alpha: 0.08),
+          width: (isCreatore || isPartecipante || isInvitato || isConcluso || isInCorso) ? 1.5 : 1.0,
         ),
         boxShadow: isInCorso
             ? [
@@ -72,13 +74,21 @@ class EventCard extends StatelessWidget {
                   offset: const Offset(0, 4),
                 ),
               ]
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.25),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+            : isCreatore
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.16),
+                      blurRadius: 14,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
       ),
       child: InkWell(
         onTap: onTap,
@@ -95,31 +105,102 @@ class EventCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (isInCorso)
-                          const LivePulseBadge(
-                            text: 'IN CORSO',
-                            color: Color(0xFF10B981),
-                          )
-                        else
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isConcluso
-                                  ? const Color(0xFFEF4444).withValues(alpha: 0.2)
-                                  : const Color(0xFF9333EA).withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              isConcluso ? 'EVENTO CONCLUSO' : 'IN PROGRAMMA',
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: isConcluso
-                                    ? const Color(0xFFF87171)
-                                    : const Color(0xFFC084FC),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (isInCorso)
+                              const LivePulseBadge(
+                                text: 'IN CORSO',
+                                color: Color(0xFF10B981),
+                              )
+                            else
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: isConcluso
+                                      ? const Color(0xFFEF4444).withValues(alpha: 0.2)
+                                      : const Color(0xFF9333EA).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(
+                                  isConcluso ? 'EVENTO CONCLUSO' : 'IN PROGRAMMA',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isConcluso
+                                        ? const Color(0xFFF87171)
+                                        : const Color(0xFFC084FC),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
+                            if (isCreatore)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF8B5CF6), Color(0xFF6366F1)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: const Color(0xFFFACC15).withValues(alpha: 0.6),
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.35),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.stars_rounded, size: 13, color: Color(0xFFFACC15)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'ORGANIZZATO DA TE',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.4,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else if (evento.creatore.trim().isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.12),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.person_pin_circle_rounded, size: 12, color: const Color(0xFF94A3B8)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'di @${evento.creatore}',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFFCBD5E1),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                         const SizedBox(height: 8),
                         Text(
                           evento.titolo,
