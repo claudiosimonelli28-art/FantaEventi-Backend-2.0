@@ -672,6 +672,13 @@ class _NotificationsModalState extends State<NotificationsModal> {
 
                             final bool isSelected = _selectedNotificationIds.contains(notId);
 
+                            // Notifiche del VAR
+                            final String varId = (not['varId'] ?? '').toString();
+                            final bool isVarGiudice = tipo == 'var_richiesta_giudice' && varId.isNotEmpty;
+                            final bool isVarTestimone = tipo == 'var_testimone' && varId.isNotEmpty;
+                            final bool isVarEsito = tipo == 'var_esito';
+                            final bool isVarRelated = isVarGiudice || isVarTestimone || isVarEsito;
+
                             // 1. Notifica di amicizia
                             final bool isAmicizia = tipo.contains('amicizia') ||
                                 tipo.contains('amico') ||
@@ -685,35 +692,41 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                 messaggio.contains('invitato') ||
                                 messaggio.contains('partecipare all\'evento');
 
-                            // 3. Notifica di assegnazione o riassegnazione bonus/malus
-                            final bool isAssegnazioneBonusMalus = tipo.contains('bonus') ||
-                                tipo.contains('malus') ||
-                                titolo.contains('assegnat') ||
-                                titolo.contains('ricevuto') ||
-                                messaggio.contains('ha ricevuto') ||
-                                messaggio.contains('assegnato');
-
-                            // Notifiche del VAR
-                            final String varId = (not['varId'] ?? '').toString();
-                            final bool isVarGiudice = tipo == 'var_richiesta_giudice' && varId.isNotEmpty;
-                            final bool isVarTestimone = tipo == 'var_testimone' && varId.isNotEmpty;
-                            final bool isVarEsito = tipo == 'var_esito';
-                            final bool isVarRelated = isVarGiudice || isVarTestimone || isVarEsito;
-
-                            // 4. Proposta attiva per Votazioni Live
+                            // 3. Proposta attiva per Votazioni Live (bonus/malus proposto da votare)
                             final bool isProposal = !isVarRelated &&
                                 !isAmicizia &&
                                 !isInvito &&
-                                !isAssegnazioneBonusMalus &&
-                                (stato == 'in_attesa' || haGiaVotato || votazioneChiusa) &&
                                 (tipo == 'proposta_bonus_malus' ||
                                     tipo == 'proposta_votazione' ||
                                     tipo == 'proposta' ||
-                                    (tipo == 'bonus_malus' && (titolo.contains('proposta') || messaggio.contains('ha proposto') || titolo.contains('votazione'))));
+                                    tipo == 'votazione' ||
+                                    titolo.contains('proposta') ||
+                                    titolo.contains('votazione') ||
+                                    messaggio.contains('ha proposto') ||
+                                    messaggio.contains('entra a votare') ||
+                                    messaggio.contains('vota') ||
+                                    (tipo == 'bonus_malus' && (titolo.contains('proposta') || messaggio.contains('ha proposto') || titolo.contains('votazione') || stato == 'in_attesa')));
+
+                            // 4. Notifica di assegnazione o riassegnazione bonus/malus (punti già assegnati)
+                            final bool isAssegnazioneBonusMalus = !isProposal &&
+                                !isVarRelated &&
+                                !isAmicizia &&
+                                !isInvito &&
+                                (tipo == 'assegnazione_bonus' ||
+                                    tipo == 'assegnazione_malus' ||
+                                    tipo == 'bonus_assegnato' ||
+                                    tipo == 'malus_assegnato' ||
+                                    titolo.contains('assegnat') ||
+                                    titolo.contains('ricevuto') ||
+                                    messaggio.contains('ha ricevuto') ||
+                                    messaggio.contains('assegnato') ||
+                                    tipo == 'bonus' ||
+                                    tipo == 'malus');
 
                             // 5. Richiesta in sospeso con opzione ACCETTA / RIFIUTA
                             final bool isPending = !isVarRelated &&
                                 !isAssegnazioneBonusMalus &&
+                                !isProposal &&
                                 (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
                                 stato == 'in_attesa';
 
