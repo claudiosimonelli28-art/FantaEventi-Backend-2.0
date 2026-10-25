@@ -38,21 +38,50 @@ class VarSubmissionViewModel extends BaseViewModel {
   bool isMe(String p) {
     return _apiService.isSamePerson(p, myNick) || _apiService.isSamePerson(p, myRealName);
   }
+
   bool get isOrganizer {
     return _apiService.isSamePerson(evento.creatore, myNick) || _apiService.isSamePerson(evento.creatore, myRealName);
   }
+
+  bool get isOrganizerCulprit {
+    if (isBonus || _selectedCulprit == null) return false;
+    return _apiService.isSamePerson(evento.creatore, _selectedCulprit!);
+  }
+
+  bool get isOrganizerDisqualified => isOrganizer || isOrganizerCulprit;
+
   bool get isBonus => bonusMalus.punti > 0;
 
-  void _initDefaults() {
-    if (isOrganizer) {
-      final eligibleJudges = evento.partecipanti
-          .where((p) => !isMe(p))
-          .toList();
-      if (eligibleJudges.isNotEmpty) {
-        _selectedJudge = eligibleJudges.first;
-      }
-    }
+  List<String> get eligibleJudges {
+    return evento.partecipanti.where((p) {
+      if (isMe(p)) return false;
+      if (!isBonus && _selectedCulprit != null && _apiService.isSamePerson(p, _selectedCulprit!)) return false;
+      if (isOrganizerDisqualified && _apiService.isSamePerson(p, evento.creatore)) return false;
+      return true;
+    }).toList();
+  }
 
+  String get effectiveJudge {
+    if (isOrganizerDisqualified) {
+      if (_selectedJudge != null && eligibleJudges.any((j) => _apiService.isSamePerson(j, _selectedJudge!))) {
+        return _selectedJudge!;
+      }
+      return eligibleJudges.isNotEmpty ? eligibleJudges.first : '';
+    }
+    return evento.creatore;
+  }
+
+  List<String> get eligibleWitnesses {
+    final curJudge = effectiveJudge;
+    return evento.partecipanti.where((p) {
+      if (isMe(p)) return false;
+      if (!isBonus && _selectedCulprit != null && _apiService.isSamePerson(p, _selectedCulprit!)) return false;
+      if (curJudge.isNotEmpty && _apiService.isSamePerson(p, curJudge)) return false;
+      return true;
+    }).toList();
+  }
+
+  void _initDefaults() {
     if (bonusMalus.punti < 0) {
       final eligibleCulprits = evento.partecipanti
           .where((p) => !isMe(p))
@@ -61,15 +90,42 @@ class VarSubmissionViewModel extends BaseViewModel {
         _selectedCulprit = eligibleCulprits.first;
       }
     }
+
+    if (isOrganizerDisqualified) {
+      final validJudges = eligibleJudges;
+      if (validJudges.isNotEmpty) {
+        _selectedJudge = validJudges.first;
+      }
+    }
   }
 
   void selectCulprit(String? culprit) {
     _selectedCulprit = culprit;
+    // Pulisci i testimoni dal colpevole
+    if (culprit != null) {
+      _selectedWitnesses.removeWhere((w) => _apiService.isSamePerson(w, culprit));
+      if (_selectedJudge != null && _apiService.isSamePerson(_selectedJudge!, culprit)) {
+        _selectedJudge = null;
+      }
+    }
+    // Se l'organizzatore e' squalificato (es. scelto come colpevole), assegna un giudice neutrale valido
+    if (isOrganizerDisqualified) {
+      final validJudges = eligibleJudges;
+      if (_selectedJudge == null || !validJudges.any((j) => _apiService.isSamePerson(j, _selectedJudge!))) {
+        _selectedJudge = validJudges.isNotEmpty ? validJudges.first : null;
+      }
+      if (_selectedJudge != null) {
+        _selectedWitnesses.removeWhere((w) => _apiService.isSamePerson(w, _selectedJudge!));
+      }
+    }
     notifyListeners();
   }
 
   void selectJudge(String? judge) {
     _selectedJudge = judge;
+    if (judge != null) {
+      _selectedWitnesses.removeWhere((w) => _apiService.isSamePerson(w, judge));
+    }
     notifyListeners();
   }
 
@@ -114,9 +170,9 @@ class VarSubmissionViewModel extends BaseViewModel {
       throw Exception('Seleziona il giocatore a cui si riferisce l\'infrazione!');
     }
 
-    final String judge = isOrganizer ? (_selectedJudge ?? '') : evento.creatore;
+    final String judge = effectiveJudge;
     if (judge.isEmpty) {
-      throw Exception('Seleziona un Co-Organizzatore che farà da Giudice!');
+      throw Exception('Nessun Giudice neutrale disponibile tra i partecipanti per esaminare questa richiesta!');
     }
 
     final cleanDesc = descrizione.trim();
@@ -212,6 +268,7 @@ class VarDetailViewModel extends BaseViewModel {
   }
 
   Future<bool> decidiRichiesta(bool approva) async {
+    if (_isProcessing) return false;
     final curUser = _apiService.currentUser;
     if (curUser == null || _richiesta == null) return false;
 

@@ -84,6 +84,7 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
   }
 
   Future<void> _prendiDecisione(bool approva) async {
+    if (_viewModel.isProcessing) return;
     try {
       final success = await _viewModel.decidiRichiesta(approva);
       if (mounted) {
@@ -92,13 +93,13 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
           if (approva) {
             AppToast.showSuccess(
               context,
-              'Decisione VAR: Approvata ✅',
-              'Richiesta VAR approvata! Punti assegnati con successo.',
+              'Denuncia Convalidata ✅',
+              'La segnalazione è stata convalidata! I punti sono stati aggiornati.',
             );
           } else {
             AppToast.showWarning(
               context,
-              'Decisione VAR: Respinta ❌',
+              'Denuncia Respinta ❌',
               (_viewModel.sanzionaFalsaTestimonianza && (_viewModel.richiesta?.isMalus ?? false))
                   ? 'Denuncia respinta! Applicata sanzione per falsa testimonianza.'
                   : 'Richiesta VAR respinta dal Giudice.',
@@ -106,11 +107,13 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
           }
           widget.onResolved();
         } else {
+          Navigator.pop(context);
           AppToast.showError(
             context,
-            'Errore Decisione VAR',
-            'Errore durante la registrazione della decisione.',
+            'Decisione Già Registrata',
+            'Questa richiesta VAR è già stata elaborata o non è più in attesa.',
           );
+          widget.onResolved();
         }
       }
     } catch (_) {
@@ -174,22 +177,26 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
     final isBonus = req.isBonus;
     final colorAccent = isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444);
 
-    return Container(
-      padding: EdgeInsets.only(
-        top: 20,
-        left: 20,
-        right: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E293B),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    return PopScope(
+      canPop: !isProcessing,
+      child: Stack(
+        children: [
+          Container(
+            padding: EdgeInsets.only(
+              top: 20,
+              left: 20,
+              right: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            ),
+            decoration: const BoxDecoration(
+              color: Color(0xFF1E293B),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
             // HEADER TRIBUNALE VAR
             Row(
               children: [
@@ -588,6 +595,72 @@ class _VarDecisionModalState extends State<VarDecisionModal> {
             ],
           ],
         ),
+      ),
+    ),
+
+    // OVERLAY DI CARICAMENTO BLOCCANTE CON FEEDBACK
+    if (isProcessing)
+      Positioned.fill(
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.8),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 24),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF6366F1), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+                    blurRadius: 18,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Color(0xFFFACC15),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    decisioneScelta == 'convalida'
+                        ? '⚖️ Convalida VAR in corso...'
+                        : '⚖️ Registrazione rifiuto VAR...',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Aggiornamento punteggi e notifiche in corso. Attendere...',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      color: Colors.white70,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+        ],
       ),
     );
       },

@@ -57,13 +57,11 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
       if (mounted) {
         if (resId != null) {
           Navigator.pop(context);
-          final judge = _viewModel.isOrganizer
-              ? (_viewModel.selectedJudge ?? '')
-              : widget.evento.creatore;
+          final judge = _viewModel.effectiveJudge;
           AppToast.showSuccess(
             context,
             'Richiesta VAR Inoltrata 📺',
-            'Richiesta inviata al Giudice $judge! Testimoni allertati.',
+            'Richiesta inviata al Giudice @$judge! Testimoni allertati.',
           );
           widget.onSubmitted();
         } else {
@@ -91,24 +89,11 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
     return ListenableBuilder(
       listenable: _viewModel,
       builder: (context, _) {
-        final myNick = _viewModel.myNick;
         final isBonus = _viewModel.isBonus;
-        final isOrganizer = _viewModel.isOrganizer;
-        final effectiveJudge = isOrganizer ? (_viewModel.selectedJudge ?? '') : widget.evento.creatore;
-
-        // Testimoni selezionabili: partecipanti esclusi richiedente, bersaglio e arbitro
-        final eligibleWitnesses = widget.evento.partecipanti.where((p) {
-          final pLower = p.trim().toLowerCase();
-          if (_viewModel.isMe(p)) return false;
-          final effJudgeLower = effectiveJudge.trim().toLowerCase();
-          if (pLower == effJudgeLower ||
-              (effJudgeLower == 'cloud' && (pLower == 'claudio' || pLower.contains('claudio'))) ||
-              (effJudgeLower == 'claudio' && pLower == 'cloud')) {
-            return false;
-          }
-          if (!isBonus && _viewModel.selectedCulprit != null && pLower == _viewModel.selectedCulprit!.trim().toLowerCase()) return false;
-          return true;
-        }).toList();
+        final isOrganizerDisqualified = _viewModel.isOrganizerDisqualified;
+        final effectiveJudge = _viewModel.effectiveJudge;
+        final eligibleWitnesses = _viewModel.eligibleWitnesses;
+        final eligibleJudges = _viewModel.eligibleJudges;
 
         final colorAccent = isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444);
 
@@ -221,49 +206,6 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
             ),
             const SizedBox(height: 16),
 
-            // SEZIONE CASO PARTICOLARE: ORGANIZZATORE RICHIEDE PER SÉ
-            if (isOrganizer) ...[
-              Text(
-                '⚖️ Chi giudicherà questa tua richiesta? (Co-Organizzatore)',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: const Color(0xFFFACC15),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF334155)),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _viewModel.selectedJudge,
-                    dropdownColor: const Color(0xFF0F172A),
-                    isExpanded: true,
-                    hint: const Text('Seleziona un Co-Organizzatore', style: TextStyle(color: Colors.white54)),
-                    items: widget.evento.partecipanti
-                        .where((p) => p.trim().toLowerCase() != myNick.trim().toLowerCase())
-                        .map((p) => DropdownMenuItem(
-                              value: p,
-                              child: Text(p, style: const TextStyle(color: Colors.white)),
-                            ))
-                        .toList(),
-                    onChanged: (val) {
-                      _viewModel.selectJudge(val);
-                      if (val != null && _viewModel.selectedWitnesses.contains(val)) {
-                        _viewModel.toggleWitness(val);
-                      }
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
             // SEZIONE MALUS: SCELTA DEL COLPEVOLE + AVVISO FALSA TESTIMONIANZA
             if (!isBonus) ...[
               Text(
@@ -289,7 +231,7 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                     isExpanded: true,
                     hint: const Text('Seleziona il giocatore', style: TextStyle(color: Colors.white54)),
                     items: widget.evento.partecipanti
-                        .where((p) => p.trim().toLowerCase() != myNick.trim().toLowerCase())
+                        .where((p) => !_viewModel.isMe(p))
                         .map((p) => DropdownMenuItem(
                               value: p,
                               child: Text(p, style: const TextStyle(color: Colors.white)),
@@ -297,9 +239,6 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                         .toList(),
                     onChanged: (val) {
                       _viewModel.selectCulprit(val);
-                      if (val != null && _viewModel.selectedWitnesses.contains(val)) {
-                        _viewModel.toggleWitness(val);
-                      }
                     },
                   ),
                 ),
@@ -321,12 +260,101 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'ATTENZIONE: Se l\'organizzatore rigetterà questa denuncia poiché infondata o falsa, riceverai una sanzione di ${widget.evento.penalitaFalsaTestimonianza} PT per Simulazione / Falsa Testimonianza!',
+                        'ATTENZIONE: Se il Giudice rigetterà questa denuncia poiché infondata o falsa, riceverai una sanzione di ${widget.evento.penalitaFalsaTestimonianza} PT per Simulazione / Falsa Testimonianza!',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           color: const Color(0xFFFECACA),
                           fontWeight: FontWeight.w600,
                         ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // SEZIONE GIUDICE VAR: GESTIONE CONFLITTO DI INTERESSI
+            if (isOrganizerDisqualified) ...[
+              Text(
+                '⚖️ Giudice designato per il VAR (Co-Organizzatore neutrale)',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFFFACC15),
+                ),
+              ),
+              const SizedBox(height: 6),
+              if (eligibleJudges.length <= 1)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('⚖️', style: TextStyle(fontSize: 20)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          effectiveJudge.isNotEmpty
+                              ? 'L\'organizzatore è parte in causa. Il ruolo di Giudice viene assegnato automaticamente a @$effectiveJudge (unico partecipante neutrale).'
+                              : 'Attenzione: nessun partecipante neutrale disponibile per giudicare il VAR.',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: effectiveJudge.isNotEmpty ? effectiveJudge : null,
+                      dropdownColor: const Color(0xFF0F172A),
+                      isExpanded: true,
+                      hint: const Text('Seleziona un Giudice neutrale', style: TextStyle(color: Colors.white54)),
+                      items: eligibleJudges
+                          .map((p) => DropdownMenuItem(
+                                value: p,
+                                child: Text('@$p', style: const TextStyle(color: Colors.white)),
+                              ))
+                          .toList(),
+                      onChanged: (val) {
+                        _viewModel.selectJudge(val);
+                      },
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: Row(
+                  children: [
+                    const Text('⚖️', style: TextStyle(fontSize: 16)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Giudice VAR: @$effectiveJudge (Organizzatore)',
+                        style: GoogleFonts.inter(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
                       ),
                     ),
                   ],
@@ -463,11 +491,16 @@ class _VarSubmissionModalState extends State<VarSubmissionModal> {
             const SizedBox(height: 8),
 
             if (eligibleWitnesses.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(8.0),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
                 child: Text(
-                  'Nessun altro partecipante disponibile come testimone.',
-                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white54, fontStyle: FontStyle.italic),
+                  'Nessun testimone neutrale disponibile: tutti i partecipanti sono già parte in causa come denunciante, accusato o giudice.',
+                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white60, fontStyle: FontStyle.italic),
                 ),
               )
             else

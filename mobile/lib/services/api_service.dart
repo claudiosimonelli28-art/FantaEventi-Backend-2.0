@@ -4844,10 +4844,21 @@ class ApiService {
       );
 
       // Aggiorna notifica testimone a stato votato
-      await db.collection('Notifiche').update(
-        where.eq('varId', varId).and(where.eq('destinatario', testimoneNick)),
-        modify.set('stato', conferma ? 'confermato' : 'negato').set('letto', true),
-      );
+      final notDocs = await db.collection('Notifiche').find(where.eq('varId', varId).and(where.eq('tipo', 'var_testimone'))).toList();
+      for (var nDoc in notDocs) {
+        final dDest = (nDoc['destinatario'] ?? '').toString();
+        if (isSamePerson(dDest, testimoneNick)) {
+          ObjectId? nId;
+          try {
+            nId = nDoc['_id'] is ObjectId ? nDoc['_id'] as ObjectId : ObjectId.fromHexString(nDoc['_id'].toString());
+          } catch (_) {}
+          final nSel = nId != null ? where.id(nId) : where.eq('_id', nDoc['_id']);
+          await db.collection('Notifiche').update(
+            nSel,
+            modify.set('stato', conferma ? 'confermato' : 'negato').set('letto', true),
+          );
+        }
+      }
 
       invalidateCache();
       return true;
@@ -4880,6 +4891,24 @@ class ApiService {
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch;
 
+      // ATOMIC CLAIM: aggiorna immediatamente lo stato della richiesta nel DB
+      // per garantire assoluta idempotenza ed impedire doppi addebiti da tocchi multipli o ritentativi
+      final targetStato = approva ? 'approvata' : 'rifiutata';
+      final updateClaim = await db.collection('RichiesteVar').update(
+        selector.and(where.eq('stato', 'in_attesa')),
+        modify
+            .set('stato', targetStato)
+            .set('dataDecisione', now.toIso8601String())
+            .set('giudiceEffettivo', giudiceNick)
+            .set('sanzioneApplicata', !approva && sanzionaFalsaTestimonianza && richiesta.tipo == 'malus')
+            .unset('fotoBase64'),
+      );
+      final int nModified = (updateClaim['nModified'] as num?)?.toInt() ??
+          ((updateClaim['n'] as num?)?.toInt() ?? 0);
+      if (nModified == 0) {
+        return false; // Concurrency guard: un'altra chiamata ha già processato la richiesta!
+      }
+
       if (approva) {
         // 1. Assegna punti al bersaglio
         await assegnaBonusMalusAPartecipante(
@@ -4897,23 +4926,19 @@ class ApiService {
           for (var uDoc in uDocs) {
             if (matchesUserDoc(uDoc, richiesta.richiedente)) {
               final curXp = (uDoc['xp'] as num?)?.toInt() ?? ((uDoc['puntiEsperienza'] as num?)?.toInt() ?? 100);
+              ObjectId? uObjId;
+              try {
+                uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
+              } catch (_) {}
+              final uSel = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
               await db.collection('Utenti').update(
-                where.id(uDoc['_id'] as ObjectId),
+                uSel,
                 modify.set('xp', curXp + 25).set('puntiEsperienza', curXp + 25),
               );
               break;
             }
           }
         }
-
-        // 3. Aggiorna stato RichiestaVar ed ELIMINA la foto dal DB
-        await db.collection('RichiesteVar').update(
-          selector,
-          modify
-              .set('stato', 'approvata')
-              .set('dataDecisione', now.toIso8601String())
-              .unset('fotoBase64'),
-        );
 
         // 4. Invia notifica di successo al richiedente
         await db.collection('Notifiche').insertOne({
@@ -5175,10 +5200,11 @@ class ApiService {
         );
       }
 
-      // Aggiorna anche la notifica del giudice su 'decisa'
+      // Aggiorna tutte le notifiche del VAR per il giudice su 'approvato' o 'rifiutato'
       await db.collection('Notifiche').update(
-        where.eq('varId', varId).and(where.eq('destinatario', giudiceNick)),
+        where.eq('varId', varId).and(where.eq('tipo', 'var_richiesta_giudice')),
         modify.set('stato', approva ? 'approvato' : 'rifiutato').set('letto', true),
+        multiUpdate: true,
       );
 
       invalidateCache();

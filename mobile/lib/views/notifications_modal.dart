@@ -967,9 +967,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                                   builder: (_) => VarDecisionModal(
                                                     varId: varId,
                                                     onResolved: () {
-                                                      if (mounted) {
-                                                        Navigator.pop(context);
-                                                      }
+                                                      _caricaNotifiche();
                                                       widget.onRefreshHome();
                                                     },
                                                   ),
@@ -1002,9 +1000,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                                   builder: (_) => VarWitnessModal(
                                                     varId: varId,
                                                     onVoted: () {
-                                                      if (mounted) {
-                                                        Navigator.pop(context);
-                                                      }
+                                                      _caricaNotifiche();
                                                       widget.onRefreshHome();
                                                     },
                                                   ),
