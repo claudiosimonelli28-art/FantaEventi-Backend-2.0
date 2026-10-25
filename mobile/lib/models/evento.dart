@@ -22,12 +22,14 @@ class Evento {
 
   String get creatore => propostoDa;
   String get categoria => stato;
-  bool get isConcluso => DateTime.now().isAfter(dataFine) || stato == 'concluso';
+  bool get haAltriPartecipanti => partecipanti.any((p) => p.trim().isNotEmpty && p.trim().toLowerCase() != creatore.trim().toLowerCase());
+  bool get isAnnullato => stato == 'annullato';
+  bool get isConcluso => !isAnnullato && (DateTime.now().isAfter(dataFine) || stato == 'concluso');
   bool get isInCorso {
     final now = DateTime.now();
-    return !isConcluso && (stato == 'in_corso' || (now.isAfter(data) && now.isBefore(dataFine)));
+    return !isConcluso && !isAnnullato && (stato == 'in_corso' || (now.isAfter(data) && now.isBefore(dataFine) && haAltriPartecipanti));
   }
-  bool get isInProgramma => !isConcluso && !isInCorso;
+  bool get isInProgramma => !isConcluso && !isAnnullato && !isInCorso;
 
   Evento({
     required this.id,
@@ -59,14 +61,29 @@ class Evento {
         ? DateTime.tryParse(json['dataFine'] as String) ?? dtInizio.add(const Duration(hours: 4))
         : dtInizio.add(const Duration(hours: 4));
 
+    final rawCreatore = (json['propostoDa'] as String? ?? (json['creatore'] as String? ?? '')).trim();
+    final pList = (json['partecipanti'] as List<dynamic>?)
+            ?.map((e) => e.toString().trim())
+            .toList() ??
+        [];
+    final bool haAltri = pList.any((p) => p.isNotEmpty && p.toLowerCase() != rawCreatore.toLowerCase());
+
     final now = DateTime.now();
     String calculatedStato = 'in_programma';
-    if (now.isAfter(dtFine)) {
+    final rawStato = (json['stato'] as String? ?? 'in_programma').toLowerCase();
+
+    if (rawStato == 'annullato') {
+      calculatedStato = 'annullato';
+    } else if (now.isAfter(dtFine)) {
       calculatedStato = 'concluso';
-    } else if (now.isAfter(dtInizio) && now.isBefore(dtFine)) {
-      calculatedStato = 'in_corso';
+    } else if (now.isAfter(dtInizio)) {
+      if (!haAltri) {
+        calculatedStato = 'annullato'; // Orario scattato ma nessun partecipante confermato oltre l'organizzatore!
+      } else {
+        calculatedStato = 'in_corso';
+      }
     } else {
-      calculatedStato = json['stato'] as String? ?? 'in_programma';
+      calculatedStato = rawStato;
     }
 
     return Evento(
@@ -115,7 +132,7 @@ class Evento {
       'luogo': luogo,
       if (latitudine != null) 'latitudine': latitudine,
       if (longitudine != null) 'longitudine': longitudine,
-      'stato': isConcluso ? 'concluso' : stato,
+      'stato': isAnnullato ? 'annullato' : (isConcluso ? 'concluso' : (isInCorso ? 'in_corso' : stato)),
       'propostoDa': propostoDa,
       'creatore': propostoDa,
       'partecipanti': partecipanti,

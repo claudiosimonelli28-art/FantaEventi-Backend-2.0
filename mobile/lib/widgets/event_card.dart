@@ -43,9 +43,10 @@ class EventCard extends StatelessWidget {
           (cleanUser == 'claudio' && iClean == 'cloud');
     });
 
+    final isAnnullato = evento.isAnnullato;
     final isConcluso = evento.isConcluso;
     final isInCorso = evento.isInCorso;
-    final bool isIscrizioniChiuse = isConcluso || (isInCorso && !isPartecipante);
+    final bool isIscrizioniChiuse = isAnnullato || isConcluso || (isInCorso && !isPartecipante);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -53,18 +54,20 @@ class EventCard extends StatelessWidget {
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: isConcluso
-              ? const Color(0xFFEF4444).withValues(alpha: 0.5)
-              : isInCorso
-                  ? const Color(0xFF10B981).withValues(alpha: 0.8)
-                  : isCreatore
-                      ? const Color(0xFF8B5CF6).withValues(alpha: 0.7)
-                      : isPartecipante
-                          ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                          : isInvitato
-                              ? const Color(0xFFFACC15).withValues(alpha: 0.5)
-                              : Colors.white.withValues(alpha: 0.08),
-          width: (isCreatore || isPartecipante || isInvitato || isConcluso || isInCorso) ? 1.5 : 1.0,
+          color: isAnnullato
+              ? const Color(0xFFEF4444).withValues(alpha: 0.4)
+              : isConcluso
+                  ? const Color(0xFFEF4444).withValues(alpha: 0.5)
+                  : isInCorso
+                      ? const Color(0xFF10B981).withValues(alpha: 0.8)
+                      : isCreatore
+                          ? const Color(0xFF8B5CF6).withValues(alpha: 0.7)
+                          : isPartecipante
+                              ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                              : isInvitato
+                                  ? const Color(0xFFFACC15).withValues(alpha: 0.5)
+                                  : Colors.white.withValues(alpha: 0.08),
+          width: (isCreatore || isPartecipante || isInvitato || isConcluso || isInCorso || isAnnullato) ? 1.5 : 1.0,
         ),
         boxShadow: isInCorso
             ? [
@@ -110,7 +113,24 @@ class EventCard extends StatelessWidget {
                           runSpacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            if (isInCorso)
+                            if (isAnnullato)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.5)),
+                                ),
+                                child: Text(
+                                  '❌ ANNULLATO',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFF87171),
+                                  ),
+                                ),
+                              )
+                            else if (isInCorso)
                               const LivePulseBadge(
                                 text: 'IN CORSO',
                                 color: Color(0xFF10B981),
@@ -263,27 +283,31 @@ class EventCard extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: isIscrizioniChiuse ? null : onPartecipa,
                   icon: Icon(
-                    isConcluso
-                        ? Icons.flag_rounded
-                        : (isInCorso && !isPartecipante)
-                            ? Icons.lock_clock_rounded
-                            : isPartecipante
-                                ? Icons.check_circle_rounded
-                                : isInvitato
-                                    ? Icons.pending_actions_rounded
-                                    : Icons.person_add_alt_1_rounded,
+                    isAnnullato
+                        ? Icons.cancel_outlined
+                        : isConcluso
+                            ? Icons.flag_rounded
+                            : (isInCorso && !isPartecipante)
+                                ? Icons.lock_clock_rounded
+                                : isPartecipante
+                                    ? Icons.check_circle_rounded
+                                    : isInvitato
+                                        ? Icons.pending_actions_rounded
+                                        : Icons.person_add_alt_1_rounded,
                     size: 18,
                   ),
                   label: Text(
-                    isConcluso
-                        ? 'EVENTO CONCLUSO'
-                        : (isInCorso && !isPartecipante)
-                            ? (isInvitato ? 'TEMPO SCADUTO (EVENTO IN CORSO)' : 'ISCRIZIONI CHIUSE (IN CORSO)')
-                            : isPartecipante
-                                ? 'GIÀ PARTECIPANTE'
-                                : isInvitato
-                                    ? 'INVITO IN SOSPESO (RISPONDI)'
-                                    : 'PARTECIPA ALL\'EVENTO',
+                    isAnnullato
+                        ? 'EVENTO ANNULLATO (NESSUN PARTECIPANTE)'
+                        : isConcluso
+                            ? 'EVENTO CONCLUSO'
+                            : (isInCorso && !isPartecipante)
+                                ? (isInvitato ? 'TEMPO SCADUTO (EVENTO IN CORSO)' : 'ISCRIZIONI CHIUSE (IN CORSO)')
+                                : isPartecipante
+                                    ? 'GIÀ PARTECIPANTE'
+                                    : isInvitato
+                                        ? 'INVITO IN SOSPESO (RISPONDI)'
+                                        : 'PARTECIPA ALL\'EVENTO',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,

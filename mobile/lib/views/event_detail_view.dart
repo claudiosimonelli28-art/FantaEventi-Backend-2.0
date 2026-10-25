@@ -220,21 +220,82 @@ class _EventDetailViewState extends State<EventDetailView> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF22C55E).withValues(alpha: 0.2),
+                          color: _evento.isAnnullato
+                              ? const Color(0xFFEF4444).withValues(alpha: 0.2)
+                              : (_evento.isConcluso
+                                  ? const Color(0xFFEF4444).withValues(alpha: 0.2)
+                                  : (_evento.isInCorso
+                                      ? const Color(0xFF22C55E).withValues(alpha: 0.2)
+                                      : const Color(0xFF9333EA).withValues(alpha: 0.2))),
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFF22C55E)),
+                          border: Border.all(
+                            color: _evento.isAnnullato
+                                ? const Color(0xFFEF4444)
+                                : (_evento.isConcluso
+                                    ? const Color(0xFFEF4444)
+                                    : (_evento.isInCorso
+                                        ? const Color(0xFF22C55E)
+                                        : const Color(0xFF9333EA))),
+                          ),
                         ),
                         child: Text(
-                          _evento.stato.toUpperCase(),
+                          _evento.isAnnullato
+                              ? 'ANNULLATO'
+                              : (_evento.isConcluso
+                                  ? 'CONCLUSO'
+                                  : (_evento.isInCorso ? 'IN CORSO' : 'IN PROGRAMMA')),
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: const Color(0xFF22C55E),
+                            color: _evento.isAnnullato || _evento.isConcluso
+                                ? const Color(0xFFF87171)
+                                : (_evento.isInCorso ? const Color(0xFF22C55E) : const Color(0xFFC084FC)),
                           ),
                         ),
                       ),
                     ],
                   ),
+                  if (_evento.isAnnullato) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline_rounded, color: Color(0xFFF87171), size: 24),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Evento Annullato Automaticamente',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFF87171),
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'L\'orario di inizio è scattato senza altri partecipanti confermati oltre all\'organizzatore. L\'evento non è partito e non sono stati assegnati XP.',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   // Descrizione Completa
@@ -543,7 +604,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                       if (!giaPartecipa)
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: (_evento.isConcluso || _evento.isInCorso)
+                            onPressed: (_evento.isConcluso || _evento.isInCorso || _evento.isAnnullato)
                                 ? null
                                 : () async {
                                     try {
@@ -565,27 +626,31 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     }
                                   },
                             icon: Icon(
-                              _evento.isConcluso
-                                  ? Icons.flag_rounded
-                                  : _evento.isInCorso
-                                      ? Icons.lock_clock_rounded
-                                      : Icons.person_add,
-                              color: (_evento.isConcluso || _evento.isInCorso)
+                              _evento.isAnnullato
+                                  ? Icons.cancel_outlined
+                                  : (_evento.isConcluso
+                                      ? Icons.flag_rounded
+                                      : _evento.isInCorso
+                                          ? Icons.lock_clock_rounded
+                                          : Icons.person_add),
+                              color: (_evento.isAnnullato || _evento.isConcluso || _evento.isInCorso)
                                   ? const Color(0xFF64748B)
                                   : const Color(0xFF0F172A),
                             ),
                             label: Text(
-                              _evento.isConcluso
-                                  ? 'EVENTO CONCLUSO'
-                                  : _evento.isInCorso
-                                      ? 'ISCRIZIONI CHIUSE'
-                                      : 'PARTECIPA',
+                              _evento.isAnnullato
+                                  ? 'EVENTO ANNULLATO'
+                                  : (_evento.isConcluso
+                                      ? 'EVENTO CONCLUSO'
+                                      : _evento.isInCorso
+                                          ? 'ISCRIZIONI CHIUSE'
+                                          : 'PARTECIPA'),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: (_evento.isConcluso || _evento.isInCorso)
+                              backgroundColor: (_evento.isAnnullato || _evento.isConcluso || _evento.isInCorso)
                                   ? const Color(0xFF334155)
                                   : const Color(0xFFFACC15),
-                              foregroundColor: (_evento.isConcluso || _evento.isInCorso)
+                              foregroundColor: (_evento.isAnnullato || _evento.isConcluso || _evento.isInCorso)
                                   ? const Color(0xFF64748B)
                                   : const Color(0xFF0F172A),
                               disabledBackgroundColor: const Color(0xFF334155),
@@ -597,7 +662,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                         ),
                       if (!giaPartecipa && (giaPartecipa || isCreatore)) const SizedBox(width: 12),
 
-                      if ((giaPartecipa || isCreatore) && _evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
+                      if ((giaPartecipa || isCreatore) && !_evento.isAnnullato && _evento.stato.trim().toLowerCase() != 'concluso' && !DateTime.now().isAfter(_evento.dataFine))
                         Expanded(
                           child: ElevatedButton.icon(
                             key: TutorialController.instance.isTutorialEvent(_evento) ? TutorialController.instance.keyProponiBonus : null,
@@ -804,15 +869,20 @@ class _EventDetailViewState extends State<EventDetailView> {
     final _evento = _viewModel.evento;
     final sortedEntries = _viewModel.getSortedLeaderboardEntries();
 
-    final isConcluso = _evento.stato.trim().toLowerCase() == 'concluso' || now.isAfter(_evento.dataFine);
-    final isInCorso = !isConcluso && (now.isAfter(_evento.data) || _evento.stato.trim().toLowerCase() == 'in_corso');
-    final isInProgramma = !isConcluso && !isInCorso;
+    final isAnnullato = _evento.isAnnullato;
+    final isConcluso = !isAnnullato && (_evento.stato.trim().toLowerCase() == 'concluso' || now.isAfter(_evento.dataFine));
+    final isInCorso = !isAnnullato && !isConcluso && (now.isAfter(_evento.data) || _evento.stato.trim().toLowerCase() == 'in_corso');
+    final isInProgramma = !isAnnullato && !isConcluso && !isInCorso;
 
     String headerTitle = '🏆 Classifica Live Evento';
     String tagText = '🔴 LIVE';
     Color tagColor = const Color(0xFF9333EA);
 
-    if (isConcluso) {
+    if (isAnnullato) {
+      headerTitle = '❌ Classifica Evento (Annullato)';
+      tagText = 'ANNULLATO';
+      tagColor = const Color(0xFFEF4444);
+    } else if (isConcluso) {
       headerTitle = '🏆 Classifica Finale Evento';
       tagText = '🔒 CONGELATO';
       tagColor = const Color(0xFF10B981);
@@ -1994,7 +2064,7 @@ class _EventDetailViewState extends State<EventDetailView> {
     final _evento = _viewModel.evento;
     final curUser = _viewModel.currentUserNick;
     final creatore = _viewModel.creatore;
-    final isEventoConcluso = _viewModel.isConcluso || DateTime.now().isAfter(_evento.dataFine);
+    final isEventoConcluso = _viewModel.isAnnullato || _viewModel.isConcluso || DateTime.now().isAfter(_evento.dataFine);
     final isOrganizzatore = !isEventoConcluso && (creatore.trim().toLowerCase() == curUser.trim().toLowerCase());
 
     final istanzeAssegnazioni = _viewModel.getIstanzeAssegnazioniGiocatore(targetNick);
@@ -2085,6 +2155,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                           final BonusMalus bm = item['bonus'];
                           final int numIstanza = item['numIstanza'];
                           final int totaleIstanze = item['totaleIstanze'];
+                          final bool isVar = item['isVar'] == true;
                           final isBonus = bm.punti >= 0;
                           final ptStr = isBonus ? '+${bm.punti}' : '${bm.punti}';
                           final labelTitolo = totaleIstanze > 1
@@ -2111,9 +2182,50 @@ class _EventDetailViewState extends State<EventDetailView> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        labelTitolo,
-                                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                      Wrap(
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          Text(
+                                            labelTitolo,
+                                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.white),
+                                          ),
+                                          if (isVar)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                gradient: const LinearGradient(
+                                                  colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                                                ),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: const Color(0xFFC084FC).withValues(alpha: 0.5)),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: const Color(0xFF8B5CF6).withValues(alpha: 0.3),
+                                                    blurRadius: 4,
+                                                    offset: const Offset(0, 1),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Text('📺', style: TextStyle(fontSize: 10)),
+                                                  const SizedBox(width: 3),
+                                                  Text(
+                                                    'ASSEGNATO TRAMITE VAR',
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 8.5,
+                                                      fontWeight: FontWeight.w800,
+                                                      letterSpacing: 0.3,
+                                                      color: Colors.white,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                       if (bm.descrizione.isNotEmpty)
                                         Text(
@@ -2134,7 +2246,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                                     style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.white),
                                   ),
                                 ),
-                                if (isOrganizzatore && bm.categoria != 'VAR' && !bm.titolo.contains('VAR')) ...[
+                                if (isOrganizzatore && !isVar && bm.categoria != 'VAR' && !bm.titolo.contains('VAR') && !bm.titolo.contains('Falsa Testimonianza')) ...[
                                   const SizedBox(width: 8),
                                   IconButton(
                                     icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),

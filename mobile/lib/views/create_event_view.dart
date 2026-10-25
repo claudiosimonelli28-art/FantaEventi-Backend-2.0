@@ -264,7 +264,17 @@ class _CreateEventViewState extends State<CreateEventView> {
         : (curUser?.nome.isNotEmpty == true ? curUser!.nome : 'Cloud')).trim();
     final creatore = _apiService.resolveNickname(rawCreatore);
 
-      if (_partecipantiSelezionati.isEmpty) {
+      final invitatiAmici = _partecipantiSelezionati.where((p) => !_apiService.isSamePerson(p, creatore)).toList();
+      if (invitatiAmici.isEmpty) {
+        AppToast.showWarning(
+          context,
+          'Invita almeno 1 amico',
+          'FantaEventi è un gioco di gruppo! Devi selezionare e invitare almeno 1 amico per poter creare l\'evento.',
+        );
+        return;
+      }
+
+      if (!_partecipantiSelezionati.any((p) => _apiService.isSamePerson(p, creatore))) {
         _partecipantiSelezionati.add(creatore);
       }
 

@@ -102,6 +102,8 @@ class EventDetailViewModel extends BaseViewModel {
     return _apiService.isSamePerson(creatore, currentUserNick) ||
         _apiService.isSamePerson(creatore, _apiService.currentUser?.nome);
   }
+  bool get isAnnullato => _evento.isAnnullato;
+  bool get isInCorso => _evento.isInCorso;
   bool get isConcluso => _evento.isConcluso;
   bool get giaPartecipa {
     final curId = _apiService.currentUser?.id.trim().toLowerCase() ?? '';
@@ -384,11 +386,30 @@ class EventDetailViewModel extends BaseViewModel {
           bm.eventoId.trim().toLowerCase() == _evento.titolo.trim().toLowerCase();
       if (isSameEv || _allBonusMalus.length == 1) {
         final count = bm.assegnatoA.where((u) => u.trim().toLowerCase() == targetNick.trim().toLowerCase()).length;
+        
+        final bool isVarCategory = bm.categoria.toUpperCase() == 'VAR' ||
+            bm.titolo.contains('VAR') ||
+            bm.titolo.contains('Falsa Testimonianza');
+
+        final approvedVarCount = _richiesteVarEvento.where((r) =>
+            r.isApprovata &&
+            _apiService.isSamePerson(r.bersaglio, targetNick) &&
+            (r.bonusMalusId == bm.id || r.bonusMalusTitolo.trim().toLowerCase() == bm.titolo.trim().toLowerCase())).length;
+
+        final sanzioneVarCount = _richiesteVarEvento.where((r) =>
+            r.sanzioneApplicata &&
+            _apiService.isSamePerson(r.richiedente, targetNick) &&
+            (bm.titolo.contains('Falsa Testimonianza') || bm.categoria.toUpperCase() == 'VAR')).length;
+
+        final totalVarForThisBm = approvedVarCount + sanzioneVarCount;
+
         for (int i = 0; i < count; i++) {
+          final bool isFromVar = isVarCategory || (i < totalVarForThisBm);
           istanzeAssegnazioni.add({
             'bonus': bm,
             'numIstanza': i + 1,
             'totaleIstanze': count,
+            'isVar': isFromVar,
           });
         }
       }
@@ -453,6 +474,14 @@ class EventDetailViewModel extends BaseViewModel {
     required String utenteDestinatario,
     required int punti,
   }) async {
+    // Controllo preventivo: non stornare assegnazioni del VAR
+    final bool isVar = _richiesteVarEvento.any((r) =>
+        r.isApprovata &&
+        _apiService.isSamePerson(r.bersaglio, utenteDestinatario) &&
+        (r.bonusMalusId == bonusId || r.bonusMalusTitolo.trim().toLowerCase() == bonusId.trim().toLowerCase()));
+    if (isVar) {
+      throw Exception('Non è consentito stornare un\'assegnazione o sanzione convalidata ufficialmente dal VAR!');
+    }
     await _apiService.annullaAssegnazioneBonus(
       eventoId: _evento.id,
       bonusId: bonusId,

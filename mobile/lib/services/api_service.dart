@@ -1958,9 +1958,9 @@ class ApiService {
         final evTitolo = (ev['titolo'] ?? ev['nome'] ?? 'Evento Fanta').toString().trim();
         final dtEndStr = ev['dataFine']?.toString() ?? ev['data']?.toString() ?? now.toIso8601String();
         final dtEnd = DateTime.tryParse(dtEndStr) ?? now;
-        final bool isConcluso = now.isAfter(dtEnd) || ev['stato'] == 'concluso';
+        final bool isConcluso = ev['stato'] != 'annullato' && (now.isAfter(dtEnd) || ev['stato'] == 'concluso');
 
-        if (!isConcluso) continue;
+        if (!isConcluso || ev['stato'] == 'annullato') continue;
 
         final partecipanti = (ev['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
         final dateStr = '${dtEnd.day.toString().padLeft(2, '0')}/${dtEnd.month.toString().padLeft(2, '0')}/${dtEnd.year}';
@@ -2154,7 +2154,66 @@ class ApiService {
           DateTime dtEnd = DateTime.tryParse(dtEndStr) ?? dtStart.add(const Duration(hours: 24));
 
           final partecipanti = (d['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-          final bool isConcluso = now.isAfter(dtEnd) || (d['stato'] == 'concluso');
+          final rawCreatore = (d['propostoDa'] ?? d['creatore'] ?? '').toString().trim();
+          final bool haAltriPartecipanti = partecipanti.any((p) => p.trim().isNotEmpty && !isSamePerson(p, rawCreatore));
+          final bool rawIsAnnullato = (d['stato'] ?? '').toString().trim().toLowerCase() == 'annullato';
+
+          // Anti-farming e gestione avvio evento:
+          if (now.isAfter(dtStart) && !rawIsAnnullato) {
+            if (!haAltriPartecipanti) {
+              // Scattato orario di inizio ma nessun amico ha accettato: l'evento viene auto-annullato e non parte mai!
+              if (d['_id'] is ObjectId) {
+                try {
+                  await db.collection('Evento').update(
+                    where.id(d['_id'] as ObjectId),
+                    modify.set('stato', 'annullato').set('xpCreatoreAssegnati', false),
+                  );
+                  d['stato'] = 'annullato';
+                } catch (_) {}
+              }
+            } else {
+              // L'evento parte regolarmente con almeno 2 partecipanti: accredita +100 XP una tantum al creatore
+              if (d['xpCreatoreAssegnati'] != true && d['_id'] is ObjectId) {
+                try {
+                  await db.collection('Evento').update(
+                    where.id(d['_id'] as ObjectId),
+                    modify.set('xpCreatoreAssegnati', true),
+                  );
+                  d['xpCreatoreAssegnati'] = true;
+
+                  final evTitolo = (d['titolo'] ?? d['nome'] ?? 'Evento Fanta').toString().trim();
+                  final logVoce = formattaVoceStorico('🏆 Evento "$evTitolo" avviato con successo (+100 XP)');
+                  final uDocsForXp = await db.collection('Utenti').find().toList();
+                  for (var uDoc in uDocsForXp) {
+                    if (matchesUserDoc(uDoc, rawCreatore)) {
+                      final int curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+                      final int nuoviXp = curXp + 100;
+                      final int nuovoLivello = (nuoviXp / 1000).floor() + 1;
+                      final List<dynamic> curStorico = List.from(uDoc['storicoVoti'] ?? []);
+                      if (!curStorico.any((s) => s.toString().contains('Evento "$evTitolo" avviato con successo'))) {
+                        curStorico.insert(0, logVoce);
+                      }
+                      await db.collection('Utenti').update(
+                        where.id(uDoc['_id'] as ObjectId),
+                        modify.set('xp', nuoviXp).set('livello', nuovoLivello).set('storicoVoti', curStorico),
+                      );
+
+                      if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
+                        _currentUser = _currentUser!.copyWith(
+                          xp: nuoviXp,
+                          livello: nuovoLivello,
+                          storicoVoti: [logVoce, ..._currentUser!.storicoVoti],
+                        );
+                      }
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+          }
+
+          final bool isAnnullato = (d['stato'] ?? '').toString().trim().toLowerCase() == 'annullato';
+          final bool isConcluso = !isAnnullato && (now.isAfter(dtEnd) || (d['stato'] == 'concluso'));
           final int giorniDaConclusione = isConcluso ? now.difference(dtEnd).inDays : 0;
 
           // Se l'evento e' finito da piu' di 7 giorni, archivialo dal DB
@@ -2491,7 +2550,7 @@ class ApiService {
             'data': dtStartStr,
             'dataFine': dtEndStr,
             'luogo': d['luogo'] ?? '',
-            'stato': isConcluso ? 'concluso' : (d['stato'] ?? 'in_programma'),
+            'stato': isAnnullato ? 'annullato' : (isConcluso ? 'concluso' : (d['stato'] ?? 'in_programma')),
             'propostoDa': d['propostoDa'] ?? d['creatore'] ?? 'Cloud',
             'partecipanti': partecipanti,
             'invitati': (d['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
@@ -3234,6 +3293,7 @@ class ApiService {
           'invitati': invitati,
           'copertinaUrl': nuovoEvento.copertinaUrl,
           'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
+          'xpCreatoreAssegnati': false,
         }).timeout(const Duration(seconds: 5));
 
         final insertedEvId = evRes.id?.toHexString() ?? '';
@@ -3285,13 +3345,11 @@ class ApiService {
     final savedEvento = eventPayload.copyWith(id: realEvId);
     _eventi.insert(0, savedEvento);
 
-    if (_currentUser != null && awardXp) {
-      final nuoviXp = _currentUser!.xp + 100;
-      final nuovoLivello = (nuoviXp / 1000).floor() + 1;
-      final logVoce = formattaVoceStorico('Creato evento "${nuovoEvento.titolo}" (+100 XP)');
+    // Protezione anti-farming: i 100 XP per la creazione dell'evento vengono assegnati
+    // solo ed esclusivamente quando l'evento scatta 'in_corso' con almeno 1 altro partecipante!
+    if (_currentUser != null) {
+      final logVoce = formattaVoceStorico('Creato evento "${nuovoEvento.titolo}" (in attesa di avvio)');
       _currentUser = _currentUser!.copyWith(
-        xp: nuoviXp,
-        livello: nuovoLivello,
         storicoVoti: [
           logVoce,
           ..._currentUser!.storicoVoti,
@@ -3307,7 +3365,7 @@ class ApiService {
               curStorico.insert(0, logVoce);
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
-                modify.set('xp', _currentUser!.xp).set('livello', _currentUser!.livello).set('storicoVoti', curStorico),
+                modify.set('storicoVoti', curStorico),
               ).timeout(const Duration(seconds: 4));
             }
           }
@@ -4442,6 +4500,18 @@ class ApiService {
     invalidateCache();
     final cleanDest = utenteDestinatario.trim().toLowerCase();
 
+    // 0. Controllo di sicurezza: blocco assoluto di storno per bonus/malus o sanzioni originate dal VAR
+    for (var bm in _bonusMalusList) {
+      if (bm.id == bonusId || bm.titolo.toLowerCase() == bonusId.toLowerCase()) {
+        final bool isVarCat = bm.categoria.toUpperCase() == 'VAR' ||
+            bm.titolo.contains('VAR') ||
+            bm.titolo.contains('Falsa Testimonianza');
+        if (isVarCat) {
+          throw Exception('Non è possibile stornare un bonus/malus o sanzione assegnata tramite sentenza VAR.');
+        }
+      }
+    }
+
     // 1. In-memory update (rimuove SOLO la singola istanza in caso di assegnazioni multiple)
     for (int i = 0; i < _bonusMalusList.length; i++) {
       if (_bonusMalusList[i].id == bonusId || _bonusMalusList[i].titolo.toLowerCase() == bonusId.toLowerCase()) {
@@ -4462,6 +4532,21 @@ class ApiService {
         final bmSelector = bmObjId != null ? where.id(bmObjId) : where.eq('_id', bonusId);
         var bmDoc = await db.collection('BonusMalus').findOne(bmSelector);
         if (bmDoc != null) {
+          final bmCat = (bmDoc['categoria'] ?? '').toString().toUpperCase();
+          final bmTit = (bmDoc['titolo'] ?? bmDoc['nome'] ?? '').toString();
+          if (bmCat == 'VAR' || bmTit.contains('VAR') || bmTit.contains('Falsa Testimonianza')) {
+            throw Exception('Non è possibile stornare un bonus/malus o sanzione assegnata tramite sentenza VAR.');
+          }
+          final realBmId = bmDoc['_id']?.toHexString() ?? bmDoc['_id']?.toString() ?? bonusId;
+          final approvedVar = await db.collection('RichiesteVar').findOne(
+            where.eq('eventoId', eventoId)
+                .and(where.eq('stato', 'approvata'))
+                .and(where.eq('bonusMalusId', realBmId)),
+          );
+          if (approvedVar != null) {
+            throw Exception('Non è possibile stornare un bonus/malus convalidato tramite VAR.');
+          }
+
           final List<dynamic> assList = List.from(bmDoc['assegnatoA'] ?? []);
           final idx = assList.indexWhere((u) => u.toString().trim().toLowerCase() == cleanDest);
           if (idx != -1) {
