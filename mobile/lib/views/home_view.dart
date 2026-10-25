@@ -1865,22 +1865,10 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
                               else
                                 Column(
                                   children: filteredForEvent.map((bm) {
-                                    final isMine = bm.propostoDa.trim().toLowerCase() == cleanUser;
                                     final isVarSanction = bm.categoria == 'VAR' || bm.titolo.contains('VAR');
                                     return BonusMalusCard(
                                       bonusMalus: bm,
-                                      onElimina: (isMine && !isVarSanction)
-                                          ? () async {
-                                              await _viewModel.eliminaBonusMalus(bm.id);
-                                              if (!mounted) return;
-                                              AppToast.showSuccess(
-                                                context,
-                                                'Proposta Eliminata 🗑️',
-                                                'Proposta Bonus/Malus eliminata con successo!',
-                                              );
-                                              _loadData();
-                                            }
-                                          : null,
+                                      onElimina: null,
                                       onAssegna: (isOrganizzatore && !isVarSanction)
                                           ? () => _apriSelettoreAssegnazione(ev, bm)
                                           : null,

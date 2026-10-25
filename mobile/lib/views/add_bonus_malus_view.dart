@@ -70,6 +70,274 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
     super.dispose();
   }
 
+  Future<bool?> _mostraConfermaProposta({
+    required String titolo,
+    required String descrizione,
+    required int punti,
+    required bool isBonus,
+    required String categoria,
+    required bool riassegnabile,
+    required String nomeEvento,
+  }) async {
+    return await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1E293B),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(color: Color(0xFF9333EA), width: 2),
+            ),
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF9333EA).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.fact_check_rounded, color: Color(0xFFC084FC), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Riepilogo Proposta',
+                          style: GoogleFonts.poppins(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          'Controlla attentamente prima di inviare',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isBonus
+                                ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                                : const Color(0xFFEF4444).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            isBonus ? '+$punti PT (BONUS)' : '-$punti PT (MALUS)',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isBonus ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            categoria,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      titolo,
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    if (descrizione.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        descrizione,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    const Divider(color: Color(0xFF334155), height: 1),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.event_note_rounded, size: 14, color: Color(0xFFFACC15)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Evento: $nomeEvento',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFFCBD5E1),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(
+                          riassegnabile ? Icons.replay_rounded : Icons.looks_one_rounded,
+                          size: 14,
+                          color: const Color(0xFFFACC15),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          riassegnabile ? 'Riassegnabile più volte' : 'Assegnabile una sola volta',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAB308).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFEAB308).withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Color(0xFFFACC15), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Una volta inviata, la proposta entrerà subito nelle Votazioni Live e non potrà più essere ritirata o modificata da nessuno.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFFFDE047),
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFCBD5E1),
+                        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'Fammi rileggere',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isBonus ? const Color(0xFFFACC15) : const Color(0xFF9333EA),
+                        foregroundColor: isBonus ? const Color(0xFF0F172A) : Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.rocket_launch_rounded, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Sì, invia proposta',
+                            style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _submitForm() async {
     if (_isLoading) return;
 
@@ -110,17 +378,32 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
         return;
       }
 
+      int mePunti = int.tryParse(_puntiController.text.trim()) ?? 10;
+      if (!_isBonus && mePunti > 0) {
+        mePunti = -mePunti;
+      } else if (_isBonus && mePunti < 0) {
+        mePunti = mePunti.abs();
+      }
+
+      final confermato = await _mostraConfermaProposta(
+        titolo: _titoloController.text.trim(),
+        descrizione: _descrizioneController.text.trim(),
+        punti: mePunti.abs(),
+        isBonus: _isBonus,
+        categoria: _categoriaSelezionata,
+        riassegnabile: _riassegnabileMoltepliciVolte,
+        nomeEvento: _eventoSelezionato!.titolo,
+      );
+
+      if (confermato != true) {
+        return;
+      }
+
       setState(() {
         _isLoading = true;
       });
 
       try {
-        int mePunti = int.tryParse(_puntiController.text.trim()) ?? 10;
-        if (!_isBonus && mePunti > 0) {
-          mePunti = -mePunti;
-        } else if (_isBonus && mePunti < 0) {
-          mePunti = mePunti.abs();
-        }
 
         final meUser = _apiService.getCurrentUser();
         final rawUserNick = (meUser.nickname.isNotEmpty ? meUser.nickname : meUser.nome).trim();
