@@ -878,24 +878,33 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                         if (isProposal) ...[
                                           const SizedBox(height: 10),
                                           if (haGiaVotato) ...[
-                                            Container(
-                                              width: double.infinity,
-                                              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                                                borderRadius: BorderRadius.circular(10),
-                                                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
-                                              ),
-                                              child: Row(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  const Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 15),
-                                                  const SizedBox(width: 6),
-                                                  Text(
-                                                    '✓ VOTO GIÀ ESPRESSO${votoEspresso.isNotEmpty ? ' (${votoEspresso.toUpperCase()})' : ''}',
-                                                    style: GoogleFonts.poppins(color: const Color(0xFF10B981), fontSize: 10.5, fontWeight: FontWeight.bold),
-                                                  ),
-                                                ],
+                                            InkWell(
+                                              onTap: () {
+                                                Navigator.pop(context);
+                                                if (widget.onNavigateTab != null) {
+                                                  widget.onNavigateTab!(2);
+                                                }
+                                              },
+                                              borderRadius: BorderRadius.circular(10),
+                                              child: Container(
+                                                width: double.infinity,
+                                                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                                  borderRadius: BorderRadius.circular(10),
+                                                  border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                                                ),
+                                                child: Row(
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    const Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 15),
+                                                    const SizedBox(width: 6),
+                                                    Text(
+                                                      '✓ VOTO GIÀ ESPRESSO${votoEspresso.isNotEmpty ? ' (${votoEspresso.toUpperCase()})' : ''} • VEDI LIVE',
+                                                      style: GoogleFonts.poppins(color: const Color(0xFF10B981), fontSize: 10.5, fontWeight: FontWeight.bold),
+                                                    ),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ] else if (votazioneChiusa) ...[

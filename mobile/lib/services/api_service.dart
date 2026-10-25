@@ -2907,8 +2907,10 @@ class ApiService {
         for (var bm in bmDocs) {
           final bmIdHex = bm['_id'] is ObjectId ? (bm['_id'] as ObjectId).toHexString().toLowerCase() : (bm['_id']?.toString() ?? '').toLowerCase();
           if (bmIdHex.isNotEmpty) bonusMalusMap[bmIdHex] = bm;
-          final bmNome = (bm['nome'] ?? '').toString().trim().toLowerCase();
+          final bmNome = (bm['nome'] ?? bm['titolo'] ?? '').toString().trim().toLowerCase();
           if (bmNome.isNotEmpty) bonusMalusMap[bmNome] = bm;
+          final bmTit = (bm['titolo'] ?? '').toString().trim().toLowerCase();
+          if (bmTit.isNotEmpty) bonusMalusMap[bmTit] = bm;
         }
 
         // Mappa delle votazioni per bonusId / votazioneId / titolo
@@ -2978,17 +2980,17 @@ class ApiService {
           bool votazioneChiusa = false;
           String esitoVotazione = '';
 
-          final bonusId = (d['bonusId'] ?? '').toString().toLowerCase();
-          final notTitolo = (d['titolo'] ?? '').toString().toLowerCase();
-          final notMsg = (d['messaggio'] ?? '').toString().toLowerCase();
+          final bonusId = (d['bonusId'] ?? '').toString().trim().toLowerCase();
+          final bonusTitolo = (d['bonusTitolo'] ?? '').toString().trim().toLowerCase();
 
-          // 1. Controllo su BonusMalus collection (proponente e stato approvato/respinto)
-          final matchedBm = bonusMalusMap[bonusId] ??
-              bonusMalusMap[notTitolo] ??
-              (idStr.isNotEmpty ? bonusMalusMap[idStr.toLowerCase()] : null);
+          // 1. Controllo su BonusMalus collection (stato approvato/respinto e proponente)
+          final matchedBm = (bonusId.isNotEmpty ? bonusMalusMap[bonusId] : null) ??
+              (bonusTitolo.isNotEmpty ? bonusMalusMap[bonusTitolo] : null);
+
           if (matchedBm != null) {
-            final propDa = (matchedBm['propostoDa'] ?? '').toString().trim().toLowerCase();
-            if (propDa.isNotEmpty && propDa == cleanNick) {
+            final propDa = (matchedBm['propostoDa'] ?? '').toString().trim();
+            // Se chi visualizza la notifica è l'autore della proposta, ha già votato 'pro'
+            if (propDa.isNotEmpty && isSamePerson(propDa, cleanNick)) {
               haGiaVotato = true;
               votoEspresso = 'pro';
             }
@@ -2999,49 +3001,45 @@ class ApiService {
             }
           }
 
-          // 2. Controllo voti individuali da Votazioni collection
-          for (var vDoc in votazioniDocs) {
-            final vUser = (vDoc['utente'] ?? '').toString().trim().toLowerCase();
-            if (vUser != cleanNick) continue;
+          // 2. Controllo voti individuali da Votazioni collection (MATCH ESATTO su ID o Titolo esatto + Evento)
+          if (!haGiaVotato) {
+            for (var vDoc in votazioniDocs) {
+              final vUser = (vDoc['utente'] ?? '').toString().trim();
+              if (!isSamePerson(vUser, cleanNick)) continue;
 
-            final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
-            final vTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
-            final bool isMatch = (bonusId.isNotEmpty && (vId == bonusId || vTit == bonusId)) ||
-                (vId.isNotEmpty && vId == idStr.toLowerCase()) ||
-                (vTit.isNotEmpty && (notTitolo.contains(vTit) || notMsg.contains(vTit)));
+              final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
+              final vTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+              final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
 
-            if (isMatch) {
-              haGiaVotato = true;
-              votoEspresso = (vDoc['voto']?.toString() ?? 'pro').toLowerCase();
-              final vStato = (vDoc['stato'] ?? '').toString().toLowerCase();
-              if (vStato == 'approvato' || vStato == 'respinto') {
-                votazioneChiusa = true;
-                esitoVotazione = vStato;
+              final bool idMatch = bonusId.isNotEmpty && (vId == bonusId);
+              final bool titleMatch = bonusTitolo.isNotEmpty && vTit == bonusTitolo && (evIdLower.isEmpty || vEvId.isEmpty || vEvId == evIdLower);
+
+              if (idMatch || titleMatch) {
+                haGiaVotato = true;
+                votoEspresso = (vDoc['voto']?.toString() ?? 'pro').toLowerCase();
+                final vStato = (vDoc['stato'] ?? '').toString().toLowerCase();
+                if (vStato == 'approvato' || vStato == 'respinto') {
+                  votazioneChiusa = true;
+                  esitoVotazione = vStato;
+                }
+                break;
               }
-              break;
             }
           }
 
-          // 3. Fallback controllo matchVotazione generico
+          // 3. Fallback controllo matchVotazione generico (SOLO MATCH ESATTO per ID o Titolo)
           if (!haGiaVotato || !votazioneChiusa) {
             Map<String, dynamic>? matchVotazione;
             if (bonusId.isNotEmpty && votazioniMap.containsKey(bonusId)) {
               matchVotazione = votazioniMap[bonusId];
-            } else if (votazioniMap.containsKey(idStr.toLowerCase())) {
-              matchVotazione = votazioniMap[idStr.toLowerCase()];
-            } else {
-              for (var entry in votazioniMap.entries) {
-                if (entry.key.isNotEmpty && (notTitolo.contains(entry.key) || notMsg.contains(entry.key))) {
-                  matchVotazione = entry.value;
-                  break;
-                }
-              }
+            } else if (bonusTitolo.isNotEmpty && votazioniMap.containsKey(bonusTitolo)) {
+              matchVotazione = votazioniMap[bonusTitolo];
             }
 
             if (matchVotazione != null) {
               final votiMap = matchVotazione['votiUtenti'] as Map? ?? {};
               for (var k in votiMap.keys) {
-                if (k.toString().trim().toLowerCase() == cleanNick) {
+                if (isSamePerson(k.toString().trim(), cleanNick)) {
                   haGiaVotato = true;
                   votoEspresso = votiMap[k]?.toString() ?? 'votato';
                   break;
