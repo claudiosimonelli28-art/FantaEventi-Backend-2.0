@@ -8,24 +8,25 @@ class NotificaController {
   Future<Response> getNotificheUtente(Request request) async {
     try {
       final dest = request.url.queryParameters['utente'] ?? '';
-      print('📥 [HTTP GET /api/notifiche] Recupero notifiche per "$dest"...');
-
       final cleanDest = dest.trim().toLowerCase();
-      final allNotifiche = await DbService.instance.db.collection('Notifiche').find().toList();
+      final allNotifiche = await DbService.instance.notificheCollection.find().toList();
       final docs = allNotifiche.where((d) {
         final dDest = (d['destinatario'] ?? '').toString().trim().toLowerCase();
         return dDest == cleanDest || cleanDest.isEmpty;
       }).toList();
 
       final list = docs.map((d) => {
-        'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
+        'id': d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : (d['_id']?.toString() ?? ''),
         'mittente': d['mittente'] ?? 'FantaEventi',
         'destinatario': d['destinatario'] ?? '',
         'titolo': d['titolo'] ?? 'Nuova Notifica',
         'messaggio': d['messaggio'] ?? '',
         'eventoId': d['eventoId'] ?? '',
-        'tipo': d['tipo'] ?? 'invito', // 'invito', 'info'
-        'stato': d['stato'] ?? 'in_attesa', // 'in_attesa', 'accettato', 'rifiutato'
+        'bonusId': d['bonusId'] ?? '',
+        'bonusTitolo': d['bonusTitolo'] ?? '',
+        'tipo': d['tipo'] ?? 'invito',
+        'stato': d['stato'] ?? 'in_attesa',
+        'letto': d['letto'] == true,
         'data': d['data']?.toString() ?? DateTime.now().toIso8601String(),
       }).toList();
 
@@ -34,7 +35,34 @@ class NotificaController {
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
-      print('❌ Errore recupero notifiche: $e');
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // POST /api/notifiche/segna-letta
+  Future<Response> segnaLetta(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final notificaId = data['notificaId']?.toString() ?? data['id']?.toString() ?? '';
+
+      ObjectId? objId;
+      try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}
+      final selector = objId != null ? where.id(objId) : where.eq('_id', notificaId);
+
+      await DbService.instance.notificheCollection.update(
+        selector,
+        modify.set('letto', true),
+      );
+
+      return Response.ok(
+        jsonEncode({'message': 'Notifica segnata come letta'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},
@@ -48,37 +76,27 @@ class NotificaController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
       final notificaId = data['notificaId']?.toString() ?? '';
-      final azione = (data['azione']?.toString() ?? '').toLowerCase(); // 'accetta', 'rifiuta', 'pro', 'contro'
+      final azione = (data['azione']?.toString() ?? '').toLowerCase();
       final utente = data['utente']?.toString() ?? '';
 
-      print('📥 [HTTP POST /api/notifiche/rispondi] Notifica ID "$notificaId" -> Azione: $azione di $utente');
-
       ObjectId? objId;
-      try {
-        objId = ObjectId.fromHexString(notificaId);
-      } catch (_) {}
-
+      try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}
       final selector = objId != null ? where.id(objId) : where.eq('_id', notificaId);
-      final doc = await DbService.instance.db.collection('Notifiche').findOne(selector);
+      final doc = await DbService.instance.notificheCollection.findOne(selector);
 
       if (doc != null) {
         final eventoId = doc['eventoId']?.toString() ?? '';
         final isPro = azione == 'accetta' || azione == 'pro' || azione == 'favorevole';
         final nuovoStato = isPro ? 'accettato' : 'rifiutato';
 
-        // Aggiorna la notifica su MongoDB
-        await DbService.instance.db.collection('Notifiche').update(
+        await DbService.instance.notificheCollection.update(
           selector,
-          modify.set('stato', nuovoStato).set('votoEspresso', isPro ? 'pro' : 'contro'),
+          modify.set('stato', nuovoStato).set('votoEspresso', isPro ? 'pro' : 'contro').set('letto', true),
         );
 
-        // Se accetta l'invito all'evento, aggiungi l'utente ai partecipanti!
         if (azione == 'accetta' && eventoId.isNotEmpty) {
           ObjectId? evObjId;
-          try {
-            evObjId = ObjectId.fromHexString(eventoId);
-          } catch (_) {}
-
+          try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
           final evSelector = evObjId != null ? where.id(evObjId) : where.eq('nome', eventoId);
           final evDoc = await DbService.instance.eventiCollection.findOne(evSelector);
 
@@ -97,7 +115,6 @@ class NotificaController {
                 .addToSet('partecipanti', utente)
                 .pullAll('invitati', pullList),
             );
-            print('✅ Utente "$utente" iscritto atomicamente all\'evento ed rimosso dagli inviti in sospeso!');
           }
         }
       }
@@ -107,7 +124,6 @@ class NotificaController {
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
-      print('❌ Errore risposta notifica: $e');
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},

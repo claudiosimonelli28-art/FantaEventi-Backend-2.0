@@ -7,57 +7,113 @@ import '../models/utente.dart';
 import '../utils/nickname_helper.dart';
 
 class EventoController {
-  // GET /api/eventi (con risoluzione dei Nickname reali per i partecipanti)
+  // GET /api/eventi
   Future<Response> getEventi(Request request) async {
     try {
-      print('📥 [HTTP GET /api/eventi] Recupero eventi e risoluzione Nickname...');
+      final now = DateTime.now();
       final docs = await DbService.instance.eventiCollection.find().toList();
       final utentiDocs = await DbService.instance.utentiCollection.find().toList();
 
-      final Map<String, String> userMap = {};
-      for (var u in utentiDocs) {
-        final utente = Utente.fromMap(u);
-        final idStr = u['_id']?.toHexString() ?? utente.id?.toHexString() ?? '';
-        final nick = NicknameHelper.resolve(utente.username, utentiDocs);
-        userMap[idStr] = nick;
-        if (utente.username.isNotEmpty) userMap[utente.username] = nick;
-        if (utente.nome.isNotEmpty) userMap[utente.nome] = nick;
-      }
-
       final List<Map<String, dynamic>> resultList = [];
+
       for (var d in docs) {
-        final evento = Evento.fromMap(d);
-        final rawPartecipanti = (d['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-        
-        final List<String> nicksPartecipanti = rawPartecipanti.map((p) {
-          final cleanP = p.replaceAll('ObjectId("', '').replaceAll('")', '');
-          return userMap[cleanP] ?? userMap[p] ?? NicknameHelper.resolve(p, utentiDocs);
-        }).toList();
+        final evId = d['_id'] is ObjectId ? (d['_id'] as ObjectId) : null;
+        final titolo = (d['titolo'] ?? d['nome'] ?? 'Evento').toString().trim();
+        final dtStart = d['data'] is DateTime
+            ? d['data'] as DateTime
+            : (d['data'] != null ? DateTime.tryParse(d['data'].toString()) ?? now : now);
+        final dtEnd = d['dataFine'] is DateTime
+            ? d['dataFine'] as DateTime
+            : (d['dataFine'] != null ? DateTime.tryParse(d['dataFine'].toString()) ?? dtStart.add(const Duration(hours: 4)) : dtStart.add(const Duration(hours: 4)));
 
-        final json = evento.toJson();
-        final lowerTitolo = (json['titolo'] ?? '').toString().toLowerCase();
+        final rawCreator = (d['propostoDa'] ?? d['creatore'] ?? '').toString().trim();
+        final creatorNick = NicknameHelper.resolve(rawCreator, utentiDocs);
 
-        if (lowerTitolo.contains('pizzoccalabro') ||
-            lowerTitolo.contains('milano') ||
-            lowerTitolo.contains('ferragosto') ||
-            lowerTitolo.contains('esam')) {
-          json['stato'] = 'concluso';
-          json['dataFine'] = DateTime.now().subtract(const Duration(days: 2)).toIso8601String();
-          // Aggiorna anche nel DB MongoDB
-          DbService.instance.eventiCollection.update(
-            where.eq('_id', d['_id']),
-            modify.set('stato', 'concluso').set('dataFine', json['dataFine']),
-          );
+        final rawPart = (d['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final cleanPart = rawPart.map((p) => NicknameHelper.resolve(p, utentiDocs)).toList();
+
+        final rawInv = (d['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final cleanInv = rawInv.map((i) => NicknameHelper.resolve(i, utentiDocs)).toList();
+
+        final bool haAltriPartecipanti = cleanPart.any((p) => p.isNotEmpty && !NicknameHelper.isSame(p, creatorNick, utentiDocs));
+        String stato = (d['stato'] ?? 'in_programma').toString().toLowerCase();
+
+        // 1. Logica di Transizione & Anti-farming
+        if (stato == 'annullato') {
+          // Rimane annullato
+        } else if (now.isAfter(dtEnd)) {
+          if (stato != 'concluso' && evId != null) {
+            stato = 'concluso';
+            await DbService.instance.eventiCollection.update(
+              where.id(evId),
+              modify.set('stato', 'concluso'),
+            );
+          }
+        } else if (now.isAfter(dtStart)) {
+          if (!haAltriPartecipanti) {
+            // Orario di inizio scattato ma nessun altro partecipante oltre l'organizzatore: l'evento si annulla!
+            if (stato != 'annullato' && evId != null) {
+              stato = 'annullato';
+              await DbService.instance.eventiCollection.update(
+                where.id(evId),
+                modify.set('stato', 'annullato').set('xpCreatoreAssegnati', false),
+              );
+            }
+          } else {
+            stato = 'in_corso';
+            // Accredito +100 XP una tantum al creatore solo quando l'evento parte regolarmente con amici
+            if (d['xpCreatoreAssegnati'] != true && evId != null) {
+              await DbService.instance.eventiCollection.update(
+                where.id(evId),
+                modify.set('stato', 'in_corso').set('xpCreatoreAssegnati', true),
+              );
+              d['xpCreatoreAssegnati'] = true;
+
+              final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+              final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] 🏆 Evento "$titolo" avviato con successo (+100 XP)';
+
+              for (var uDoc in utentiDocs) {
+                if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['username'] ?? '', creatorNick, utentiDocs)) {
+                  final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+                  final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+                  final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+                  final prog = XpProgression.aggiungiXp(
+                    livelloAttuale: curLiv,
+                    xpLivelloAttuale: curXp,
+                    deltaXp: 100,
+                    xpTotaliAttuali: curTot,
+                  );
+
+                  final List<dynamic> curStorico = List.from(uDoc['storicoVoti'] ?? []);
+                  curStorico.insert(0, logVoce);
+
+                  await DbService.instance.utentiCollection.update(
+                    where.id(uDoc['_id'] as ObjectId),
+                    modify
+                      .set('xp', prog.xp)
+                      .set('livello', prog.livello)
+                      .set('xpProssimoLivello', prog.xpProssimoLivello)
+                      .set('xpTotali', prog.xpTotali)
+                      .set('storicoVoti', curStorico),
+                  );
+                  break;
+                }
+              }
+            }
+          }
         }
 
-        json['partecipanti'] = nicksPartecipanti;
-        json['invitati'] = (d['invitati'] as List<dynamic>?)?.map((e) => NicknameHelper.resolve(e.toString(), utentiDocs)).toList() ?? [];
-        final rawCreator = d['propostoDa'] ?? d['creatore'] ?? 'Cloud';
-        json['propostoDa'] = NicknameHelper.resolve(rawCreator.toString(), utentiDocs);
+        final evento = Evento.fromMap(d);
+        final json = evento.toJson();
+        json['stato'] = stato;
+        json['propostoDa'] = creatorNick;
+        json['creatore'] = creatorNick;
+        json['partecipanti'] = cleanPart;
+        json['invitati'] = cleanInv;
+
         resultList.add(json);
       }
 
-      print('📦 [MongoDB] Trovati ${resultList.length} eventi con Nickname risolti.');
       return Response.ok(
         jsonEncode(resultList),
         headers: {'content-type': 'application/json'},
@@ -71,64 +127,90 @@ class EventoController {
     }
   }
 
-  // POST /api/eventi/elimina
-  Future<Response> eliminaEvento(Request request) async {
+  // POST /api/eventi/crea
+  Future<Response> creaEvento(Request request) async {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final eventoId = data['eventoId']?.toString() ?? '';
-      final utente = data['utente']?.toString() ?? '';
 
-      print('📥 [HTTP POST /api/eventi/elimina] Richiesta eliminazione evento ID "$eventoId" da parte di "$utente"');
+      final utentiDocs = await DbService.instance.utentiCollection.find().toList();
 
-      if (eventoId.isEmpty || utente.isEmpty) {
-        return Response.badRequest(
-          body: jsonEncode({'error': 'ID Evento ed Utente sono obbligatori'}),
-          headers: {'content-type': 'application/json'},
-        );
+      final titolo = data['titolo'] ?? data['nome'] ?? 'Evento FantaEventi';
+      final rawProposto = (data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud').toString().trim();
+      final String propostoDa = NicknameHelper.resolve(rawProposto, utentiDocs);
+
+      final rawPartecipanti = (data['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final rawInvitati = (data['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final Set<String> invitatiSet = {...rawPartecipanti, ...rawInvitati};
+
+      // Solamente il Creatore è confermato nei partecipanti all'inizio
+      final List<String> partecipantiConfermati = [propostoDa];
+      final List<String> invitatiFinali = invitatiSet
+          .where((p) => !NicknameHelper.isSame(p, propostoDa, utentiDocs))
+          .map((p) => NicknameHelper.resolve(p, utentiDocs))
+          .toList();
+
+      final now = DateTime.now();
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] Creato evento "$titolo" (in attesa di avvio)';
+
+      final dtInizio = data['data'] != null ? DateTime.parse(data['data']) : now;
+      final dtFine = data['dataFine'] != null ? DateTime.parse(data['dataFine']) : dtInizio.add(const Duration(hours: 4));
+
+      final eventoMap = {
+        'titolo': titolo,
+        'nome': titolo,
+        'descrizione': data['descrizione'] ?? '',
+        'data': dtInizio.toIso8601String(),
+        'dataFine': dtFine.toIso8601String(),
+        'luogo': data['luogo'] ?? '',
+        'latitudine': data['latitudine'],
+        'longitudine': data['longitudine'],
+        'stato': 'in_programma',
+        'propostoDa': propostoDa,
+        'creatore': propostoDa,
+        'partecipanti': partecipantiConfermati,
+        'invitati': invitatiFinali,
+        'xpCreatoreAssegnati': false, // Deferito a quando l'evento parte in corso
+        'penalitaFalsaTestimonianza': data['penalitaFalsaTestimonianza'] ?? -10,
+      };
+
+      final res = await DbService.instance.eventiCollection.insertOne(eventoMap);
+      final insertedId = res.id?.oid ?? '';
+
+      // Aggiungi voce storico al creatore senza accreditare XP (in attesa di avvio effettivo)
+      for (var uDoc in utentiDocs) {
+        if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['username'] ?? '', propostoDa, utentiDocs)) {
+          final List<dynamic> curStorico = List.from(uDoc['storicoVoti'] ?? []);
+          curStorico.insert(0, logVoce);
+          await DbService.instance.utentiCollection.update(
+            where.id(uDoc['_id'] as ObjectId),
+            modify.set('storicoVoti', curStorico),
+          );
+          break;
+        }
       }
 
-      ObjectId? objId;
-      try {
-        objId = ObjectId.fromHexString(eventoId);
-      } catch (_) {}
-
-      final selector = objId != null ? where.id(objId) : where.eq('nome', eventoId);
-      final doc = await DbService.instance.eventiCollection.findOne(selector);
-
-      if (doc == null) {
-        return Response.notFound(
-          jsonEncode({'error': 'Evento non trovato nel database'}),
-          headers: {'content-type': 'application/json'},
-        );
+      // Notifiche di invito ai partecipanti invitati
+      for (var inv in invitatiFinali) {
+        await DbService.instance.notificheCollection.insertOne({
+          'mittente': propostoDa,
+          'destinatario': inv,
+          'titolo': 'Invito ad Evento: $titolo',
+          'messaggio': '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
+          'eventoId': insertedId,
+          'tipo': 'invito',
+          'stato': 'in_attesa',
+          'letto': false,
+          'data': now.toIso8601String(),
+        });
       }
-
-      List<Map<String, dynamic>> allUtenti = [];
-      try {
-        allUtenti = await DbService.instance.utentiCollection.find().toList();
-      } catch (_) {}
-
-      final creatoreDoc = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
-      final isAllowed = creatoreDoc.isEmpty || NicknameHelper.isSame(creatoreDoc, utente, allUtenti);
-
-      if (!isAllowed) {
-        return Response.forbidden(
-          jsonEncode({'error': 'Solo il creatore dell\'evento ($creatoreDoc) può eliminarlo!'}),
-          headers: {'content-type': 'application/json'},
-        );
-      }
-
-      await DbService.instance.eventiCollection.remove(selector);
-      await DbService.instance.db.collection('Notifiche').remove(where.eq('eventoId', eventoId));
-      await DbService.instance.db.collection('BonusMalus').remove(where.eq('eventoId', eventoId));
-      print('✅ Evento "$eventoId", relative notifiche e bonus eliminati con successo da MongoDB Atlas per conto di "$utente"!');
 
       return Response.ok(
-        jsonEncode({'message': 'Evento eliminato con successo dal database'}),
+        jsonEncode({'message': 'Evento creato con successo', 'id': insertedId}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
-      print('❌ Errore eliminazione evento: $e');
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},
@@ -144,8 +226,6 @@ class EventoController {
       final eventoId = data['eventoId']?.toString() ?? '';
       final utenteName = data['utente']?.toString() ?? '';
 
-      print('📥 [HTTP POST /api/eventi/partecipa] Utente "$utenteName" partecipa all\'evento ID "$eventoId"');
-
       if (eventoId.isEmpty || utenteName.isEmpty) {
         return Response.badRequest(
           body: jsonEncode({'error': 'ID Evento ed Utente sono obbligatori'}),
@@ -154,10 +234,7 @@ class EventoController {
       }
 
       ObjectId? objId;
-      try {
-        objId = ObjectId.fromHexString(eventoId);
-      } catch (_) {}
-
+      try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
       final selector = objId != null ? where.id(objId) : where.eq('nome', eventoId);
       final doc = await DbService.instance.eventiCollection.findOne(selector);
 
@@ -169,7 +246,7 @@ class EventoController {
 
         if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
           return Response.badRequest(
-            body: jsonEncode({'error': 'Le iscrizioni per questo evento sono chiuse (evento già in corso o concluso)'}),
+            body: jsonEncode({'error': 'Le iscrizioni per questo evento sono chiuse'}),
             headers: {'content-type': 'application/json'},
           );
         }
@@ -179,7 +256,6 @@ class EventoController {
           utenteName.toLowerCase(),
           utenteName.toUpperCase(),
           utenteName.trim(),
-          utenteName.trim().toLowerCase(),
         }.toList();
 
         await DbService.instance.eventiCollection.update(
@@ -188,7 +264,6 @@ class EventoController {
             .addToSet('partecipanti', utenteName)
             .pullAll('invitati', pullList),
         );
-        print('✅ Utente "$utenteName" aggiunto atomicamente ai partecipanti dell\'evento su MongoDB!');
       }
 
       return Response.ok(
@@ -196,7 +271,6 @@ class EventoController {
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
-      print('❌ Errore partecipazione evento: $e');
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},
@@ -204,68 +278,53 @@ class EventoController {
     }
   }
 
-  // POST /api/eventi/crea (Solamente il creatore e partecipante iniziale, gli altri sono in sospeso via notifica!)
-  Future<Response> creaEvento(Request request) async {
+  // POST /api/eventi/elimina
+  Future<Response> eliminaEvento(Request request) async {
     try {
-      print('📥 [HTTP POST /api/eventi/crea] Creazione nuovo evento...');
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
+      final eventoId = data['eventoId']?.toString() ?? '';
+      final utente = data['utente']?.toString() ?? '';
 
-      List<Map<String, dynamic>> allUtenti = [];
-      try {
-        allUtenti = await DbService.instance.utentiCollection.find().toList();
-      } catch (_) {}
-
-      final titolo = data['titolo'] ?? data['nome'] ?? 'Evento FantaEventi';
-      final rawProposto = (data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud').toString().trim();
-      final String propostoDa = NicknameHelper.resolve(rawProposto, allUtenti);
-
-      final rawPartecipanti = (data['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-      final rawInvitati = (data['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-      final Set<String> invitatiSet = {...rawPartecipanti, ...rawInvitati};
-
-      // Solamente il Creatore fa parte dei partecipanti CONFERMATI all'inizio!
-      final List<String> partecipantiConfermati = [propostoDa];
-      final List<String> invitatiFinali = invitatiSet
-          .where((p) => !NicknameHelper.isSame(p, propostoDa, allUtenti))
-          .map((p) => NicknameHelper.resolve(p, allUtenti))
-          .toList();
-
-      final evento = Evento(
-        titolo: titolo,
-        descrizione: data['descrizione'] ?? '',
-        data: data['data'] != null ? DateTime.parse(data['data']) : DateTime.now(),
-        luogo: data['luogo'] ?? '',
-        stato: data['stato'] ?? 'in_corso',
-        propostoDa: propostoDa,
-        partecipanti: partecipantiConfermati,
-      );
-
-      final res = await DbService.instance.eventiCollection.insertOne(evento.toMap());
-      final insertedId = res.id?.toHexString() ?? '';
-      print('✅ [MongoDB] Evento "$titolo" inserito con successo! ID: $insertedId');
-
-      // Crea le notifiche di invito per gli utenti invitati (esclusi dal creatore)!
-      for (var p in invitatiFinali) {
-        await DbService.instance.db.collection('Notifiche').insertOne({
-          'mittente': propostoDa,
-          'destinatario': p,
-          'titolo': 'Invito ad Evento: $titolo',
-          'messaggio': '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
-          'eventoId': insertedId,
-          'tipo': 'invito',
-          'stato': 'in_attesa',
-          'data': DateTime.now().toIso8601String(),
-        });
-        print('🔔 Invito in sospeso inviato a "$p" per l\'evento "$titolo"');
+      if (eventoId.isEmpty || utente.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'ID Evento ed Utente sono obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
       }
 
+      ObjectId? objId;
+      try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
+      final selector = objId != null ? where.id(objId) : where.eq('nome', eventoId);
+      final doc = await DbService.instance.eventiCollection.findOne(selector);
+
+      if (doc == null) {
+        return Response.notFound(
+          jsonEncode({'error': 'Evento non trovato nel database'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final utentiDocs = await DbService.instance.utentiCollection.find().toList();
+      final creatoreDoc = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
+      final isAllowed = creatoreDoc.isEmpty || NicknameHelper.isSame(creatoreDoc, utente, utentiDocs);
+
+      if (!isAllowed) {
+        return Response.forbidden(
+          jsonEncode({'error': 'Solo il creatore dell\'evento può eliminarlo!'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      await DbService.instance.eventiCollection.remove(selector);
+      await DbService.instance.notificheCollection.remove(where.eq('eventoId', eventoId));
+      await DbService.instance.bonusMalusCollection.remove(where.eq('eventoId', eventoId));
+
       return Response.ok(
-        jsonEncode({'message': 'Evento creato ed inviti inviati con successo', 'id': insertedId}),
+        jsonEncode({'message': 'Evento eliminato con successo dal database'}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
-      print('❌ Errore durante la creazione dell\'evento: $e');
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},

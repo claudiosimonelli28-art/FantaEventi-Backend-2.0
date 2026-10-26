@@ -2,16 +2,140 @@ import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
+import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
+import '../models/utente.dart';
+import '../utils/nickname_helper.dart';
 
 class VotazioneController {
   // GET /api/votazioni
   Future<Response> getVotazioni(Request request) async {
     try {
-      final docs = await DbService.instance.votazioniCollection.find().toList();
-      final lista = docs.map((d) => Votazione.fromMap(d).toJson()).toList();
+      final bmDocs = await DbService.instance.bonusMalusCollection.find().toList();
+      final votiDocs = await DbService.instance.votazioniCollection.find().toList();
+      final evDocs = await DbService.instance.eventiCollection.find().toList();
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+
+      final List<Map<String, dynamic>> resultList = [];
+
+      for (var bm in bmDocs) {
+        final bmId = bm['_id'] is ObjectId ? (bm['_id'] as ObjectId).oid : (bm['_id']?.toString() ?? bm['id']?.toString() ?? '');
+        final evId = bm['eventoId']?.toString() ?? '';
+        final nomeBM = bm['nome']?.toString() ?? bm['titolo']?.toString() ?? 'Bonus';
+        final descBM = bm['descrizione']?.toString() ?? '';
+        final puntiBM = (bm['punti'] as num?)?.toInt() ?? 0;
+        final rawPropDa = (bm['propostoDa'] ?? '').toString().trim();
+        final effectivePropDa = NicknameHelper.resolve(rawPropDa, uDocs);
+
+        final Map<String, String> votiUtenti = {
+          if (effectivePropDa.isNotEmpty) effectivePropDa: 'pro',
+          if (effectivePropDa.isNotEmpty) effectivePropDa.toLowerCase(): 'pro',
+        };
+
+        for (var vDoc in votiDocs) {
+          final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
+          final bTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+          final rawU = (vDoc['utente'] ?? '').toString().trim();
+          final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
+
+          final isMatch = (vId == bmId.toLowerCase()) ||
+                          (bTit.isNotEmpty && bTit == nomeBM.toLowerCase()) ||
+                          (vId.isNotEmpty && vId == nomeBM.toLowerCase());
+
+          if (isMatch && rawU.isNotEmpty) {
+            final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
+            final u = NicknameHelper.resolve(rawU, uDocs);
+            votiUtenti[u] = voteStr;
+            votiUtenti[u.toLowerCase()] = voteStr;
+          }
+        }
+
+        final evMatch = evDocs.firstWhere(
+          (e) => (e['_id']?.toString() == evId ||
+                  (e['_id'] is ObjectId && (e['_id'] as ObjectId).oid == evId) ||
+                  (e['titolo'] ?? '').toString().toLowerCase() == evId.toLowerCase()),
+          orElse: () => <String, dynamic>{},
+        );
+
+        final List<dynamic> partList = List.from(evMatch['partecipanti'] ?? []);
+        final int numPartecipanti = partList.length >= 2 ? partList.length : 3;
+        final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
+
+        final Set<String> countedUsers = {};
+        int fav = 0;
+        int cont = 0;
+        votiUtenti.forEach((user, vote) {
+          String normUser = NicknameHelper.resolve(user, uDocs).trim().toLowerCase();
+          if (!countedUsers.contains(normUser)) {
+            countedUsers.add(normUser);
+            if (vote == 'pro') fav++;
+            if (vote == 'contro') cont++;
+          }
+        });
+
+        final bool giaApprovatoDaDb = bm['approvato'] == true || bm['stato'] == 'approvato';
+        final bool giaRespintoDaDb = bm['stato'] == 'respinto';
+
+        final totalVotiEspressi = fav + cont;
+        bool isApprovato = giaApprovatoDaDb || (fav >= quorumCalcolato);
+        bool isRespinto = !giaApprovatoDaDb && (giaRespintoDaDb || (cont >= quorumCalcolato));
+
+        bool paritaDecisaDaOrganizzatore = false;
+        final rawNomeOrg = (evMatch['creatore'] ?? evMatch['propostoDa'] ?? '').toString();
+        final nomeOrganizzatore = NicknameHelper.resolve(rawNomeOrg, uDocs);
+
+        if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
+          final creatoreVoteKey = votiUtenti.keys.firstWhere(
+            (k) => NicknameHelper.isSame(k, nomeOrganizzatore, uDocs),
+            orElse: () => '',
+          );
+          if (creatoreVoteKey.isNotEmpty) {
+            final creatoreVote = votiUtenti[creatoreVoteKey];
+            if (creatoreVote == 'pro') {
+              isApprovato = true;
+              paritaDecisaDaOrganizzatore = true;
+            } else if (creatoreVote == 'contro') {
+              isRespinto = true;
+              paritaDecisaDaOrganizzatore = true;
+            }
+          }
+        }
+
+        final statoVot = isApprovato ? 'approvato' : (isRespinto ? 'respinto' : 'in_corso');
+        final bmObj = BonusMalus(
+          id: bmId,
+          eventoId: evId,
+          titolo: nomeBM,
+          descrizione: descBM,
+          punti: puntiBM,
+          categoria: bm['categoria']?.toString() ?? 'Goliardia',
+          propostoDa: effectivePropDa,
+          approvato: isApprovato,
+          stato: statoVot,
+          assegnatoA: (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+          riassegnabileMoltepliciVolte: bm['riassegnabileMoltepliciVolte'] == true,
+        );
+
+        final votazione = Votazione(
+          id: bmId,
+          titolo: nomeBM,
+          descrizione: descBM.isNotEmpty ? descBM : 'Proposta da $effectivePropDa',
+          bonusMalus: bmObj,
+          votiFavorevoli: fav,
+          votiContrari: cont,
+          quorum: quorumCalcolato,
+          stato: statoVot,
+          scadenza: DateTime.now().add(const Duration(days: 7)),
+          votiUtenti: votiUtenti,
+          paritaDecisaDaOrganizzatore: paritaDecisaDaOrganizzatore,
+          nomeOrganizzatore: nomeOrganizzatore,
+        );
+
+        resultList.add(votazione.toJson());
+      }
+
       return Response.ok(
-        jsonEncode(lista),
+        jsonEncode(resultList),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
@@ -28,27 +152,87 @@ class VotazioneController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final votazione = Votazione(
-        eventoId: data['eventoId'] ?? '',
-        utenteId: data['utenteId'] ?? '',
-        destinatarioId: data['destinatarioId'] ?? '',
-        bonusMalusId: data['bonusMalusId'] ?? '',
-        punti: (data['punti'] as num?)?.toInt() ?? 0,
-        note: data['note'],
-      );
+      final idOrEventoId = data['id']?.toString() ?? data['votazioneId']?.toString() ?? data['bonusId']?.toString() ?? '';
+      final aFavore = data['aFavore'] == true || data['voto'] == 'pro' || data['voto'] == 'accetta';
+      final rawUser = data['utente']?.toString() ?? data['username']?.toString() ?? 'Cloud';
 
-      final res = await DbService.instance.votazioniCollection.insertOne(votazione.toMap());
-      
-      // Aggiorna anche i punti totali del destinatario in utenti
-      if (votazione.destinatarioId.isNotEmpty) {
-        await DbService.instance.utentiCollection.update(
-          where.id(ObjectId.fromHexString(votazione.destinatarioId)),
-          modify.inc('puntiTotali', votazione.punti),
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final userNick = NicknameHelper.resolve(rawUser, uDocs);
+
+      // 1. Verifica se l'utente ha già votato
+      final existingVote = await DbService.instance.votazioniCollection.findOne(
+        where.eq('votazioneId', idOrEventoId).and(where.eq('utente', userNick)),
+      );
+      final bool giaVotato = existingVote != null;
+
+      // 2. Inserisci o aggiorna il voto
+      if (existingVote != null) {
+        await DbService.instance.votazioniCollection.update(
+          where.id(existingVote['_id'] as ObjectId),
+          modify.set('voto', aFavore ? 'pro' : 'contro').set('data', DateTime.now().toIso8601String()),
         );
+      } else {
+        await DbService.instance.votazioniCollection.insertOne({
+          'votazioneId': idOrEventoId,
+          'bonusId': idOrEventoId,
+          'utente': userNick,
+          'voto': aFavore ? 'pro' : 'contro',
+          'data': DateTime.now().toIso8601String(),
+        });
+      }
+
+      // 3. Sincronizza stato notifica dell'utente
+      final notDocs = await DbService.instance.notificheCollection.find().toList();
+      for (var notDoc in notDocs) {
+        final dest = (notDoc['destinatario'] ?? '').toString().trim().toLowerCase();
+        final bId = (notDoc['bonusId'] ?? '').toString().trim().toLowerCase();
+        final notId = notDoc['_id'] is ObjectId ? (notDoc['_id'] as ObjectId).oid : notDoc['_id']?.toString() ?? '';
+        final isMatch = (bId.isNotEmpty && (bId == idOrEventoId.toLowerCase())) || notId == idOrEventoId;
+        if (dest == userNick.toLowerCase() && isMatch) {
+          await DbService.instance.notificheCollection.update(
+            where.id(notDoc['_id'] as ObjectId),
+            modify.set('stato', aFavore ? 'accettato' : 'rifiutato').set('votoEspresso', aFavore ? 'pro' : 'contro').set('letto', true),
+          );
+        }
+      }
+
+      // 4. Assegna +25 XP con progressione se primo voto
+      if (!giaVotato) {
+        for (var uDoc in uDocs) {
+          if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['username'] ?? '', userNick, uDocs)) {
+            final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+            final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+            final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+            final prog = XpProgression.aggiungiXp(
+              livelloAttuale: curLiv,
+              xpLivelloAttuale: curXp,
+              deltaXp: 25,
+              xpTotaliAttuali: curTot,
+            );
+
+            final now = DateTime.now();
+            final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+            final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] Votato ${aFavore ? "FAVOREVOLE" : "CONTRARIO"} (+25 XP)';
+
+            final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
+            oldStorico.insert(0, logVoce);
+
+            await DbService.instance.utentiCollection.update(
+              where.id(uDoc['_id'] as ObjectId),
+              modify
+                .set('xp', prog.xp)
+                .set('livello', prog.livello)
+                .set('xpProssimoLivello', prog.xpProssimoLivello)
+                .set('xpTotali', prog.xpTotali)
+                .set('storicoVoti', oldStorico),
+            );
+            break;
+          }
+        }
       }
 
       return Response.ok(
-        jsonEncode({'message': 'Votazione registrata con successo', 'id': res.id?.toHexString()}),
+        jsonEncode({'message': 'Voto registrato con successo', 'nuovoVotante': !giaVotato}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

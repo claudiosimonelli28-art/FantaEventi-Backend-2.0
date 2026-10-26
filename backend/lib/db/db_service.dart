@@ -19,9 +19,8 @@ class DbService {
     return _db!;
   }
 
-  // Nomi ESATTI delle collezioni presenti nel tuo MongoDB Atlas (Singolari/Plurali esatti!)
   DbCollection get utentiCollection => db.collection('Utenti');
-  DbCollection get eventiCollection => db.collection('Evento'); // <--- Collezione 'Evento' singolare!
+  DbCollection get eventiCollection => db.collection('Evento');
   DbCollection get bonusMalusCollection => db.collection('BonusMalus');
   DbCollection get votazioniCollection => db.collection('Votazioni');
   DbCollection get passwordResetCollection => db.collection('PasswordResetTokens');
@@ -31,17 +30,23 @@ class DbService {
   static String get brevoApiKey {
     final key = Platform.environment['BREVO_API_KEY'];
     if (key != null && key.trim().isNotEmpty) return key.trim();
-    try {
-      final envFile = File('.env');
-      if (envFile.existsSync()) {
-        final lines = envFile.readAsLinesSync();
-        for (var line in lines) {
-          if (line.startsWith('BREVO_API_KEY=')) {
-            return line.substring('BREVO_API_KEY='.length).trim();
+    final candidates = [
+      File('.env'),
+      File('../.env'),
+      File('C:\\Users\\Claudio\\Desktop\\Antigravity\\Fanta_eventi2.0\\Ai\\backend\\.env'),
+    ];
+    for (var envFile in candidates) {
+      try {
+        if (envFile.existsSync()) {
+          final lines = envFile.readAsLinesSync();
+          for (var line in lines) {
+            if (line.startsWith('BREVO_API_KEY=')) {
+              return line.substring('BREVO_API_KEY='.length).trim();
+            }
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
     return '';
   }
 
@@ -49,18 +54,25 @@ class DbService {
     String? mongoUri = Platform.environment['MONGODB_URI'];
 
     if (mongoUri == null || mongoUri.trim().isEmpty) {
-      try {
-        final envFile = File('.env');
-        if (envFile.existsSync()) {
-          final lines = envFile.readAsLinesSync();
-          for (var line in lines) {
-            if (line.startsWith('MONGODB_URI=')) {
-              mongoUri = line.substring('MONGODB_URI='.length).trim();
-              break;
+      final candidates = [
+        File('.env'),
+        File('../.env'),
+        File('C:\\Users\\Claudio\\Desktop\\Antigravity\\Fanta_eventi2.0\\Ai\\backend\\.env'),
+      ];
+      for (var envFile in candidates) {
+        try {
+          if (envFile.existsSync()) {
+            final lines = envFile.readAsLinesSync();
+            for (var line in lines) {
+              if (line.startsWith('MONGODB_URI=')) {
+                mongoUri = line.substring('MONGODB_URI='.length).trim();
+                break;
+              }
             }
+            if (mongoUri != null && mongoUri.isNotEmpty) break;
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
 
     if (mongoUri == null || mongoUri.trim().isEmpty) {

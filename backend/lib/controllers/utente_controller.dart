@@ -299,18 +299,49 @@ class UtenteController {
       }
 
       final hashedPassword = hashPassword(password);
+      final now = DateTime.now();
+      final dateFormatted = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+      final nickClean = username.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+      final codePrefix = nickClean.length >= 3 ? nickClean.substring(0, 3) : 'FE';
+      final friendCode = 'FE-$codePrefix${1000 + Random().nextInt(9000)}';
+      final avatar = (data['avatarUrl'] ?? '').toString().trim().isNotEmpty
+          ? data['avatarUrl'].toString().trim()
+          : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(username)}';
 
-      final utente = Utente(
-        username: username,
-        nome: (data['nome'] ?? '').toString().trim(),
-        cognome: (data['cognome'] ?? '').toString().trim(),
-        email: formattedEmail,
-        password: hashedPassword,
-        ruolo: 'partecipante',
-        squadra: data['squadra'],
-      );
+      final utenteMap = {
+        'nome': (data['nome'] ?? '').toString().trim().isNotEmpty ? data['nome'].toString().trim() : username,
+        'cognome': (data['cognome'] ?? '').toString().trim(),
+        'nickname': username,
+        'username': username,
+        'email': formattedEmail,
+        'password': hashedPassword,
+        'passwordHash': hashedPassword,
+        'ruolo': 'partecipante',
+        'avatarUrl': avatar,
+        'livello': 1,
+        'xp': 100,
+        'xpProssimoLivello': 2000,
+        'xpTotali': 100,
+        'puntiTotali': 0,
+        'puntiEsperienza': 100,
+        'badgeList': ['🎉 Partecipante FantaEventi'],
+        'storicoVoti': <String>[],
+        'codiceAmico': friendCode,
+        'amici': <String>[],
+        'richiesteAmicizia': <Map<String, dynamic>>[],
+        'badgeVincitore': <Map<String, dynamic>>[],
+        'countGiudice': 0,
+        'countReMalus': 0,
+        'countFantasma': 0,
+        'countSbirro': 0,
+        'countGiustiziere': 0,
+        'haVistoGuida': false,
+        'fcmTokens': <String>[],
+        'dataRegistrazione': dateFormatted,
+        'createdAt': now.toIso8601String(),
+      };
 
-      final res = await DbService.instance.utentiCollection.insertOne(utente.toMap());
+      final res = await DbService.instance.utentiCollection.insertOne(utenteMap);
       final salvato = await DbService.instance.utentiCollection.findOne(where.id(res.id as ObjectId));
 
       print('✅ [MongoDB] NUOVO UTENTE REGISTRATO CON PASSWORD! ID: ${res.id}');
@@ -645,6 +676,135 @@ class UtenteController {
       );
     } catch (e) {
       print('❌ Errore confermaResetPassword: $e');
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // GET /api/utenti/check-nickname
+  Future<Response> checkNickname(Request request) async {
+    try {
+      final nick = request.url.queryParameters['nick']?.trim() ?? request.url.queryParameters['nickname']?.trim() ?? '';
+      if (nick.length < 3) {
+        return Response.ok(
+          jsonEncode({
+            'disponibile': false,
+            'messaggio': 'Il nickname deve contenere almeno 3 caratteri.',
+            'suggerimenti': <String>[],
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final docs = await DbService.instance.utentiCollection.find().toList();
+      final existingLower = <String>{};
+      for (var d in docs) {
+        final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
+        final uUser = (d['username'] ?? '').toString().trim().toLowerCase();
+        final uName = (d['nome'] ?? '').toString().trim().toLowerCase();
+        if (uNick.isNotEmpty) existingLower.add(uNick);
+        if (uUser.isNotEmpty) existingLower.add(uUser);
+        if (uName.isNotEmpty) existingLower.add(uName);
+      }
+
+      if (existingLower.contains(nick.toLowerCase())) {
+        final base = nick.replaceAll(RegExp(r'\d+$'), '');
+        final random = Random();
+        final suggerimenti = <String>[];
+        while (suggerimenti.length < 3) {
+          final candidate = '${base}_${random.nextInt(90) + 10}';
+          if (!existingLower.contains(candidate.toLowerCase()) && !suggerimenti.contains(candidate)) {
+            suggerimenti.add(candidate);
+          }
+        }
+        return Response.ok(
+          jsonEncode({
+            'disponibile': false,
+            'messaggio': 'Nome utente già in uso.',
+            'suggerimenti': suggerimenti,
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      return Response.ok(
+        jsonEncode({
+          'disponibile': true,
+          'messaggio': 'Nome utente disponibile! ✨',
+          'suggerimenti': <String>[],
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // POST /api/utenti/elimina-account
+  Future<Response> eliminaAccount(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final utenteId = data['utenteId']?.toString();
+      final nickname = (data['nickname'] ?? data['username'])?.toString();
+      final nome = data['nome']?.toString();
+
+      final cleanNick = (nickname ?? '').trim().toLowerCase();
+      final cleanName = (nome ?? '').trim().toLowerCase();
+
+      final allUsers = await DbService.instance.utentiCollection.find().toList();
+      Map<String, dynamic>? targetUser;
+
+      for (var u in allUsers) {
+        final uIdStr = u['_id'] is ObjectId ? (u['_id'] as ObjectId).oid : u['_id']?.toString() ?? '';
+        final uNick = (u['nickname'] ?? u['username'] ?? '').toString().trim().toLowerCase();
+        final uNome = (u['nome'] ?? '').toString().trim().toLowerCase();
+
+        if (utenteId != null && utenteId.isNotEmpty && uIdStr == utenteId) {
+          targetUser = u;
+          break;
+        }
+        if (cleanNick.isNotEmpty && (uNick == cleanNick || uNome == cleanNick)) {
+          targetUser = u;
+          break;
+        }
+        if (cleanName.isNotEmpty && (uNome == cleanName || uNick == cleanName)) {
+          targetUser = u;
+          break;
+        }
+      }
+
+      if (targetUser != null) {
+        final uId = targetUser['_id'] as ObjectId;
+        await DbService.instance.utentiCollection.remove(where.id(uId));
+
+        final matchNames = <String>{};
+        if (cleanNick.isNotEmpty) matchNames.add(cleanNick);
+        if (cleanName.isNotEmpty) matchNames.add(cleanName);
+        final tn = (targetUser['nickname'] ?? targetUser['username'] ?? '').toString();
+        final tm = (targetUser['nome'] ?? '').toString();
+        if (tn.isNotEmpty) matchNames.add(tn);
+        if (tm.isNotEmpty) matchNames.add(tm);
+
+        for (var name in matchNames) {
+          try {
+            await DbService.instance.notificheCollection.remove(
+              where.eq('destinatario', name).or(where.eq('mittente', name)),
+            );
+          } catch (_) {}
+        }
+      }
+
+      return Response.ok(
+        jsonEncode({'message': 'Account eliminato con successo'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},

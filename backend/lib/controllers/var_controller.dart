@@ -69,8 +69,8 @@ class VarController {
       };
 
       final result = await DbService.instance.richiesteVarCollection.insertOne(varDoc);
-      final varId = (varDoc['_id'] as ObjectId?)?.toHexString() ??
-          (result.id is ObjectId ? (result.id as ObjectId).toHexString() : result.id.toString());
+      final varId = (varDoc['_id'] as ObjectId?)?.oid ??
+          (result.id is ObjectId ? (result.id as ObjectId).oid : result.id.toString());
 
       final ts = now.millisecondsSinceEpoch;
 
@@ -138,7 +138,7 @@ class VarController {
 
       final resMap = Map<String, dynamic>.from(doc);
       if (resMap['_id'] is ObjectId) {
-        resMap['_id'] = (resMap['_id'] as ObjectId).toHexString();
+        resMap['_id'] = (resMap['_id'] as ObjectId).oid;
       }
       return _jsonResponse(resMap);
     } catch (e) {
@@ -159,7 +159,7 @@ class VarController {
       final list = docs.map((d) {
         final map = Map<String, dynamic>.from(d);
         if (map['_id'] is ObjectId) {
-          map['_id'] = (map['_id'] as ObjectId).toHexString();
+          map['_id'] = (map['_id'] as ObjectId).oid;
         }
         return map;
       }).toList();
@@ -187,7 +187,7 @@ class VarController {
       }).map((d) {
         final map = Map<String, dynamic>.from(d);
         if (map['_id'] is ObjectId) {
-          map['_id'] = (map['_id'] as ObjectId).toHexString();
+          map['_id'] = (map['_id'] as ObjectId).oid;
         }
         return map;
       }).toList();

@@ -44,10 +44,12 @@ void main() async {
   // Rotte Utenti
   app.post('/api/login', utenteCtrl.login);
   app.post('/api/registrazione', utenteCtrl.creaUtente);
+  app.get('/api/utenti/check-nickname', utenteCtrl.checkNickname);
   app.post('/api/utenti/imposta-password', utenteCtrl.impostaPassword);
   app.post('/api/utenti/richiedi-reset-password', utenteCtrl.richiediResetPassword);
   app.post('/api/utenti/conferma-reset-password', utenteCtrl.confermaResetPassword);
   app.post('/api/utenti/avatar', utenteCtrl.aggiornaAvatar);
+  app.post('/api/utenti/elimina-account', utenteCtrl.eliminaAccount);
   app.get('/api/utenti', utenteCtrl.getUtenti);
 
   // Rotte Eventi
@@ -59,10 +61,13 @@ void main() async {
   // Rotte Notifiche & Inviti
   app.get('/api/notifiche', notificaCtrl.getNotificheUtente);
   app.post('/api/notifiche/rispondi', notificaCtrl.rispondiNotifica);
+  app.post('/api/notifiche/segna-letta', notificaCtrl.segnaLetta);
 
   // Rotte Bonus / Malus
   app.get('/api/bonusmalus', bonusMalusCtrl.getBonusMalus);
   app.post('/api/bonusmalus/crea', bonusMalusCtrl.creaBonusMalus);
+  app.post('/api/bonusmalus/assegna', bonusMalusCtrl.assegnaBonusMalus);
+  app.post('/api/bonusmalus/annulla-assegnazione', bonusMalusCtrl.annullaAssegnazioneBonus);
   app.post('/api/bonusmalus/elimina', bonusMalusCtrl.eliminaBonusMalus);
 
   // Rotte Votazioni

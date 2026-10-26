@@ -1,57 +1,103 @@
 import 'package:mongo_dart/mongo_dart.dart';
 
 class BonusMalus {
-  final ObjectId? id;
-  final String eventoId;
-  final String nome;
+  final ObjectId? mongoId;
+  final String id;
+  final String titolo;
   final String descrizione;
   final int punti;
-  final String tipo; // 'bonus' o 'malus'
+  final String categoria;
+  final String propostoDa;
+  final bool approvato;
+  final String stato;
+  final String eventoId;
+  final List<String> assegnatoA;
+  final bool riassegnabileMoltepliciVolte;
 
   BonusMalus({
-    this.id,
-    required this.eventoId,
-    required this.nome,
+    this.mongoId,
+    required this.id,
+    required this.titolo,
     required this.descrizione,
     required this.punti,
-    required this.tipo,
+    required this.categoria,
+    required this.propostoDa,
+    this.approvato = false,
+    this.stato = 'in_votazione',
+    this.eventoId = '',
+    this.assegnatoA = const [],
+    this.riassegnabileMoltepliciVolte = false,
   });
 
+  bool get isBonus => punti >= 0;
+
   factory BonusMalus.fromMap(Map<String, dynamic> map) {
+    ObjectId? mId = map['_id'] is ObjectId
+        ? map['_id'] as ObjectId
+        : (map['_id'] != null ? ObjectId.fromHexString(map['_id'].toString()) : null);
+
+    final rawId = mId?.oid ?? (map['id'] ?? map['_id'] ?? '');
+    final rawEvId = map['eventoId'] ?? map['eventoTitolo'] ?? '';
+
+    final int rawPunti = (map['punti'] as num?)?.toInt() ?? 0;
+    // Clamping di sicurezza su punti [-100, 100]
+    final int safePunti = rawPunti > 100 ? 100 : (rawPunti < -100 ? -100 : rawPunti);
+
     return BonusMalus(
-      id: map['_id'] is ObjectId
-          ? map['_id'] as ObjectId
-          : (map['_id'] != null ? ObjectId.fromHexString(map['_id'].toString()) : null),
-      eventoId: map['eventoId']?.toString() ?? '',
-      nome: map['nome'] as String? ?? '',
+      mongoId: mId,
+      id: rawId.toString(),
+      titolo: map['titolo'] as String? ?? (map['nome'] as String? ?? 'Bonus'),
       descrizione: map['descrizione'] as String? ?? '',
-      punti: (map['punti'] as num?)?.toInt() ?? 0,
-      tipo: map['tipo'] as String? ?? 'bonus',
+      punti: safePunti,
+      categoria: map['categoria'] as String? ?? 'Generale',
+      propostoDa: map['propostoDa'] as String? ?? (map['utente'] as String? ?? 'Anonimo'),
+      approvato: map['approvato'] as bool? ?? (map['stato'] == 'approvato' || map['stato'] == 'confermato'),
+      stato: map['stato'] as String? ?? 'in_votazione',
+      eventoId: rawEvId.toString(),
+      assegnatoA: (map['assegnatoA'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      riassegnabileMoltepliciVolte: map['riassegnabileMoltepliciVolte'] as bool? ?? false,
     );
   }
 
+  factory BonusMalus.fromJson(Map<String, dynamic> json) => BonusMalus.fromMap(json);
+
   Map<String, dynamic> toMap() {
     final map = <String, dynamic>{
-      'eventoId': eventoId,
-      'nome': nome,
+      'nome': titolo,
+      'titolo': titolo,
       'descrizione': descrizione,
       'punti': punti,
-      'tipo': tipo,
+      'categoria': categoria,
+      'propostoDa': propostoDa,
+      'approvato': approvato,
+      'stato': stato,
+      'eventoId': eventoId,
+      'assegnatoA': assegnatoA,
+      'riassegnabileMoltepliciVolte': riassegnabileMoltepliciVolte,
     };
-    if (id != null) {
-      map['_id'] = id;
+    if (mongoId != null) {
+      map['_id'] = mongoId;
     }
     return map;
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id?.$oid ?? id?.toHexString(),
-      'eventoId': eventoId,
-      'nome': nome,
+      'id': id,
+      'nome': titolo,
+      'titolo': titolo,
       'descrizione': descrizione,
       'punti': punti,
-      'tipo': tipo,
+      'categoria': categoria,
+      'propostoDa': propostoDa,
+      'approvato': approvato,
+      'stato': stato,
+      'eventoId': eventoId,
+      'assegnatoA': assegnatoA,
+      'riassegnabileMoltepliciVolte': riassegnabileMoltepliciVolte,
     };
   }
 }
