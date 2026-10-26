@@ -88,9 +88,6 @@ class ApiService {
           }
           result.add(item);
         }
-      } else if (item.trim().isNotEmpty) {
-        // Le voci senza timestamp esplicito (es. proposte recenti o legacy) vengono preservate
-        result.add(item);
       }
     }
     return result;
