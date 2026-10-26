@@ -293,15 +293,32 @@ class VarController {
       final ptStr = richiesta.punti >= 0 ? '+${richiesta.punti}' : '${richiesta.punti}';
       final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
-      // Reperimento partecipanti all'evento per broadcast
+      // Reperimento partecipanti all'evento per broadcast (MATCH RIGOROSO PER ID PRIMA DEL TITOLO)
       final evDocs = await DbService.instance.eventiCollection.find().toList();
-      final targetEv = evDocs.firstWhere(
-        (e) => (e['_id']?.toString() == richiesta.eventoId ||
-                (e['_id'] is ObjectId && (e['_id'] as ObjectId).oid == richiesta.eventoId) ||
-                e['id']?.toString() == richiesta.eventoId ||
-                e['titolo']?.toString().toLowerCase() == richiesta.eventoTitolo.toLowerCase()),
+      final cleanEvId = richiesta.eventoId.trim().toLowerCase();
+      final cleanEvHex = cleanEvId.replaceAll(RegExp(r'[^a-f0-9]'), '');
+      Map<String, dynamic> targetEv = evDocs.firstWhere(
+        (e) {
+          final hex = e['_id'] is ObjectId ? (e['_id'] as ObjectId).oid.toLowerCase() : '';
+          final str = (e['_id']?.toString() ?? e['id']?.toString() ?? '').toLowerCase();
+          final cleanStr = str.replaceAll(RegExp(r'[^a-f0-9]'), '');
+          return (hex.isNotEmpty && hex == cleanEvId) ||
+                 (cleanStr.isNotEmpty && cleanStr == cleanEvHex) ||
+                 str == cleanEvId;
+        },
         orElse: () => <String, dynamic>{},
       );
+      if (targetEv.isEmpty && richiesta.eventoTitolo.isNotEmpty) {
+        targetEv = evDocs.firstWhere(
+          (e) => ((e['nome'] ?? e['titolo'] ?? '').toString().toLowerCase() == richiesta.eventoTitolo.toLowerCase()),
+          orElse: () => <String, dynamic>{},
+        );
+      }
+      String eventoNome = richiesta.eventoTitolo.isNotEmpty ? richiesta.eventoTitolo : 'Evento';
+      if (targetEv.isNotEmpty) {
+        eventoNome = (targetEv['nome'] ?? targetEv['titolo'] ?? eventoNome).toString();
+      }
+
       final Set<String> eventParticipants = {};
       if (targetEv.isNotEmpty) {
         final pList = List.from(targetEv['partecipanti'] ?? []);
@@ -313,16 +330,18 @@ class VarController {
           if (s.isNotEmpty) eventParticipants.add(NicknameHelper.resolve(s, uDocs));
         }
       }
-
       final cleanRichiedente = NicknameHelper.resolve(richiesta.richiedente, uDocs);
       final cleanBersaglio = NicknameHelper.resolve(richiesta.bersaglio, uDocs);
       final cleanGiudice = NicknameHelper.resolve(giudice, uDocs);
+      if (eventParticipants.isEmpty) {
+        eventParticipants.addAll([cleanRichiedente, cleanBersaglio, cleanGiudice]);
+      }
       bool isSanzionato = false;
       int penaltyApplied = 0;
 
       if (approva) {
         // 1. Assegna punti al bersaglio
-        final logText = '📺 VAR: Ricevuto ${richiesta.punti >= 0 ? "Bonus" : "Malus"} "${richiesta.bonusMalusTitolo}" ($ptStr PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)';
+        final logText = '📺 VAR: Ricevuto ${richiesta.punti >= 0 ? "Bonus" : "Malus"} "${richiesta.bonusMalusTitolo}" ($ptStr PT) per l\'evento "$eventoNome" ($timeStr)';
 
         for (var uDoc in uDocs) {
           if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['nome'] ?? '', cleanBersaglio, uDocs)) {
@@ -414,7 +433,7 @@ class VarController {
           'destinatario': cleanRichiedente,
           'titolo': '📺 VAR: Richiesta Approvata! ✅',
           'messaggio': 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
-          'eventoId': richiesta.eventoId,
+          'eventoId': cleanEvId,
           'varId': varId,
           'tipo': 'var_esito',
           'stato': 'approvata',
@@ -429,8 +448,8 @@ class VarController {
             'mittente': cleanGiudice,
             'destinatario': cleanBersaglio,
             'titolo': '📺 VAR: Sentenza Convalidata! ⚖️',
-            'messaggio': 'Il Giudice ha convalidato "${richiesta.bonusMalusTitolo}" ($ptStr PT) a tuo nome per l\'evento "${richiesta.eventoTitolo}".',
-            'eventoId': richiesta.eventoId,
+            'messaggio': 'Il Giudice ha convalidato "${richiesta.bonusMalusTitolo}" ($ptStr PT) a tuo nome per l\'evento "$eventoNome".',
+            'eventoId': cleanEvId,
             'varId': varId,
             'tipo': 'var_esito',
             'stato': 'approvata',
@@ -439,24 +458,23 @@ class VarController {
           });
         }
 
-        // 6. Notifica broadcast agli altri partecipanti
+        // 6. Inserimento notifiche di ASSEGNAZIONE BONUS per TUTTI i partecipanti (INCLUSO IL GIUDICE CLOUD)
+        final bool isBonus = richiesta.punti >= 0;
+        final String notificaTipo = isBonus ? 'assegnazione_bonus' : 'assegnazione_malus';
+        final String notificaTitolo = isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!';
+
         for (var p in eventParticipants) {
-          if (NicknameHelper.isSame(p, cleanRichiedente, uDocs) ||
-              NicknameHelper.isSame(p, cleanBersaglio, uDocs) ||
-              NicknameHelper.isSame(p, cleanGiudice, uDocs)) {
-            continue;
-          }
           await DbService.instance.notificheCollection.insertOne({
-            'notificaId': 'var_bcast_${ts}_${p.toLowerCase()}',
+            'notificaId': 'bm_ass_${ts}_${p.toLowerCase()}',
             'mittente': cleanGiudice,
             'destinatario': p,
-            'titolo': '📺 VAR: Sentenza Convalidata',
-            'messaggio': 'Il Giudice ha convalidato "${richiesta.bonusMalusTitolo}" ($ptStr PT) a $cleanBersaglio per "${richiesta.eventoTitolo}".',
-            'eventoId': richiesta.eventoId,
-            'varId': varId,
-            'tipo': 'var_esito',
-            'stato': 'approvata',
+            'titolo': notificaTitolo,
+            'messaggio': '$cleanBersaglio ha ricevuto "${richiesta.bonusMalusTitolo}" ($ptStr PT) per l\'evento "$eventoNome"!',
+            'eventoId': cleanEvId,
+            'tipo': notificaTipo,
+            'stato': 'consegnato',
             'letto': false,
+            'votoEspresso': 'pro',
             'data': now.toIso8601String(),
           });
         }

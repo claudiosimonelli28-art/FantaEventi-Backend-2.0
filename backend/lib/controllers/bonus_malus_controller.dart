@@ -109,20 +109,24 @@ class BonusMalusController {
       final Set<String> destinatariSet = {};
       String eventoNome = eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento';
       try {
-        ObjectId? objId;
-        try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
-
         final allEventi = await DbService.instance.eventiCollection.find().toList();
-        Map<String, dynamic>? evDoc;
-        if (objId != null) {
-          evDoc = allEventi.firstWhere((e) => e['_id'] == objId, orElse: () => {});
-        }
-        if (evDoc == null || evDoc.isEmpty) {
+        final cleanEvId = eventoId.trim().toLowerCase();
+        final cleanEvHex = cleanEvId.replaceAll(RegExp(r'[^a-f0-9]'), '');
+        Map<String, dynamic> evDoc = allEventi.firstWhere(
+          (e) {
+            final hex = e['_id'] is ObjectId ? (e['_id'] as ObjectId).oid.toLowerCase() : '';
+            final str = (e['_id']?.toString() ?? e['id']?.toString() ?? '').toLowerCase();
+            final cleanStr = str.replaceAll(RegExp(r'[^a-f0-9]'), '');
+            return (hex.isNotEmpty && hex == cleanEvId) ||
+                   (cleanStr.isNotEmpty && cleanStr == cleanEvHex) ||
+                   str == cleanEvId;
+          },
+          orElse: () => <String, dynamic>{},
+        );
+        if (evDoc.isEmpty && eventoTitolo.isNotEmpty) {
           evDoc = allEventi.firstWhere(
-            (e) => (e['id']?.toString() == eventoId ||
-                    e['nome']?.toString().toLowerCase() == eventoTitolo.toLowerCase() ||
-                    e['titolo']?.toString().toLowerCase() == eventoTitolo.toLowerCase()),
-            orElse: () => {},
+            (e) => ((e['nome'] ?? e['titolo'] ?? '').toString().toLowerCase() == eventoTitolo.toLowerCase()),
+            orElse: () => <String, dynamic>{},
           );
         }
 
@@ -295,24 +299,34 @@ class BonusMalusController {
 
       // 4. Inserimento notifiche in-app per TUTTI i partecipanti dell'evento
       final Set<String> destList = {};
+      final cleanDestUser = NicknameHelper.resolve(utenteDestinatario, uDocs);
       String eventoNome = eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento';
       try {
         final allEventi = await DbService.instance.eventiCollection.find().toList();
-        Map<String, dynamic>? targetEv;
-        if (evObjId != null) {
-          targetEv = allEventi.firstWhere((e) => e['_id'] == evObjId, orElse: () => {});
-        }
-        if (targetEv == null || targetEv.isEmpty) {
+        final cleanEvId = eventoId.trim().toLowerCase();
+        final cleanEvHex = cleanEvId.replaceAll(RegExp(r'[^a-f0-9]'), '');
+        Map<String, dynamic> targetEv = allEventi.firstWhere(
+          (e) {
+            final hex = e['_id'] is ObjectId ? (e['_id'] as ObjectId).oid.toLowerCase() : '';
+            final str = (e['_id']?.toString() ?? e['id']?.toString() ?? '').toLowerCase();
+            final cleanStr = str.replaceAll(RegExp(r'[^a-f0-9]'), '');
+            return (hex.isNotEmpty && hex == cleanEvId) ||
+                   (cleanStr.isNotEmpty && cleanStr == cleanEvHex) ||
+                   str == cleanEvId;
+          },
+          orElse: () => <String, dynamic>{},
+        );
+        if (targetEv.isEmpty && eventoTitolo.isNotEmpty) {
           targetEv = allEventi.firstWhere(
-            (e) => (e['id']?.toString() == eventoId ||
-                    e['nome']?.toString().toLowerCase() == eventoTitolo.toLowerCase() ||
-                    e['titolo']?.toString().toLowerCase() == eventoTitolo.toLowerCase()),
-            orElse: () => {},
+            (e) => ((e['nome'] ?? e['titolo'] ?? '').toString().toLowerCase() == eventoTitolo.toLowerCase()),
+            orElse: () => <String, dynamic>{},
           );
         }
 
         if (targetEv.isNotEmpty) {
           eventoNome = (targetEv['nome'] ?? targetEv['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
+          final creatore = (targetEv['propostoDa'] ?? targetEv['creatore'] ?? '').toString().trim();
+          if (creatore.isNotEmpty) destList.add(NicknameHelper.resolve(creatore, uDocs));
           final List<dynamic> pList = List.from(targetEv['partecipanti'] ?? []);
           final List<dynamic> iList = List.from(targetEv['invitati'] ?? []);
           for (var item in [...pList, ...iList]) {
@@ -321,7 +335,7 @@ class BonusMalusController {
           }
         }
         if (destList.isEmpty) {
-          destList.add(utenteDestinatario);
+          destList.add(cleanDestUser);
         }
 
         final bool isBonus = safePunti >= 0;
@@ -335,8 +349,8 @@ class BonusMalusController {
             'mittente': mittente.isNotEmpty ? mittente : 'Sistema',
             'destinatario': d,
             'titolo': notificaTitolo,
-            'messaggio': '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoNome"!',
-            'eventoId': eventoId,
+            'messaggio': '$cleanDestUser ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoNome"!',
+            'eventoId': cleanEvId,
             'tipo': notificaTipo,
             'stato': 'consegnato',
             'letto': false,
@@ -354,7 +368,7 @@ class BonusMalusController {
           'punti': safePunti,
           'destinatari': destList.toList(),
           'eventoTitolo': eventoNome,
-          'utenteDestinatario': utenteDestinatario,
+          'utenteDestinatario': cleanDestUser,
         }),
         headers: {'content-type': 'application/json'},
       );

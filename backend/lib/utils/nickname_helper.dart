@@ -8,7 +8,7 @@ class NicknameHelper {
     final lower = trimmed.toLowerCase();
 
     // Mappatura statica di sicurezza per gli account principali
-    if (lower == 'claudio' || lower == 'cloud') return 'Cloud';
+    if (lower == 'claudio' || lower == 'cloud' || lower == 'claude') return 'Cloud';
     if (lower == 'filippo' || lower == 'pippoforte' || lower == 'pippo forte') return 'Pippoforte';
     if (lower == 'antonio' || lower == 'ugnom' || lower == 'ugnome') return 'Ugnom';
 

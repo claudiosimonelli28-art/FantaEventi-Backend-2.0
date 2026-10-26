@@ -378,7 +378,7 @@ class ApiService {
     final lower = trimmed.toLowerCase();
 
     // Mappe statiche di sicurezza blindata per gli account principali
-    if (lower == 'claudio' || lower == 'cloud') return 'Cloud';
+    if (lower == 'claudio' || lower == 'cloud' || lower == 'claude') return 'Cloud';
     if (lower == 'filippo' || lower == 'pippoforte' || lower == 'pippo forte') return 'Pippoforte';
     if (lower == 'antonio' || lower == 'ugnom' || lower == 'ugnome') return 'Ugnom';
 
@@ -3353,10 +3353,16 @@ class ApiService {
           rawMessaggio = rawMessaggio
               .replaceAll('Filippo ha proposto', '$resolvedMittente ha proposto')
               .replaceAll('Claudio ha proposto', 'Cloud ha proposto')
+              .replaceAll('Claude ha proposto', 'Cloud ha proposto')
               .replaceAll('Antonio ha proposto', 'Ugnom ha proposto')
               .replaceAll('Claudio ti ha invitato', 'Cloud ti ha invitato')
+              .replaceAll('Claude ti ha invitato', 'Cloud ti ha invitato')
               .replaceAll('Filippo ti ha invitato', 'Pippoforte ti ha invitato')
-              .replaceAll('Antonio ti ha invitato', 'Ugnom ti ha invitato');
+              .replaceAll('Antonio ti ha invitato', 'Ugnom ti ha invitato')
+              .replaceAll('Claudio ha ricevuto', 'Cloud ha ricevuto')
+              .replaceAll('Claude ha ricevuto', 'Cloud ha ricevuto')
+              .replaceAll(' a Claudio ', ' a Cloud ')
+              .replaceAll(' a Claude ', ' a Cloud ');
 
           // Sincronizzazione automatica e self-healing dello stato VAR
           final notVarId = (d['varId'] ?? '').toString().trim().toLowerCase();
@@ -4232,25 +4238,35 @@ class ApiService {
               }
             } catch (_) {}
           }
-          final evMatchIdx = _eventi.indexWhere(
-            (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoTitolo.toLowerCase(),
-          );
+          int evMatchIdx = _eventi.indexWhere((e) => e.id.toLowerCase() == eventoId.toLowerCase());
+          if (evMatchIdx == -1 && eventoTitolo.isNotEmpty) {
+            evMatchIdx = _eventi.indexWhere((e) => e.titolo.toLowerCase() == eventoTitolo.toLowerCase());
+          }
           if (evMatchIdx != -1) {
             final evMatch = _eventi[evMatchIdx];
+            final creatore = evMatch.propostoDa.trim();
+            if (creatore.isNotEmpty) {
+              final r = resolveNickname(creatore);
+              if (!destList.any((d) => d.toLowerCase() == r.toLowerCase())) destList.add(r);
+            }
             for (var item in [...evMatch.partecipanti, ...evMatch.invitati]) {
               final s = item.trim();
-              if (s.isNotEmpty && !destList.any((d) => d.toLowerCase() == s.toLowerCase())) {
-                destList.add(s);
+              if (s.isNotEmpty) {
+                final r = resolveNickname(s);
+                if (!destList.any((d) => d.toLowerCase() == r.toLowerCase())) {
+                  destList.add(r);
+                }
               }
             }
           }
-          final altriPartecipanti = destList.where((d) => !isSamePerson(d, utenteDestinatario)).toList();
+          final cleanDestUser = resolveNickname(utenteDestinatario);
+          final altriPartecipanti = destList.where((d) => !isSamePerson(d, cleanDestUser)).toList();
           if (altriPartecipanti.isNotEmpty) {
             try {
               await PushNotificationService.instance.inviaPushAUtenti(
                 altriPartecipanti,
                 titolo: notificaTitolo,
-                messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+                messaggio: '$cleanDestUser ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
                 data: {
                   'tipo': notificaTipo,
                   'eventoId': eventoId,
@@ -4394,26 +4410,50 @@ class ApiService {
           }
         }
 
-        // 4. Invia notifica BROADCAST a TUTTI i partecipanti dell'evento (con ID e Timestamp univoco)
+        // 4. Invia notifica BROADCAST a TUTTI i partecipanti dell'evento (con ID e Timestamp univoco, MATCH ESATTO PER ID)
         final evDocs = await db.collection('Evento').find().toList();
-        final evMatch = evDocs.firstWhere(
-          (e) => (e['_id']?.toHexString() == eventoId || e['_id']?.toString() == eventoId || (e['titolo'] ?? '').toString().toLowerCase() == eventoTitolo.toLowerCase()),
+        final cleanEvId = eventoId.trim().toLowerCase();
+        final cleanEvHex = cleanEvId.replaceAll(RegExp(r'[^a-f0-9]'), '');
+        Map<String, dynamic> evMatch = evDocs.firstWhere(
+          (e) {
+            final hex = e['_id'] is ObjectId ? (e['_id'] as ObjectId).toHexString().toLowerCase() : '';
+            final str = (e['_id']?.toString() ?? e['id']?.toString() ?? '').toLowerCase();
+            final cleanStr = str.replaceAll(RegExp(r'[^a-f0-9]'), '');
+            return (hex.isNotEmpty && hex == cleanEvId) ||
+                   (cleanStr.isNotEmpty && cleanStr == cleanEvHex) ||
+                   str == cleanEvId;
+          },
           orElse: () => <String, dynamic>{},
         );
+        if (evMatch.isEmpty && eventoTitolo.isNotEmpty) {
+          evMatch = evDocs.firstWhere(
+            (e) => ((e['nome'] ?? e['titolo'] ?? '').toString().toLowerCase() == eventoTitolo.toLowerCase()),
+            orElse: () => <String, dynamic>{},
+          );
+        }
 
         final List<String> destList = [];
         if (evMatch.isNotEmpty) {
+          final creatore = (evMatch['propostoDa'] ?? evMatch['creatore'] ?? '').toString().trim();
+          if (creatore.isNotEmpty) {
+            final r = resolveNickname(creatore);
+            if (!destList.any((d) => d.toLowerCase() == r.toLowerCase())) destList.add(r);
+          }
           final List<dynamic> pList = List.from(evMatch['partecipanti'] ?? []);
           final List<dynamic> iList = List.from(evMatch['invitati'] ?? []);
           for (var item in [...pList, ...iList]) {
             final s = item.toString().trim();
-            if (s.isNotEmpty && !destList.any((d) => d.toLowerCase() == s.toLowerCase())) {
-              destList.add(s);
+            if (s.isNotEmpty) {
+              final r = resolveNickname(s);
+              if (!destList.any((d) => d.toLowerCase() == r.toLowerCase())) {
+                destList.add(r);
+              }
             }
           }
         }
+        final cleanDestUser = resolveNickname(utenteDestinatario);
         if (destList.isEmpty) {
-          destList.add(utenteDestinatario);
+          destList.add(cleanDestUser);
         }
 
         final bool isBonus = punti >= 0;
@@ -4427,8 +4467,8 @@ class ApiService {
             'mittente': mittente,
             'destinatario': d,
             'titolo': notificaTitolo,
-            'messaggio': '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
-            'eventoId': eventoId,
+            'messaggio': '$cleanDestUser ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+            'eventoId': cleanEvId,
             'tipo': notificaTipo,
             'stato': 'consegnato',
             'letto': false,
@@ -4440,27 +4480,27 @@ class ApiService {
         // 1. Invia notifica push mirata con SUONO DEDICATO al destinatario che riceve il bonus o malus
         try {
           await PushNotificationService.instance.inviaPushAUtenti(
-            [utenteDestinatario],
+            [cleanDestUser],
             titolo: notificaTitolo,
             messaggio: 'Hai ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
             data: {
               'tipo': notificaTipo,
-              'eventoId': eventoId,
+              'eventoId': cleanEvId,
             },
           ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
 
         // 2. Invia notifica broadcast a TUTTI gli altri partecipanti dell'evento (incluso chi ha assegnato)
-        final altriPartecipanti = destList.where((d) => !isSamePerson(d, utenteDestinatario)).toList();
+        final altriPartecipanti = destList.where((d) => !isSamePerson(d, cleanDestUser)).toList();
         if (altriPartecipanti.isNotEmpty) {
           try {
             await PushNotificationService.instance.inviaPushAUtenti(
               altriPartecipanti,
               titolo: isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!',
-              messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+              messaggio: '$cleanDestUser ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
               data: {
                 'tipo': notificaTipo,
-                'eventoId': eventoId,
+                'eventoId': cleanEvId,
               },
             ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
@@ -5626,11 +5666,17 @@ class ApiService {
 
           // Invio Push Notification di sistema
           if (approva) {
-            // Push al richiedente
-            if (richiedente.isNotEmpty) {
+            final cleanBersaglio = resolveNickname(bersaglio);
+            final cleanRichiedente = resolveNickname(richiedente);
+            final bool isBonus = punti >= 0;
+            final String notificaTitolo = isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!';
+            final String ptSign = punti >= 0 ? '+$punti' : '$punti';
+
+            // 1. Push di esito VAR al richiedente
+            if (cleanRichiedente.isNotEmpty) {
               try {
                 await PushNotificationService.instance.inviaPushAUtenti(
-                  [richiedente],
+                  [cleanRichiedente],
                   titolo: '📺 VAR: Richiesta Approvata! ✅',
                   messaggio: 'Il Giudice ha convalidato la tua segnalazione per "$bmTitolo". I punti sono stati assegnati.',
                   data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
@@ -5638,33 +5684,29 @@ class ApiService {
               } catch (_) {}
             }
 
-            // Push al bersaglio se diverso dal richiedente
-            if (bersaglio.isNotEmpty && !isSamePerson(bersaglio, richiedente)) {
+            // 2. Push assegnazione bonus mirata al bersaglio
+            if (cleanBersaglio.isNotEmpty) {
               try {
-                final ptSign = punti >= 0 ? '+$punti' : '$punti';
                 await PushNotificationService.instance.inviaPushAUtenti(
-                  [bersaglio],
-                  titolo: '📺 VAR: Sentenza Convalidata! ⚖️',
-                  messaggio: 'Il Giudice ha convalidato "$bmTitolo" ($ptSign PT) a tuo nome per l\'evento "$evTitolo".',
-                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                  [cleanBersaglio],
+                  titolo: notificaTitolo,
+                  messaggio: 'Hai ricevuto "$bmTitolo" ($ptSign PT) per l\'evento "$evTitolo"!',
+                  data: {'tipo': isBonus ? 'assegnazione_bonus' : 'assegnazione_malus', 'eventoId': evId, 'varId': varId},
                 ).timeout(const Duration(seconds: 4), onTimeout: () {});
               } catch (_) {}
             }
 
-            // Push broadcast agli altri partecipanti
+            // 3. Push broadcast a TUTTI gli altri partecipanti (INCLUSO IL GIUDICE CLOUD)
             final otherDests = broadcastDests.where((d) =>
-              !isSamePerson(d, richiedente) &&
-              !isSamePerson(d, bersaglio) &&
-              !isSamePerson(d, giudiceNick)
+              !isSamePerson(d, cleanBersaglio)
             ).toList();
             if (otherDests.isNotEmpty) {
               try {
-                final ptSign = punti >= 0 ? '+$punti' : '$punti';
                 await PushNotificationService.instance.inviaPushAUtenti(
                   otherDests,
-                  titolo: '📺 VAR: Sentenza Convalidata',
-                  messaggio: 'Il Giudice ha convalidato "$bmTitolo" ($ptSign PT) a $bersaglio per "$evTitolo".',
-                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                  titolo: notificaTitolo,
+                  messaggio: '$cleanBersaglio ha ricevuto "$bmTitolo" ($ptSign PT) per l\'evento "$evTitolo"!',
+                  data: {'tipo': isBonus ? 'assegnazione_bonus' : 'assegnazione_malus', 'eventoId': evId, 'varId': varId},
                 ).timeout(const Duration(seconds: 4), onTimeout: () {});
               } catch (_) {}
             }

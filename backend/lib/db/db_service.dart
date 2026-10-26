@@ -50,7 +50,21 @@ class DbService {
     return '';
   }
 
+  Future<void> ensureConnected() async {
+    if (_db == null || !_db!.isConnected) {
+      await connect();
+    }
+  }
+
   Future<void> connect() async {
+    if (_db != null && _db!.isConnected) return;
+    try {
+      if (_db != null) {
+        await _db!.close();
+      }
+    } catch (_) {}
+    _db = null;
+
     String? mongoUri = Platform.environment['MONGODB_URI'];
 
     if (mongoUri == null || mongoUri.trim().isEmpty) {

@@ -30,6 +30,19 @@ Middleware _corsMiddleware() {
   };
 }
 
+Middleware _mongoDbMiddleware() {
+  return (Handler innerHandler) {
+    return (Request request) async {
+      try {
+        await DbService.instance.ensureConnected();
+      } catch (e) {
+        print('Errore riconnessione DB: $e');
+      }
+      return await innerHandler(request);
+    };
+  };
+}
+
 void main() async {
   await DbService.instance.connect();
 
@@ -85,6 +98,7 @@ void main() async {
   final handler = Pipeline()
       .addMiddleware(logRequests())
       .addMiddleware(_corsMiddleware())
+      .addMiddleware(_mongoDbMiddleware())
       .addHandler(app.call);
 
   final port = int.parse(Platform.environment['PORT'] ?? '8088');
