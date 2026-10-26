@@ -379,6 +379,14 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
       }
 
       int mePunti = int.tryParse(_puntiController.text.trim()) ?? 10;
+      if (mePunti.abs() > 100) {
+        AppToast.showError(context, 'Punti non validi', 'Il punteggio massimo per un bonus o malus è 100 punti.');
+        return;
+      }
+      if (mePunti.abs() == 0) {
+        AppToast.showError(context, 'Punti non validi', 'Il punteggio minimo è 1 punto.');
+        return;
+      }
       if (!_isBonus && mePunti > 0) {
         mePunti = -mePunti;
       } else if (_isBonus && mePunti < 0) {
@@ -783,7 +791,10 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                         ),
                         validator: (val) {
                           if (val == null || val.isEmpty) return 'Punti?';
-                          if (int.tryParse(val) == null) return 'Numero valido';
+                          final p = int.tryParse(val);
+                          if (p == null) return 'Numero valido';
+                          if (p.abs() == 0) return 'Min 1';
+                          if (p.abs() > 100) return 'Max 100';
                           return null;
                         },
                       ),
@@ -817,6 +828,56 @@ class _AddBonusMalusViewState extends State<AddBonusMalusView> {
                             });
                           }
                         },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Text(
+                      'Punti rapidi (Max 100):',
+                      style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [5, 10, 20, 50, 100].map((pt) {
+                            final isSel = _puntiController.text.trim() == pt.toString();
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _puntiController.text = pt.toString();
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isSel ? const Color(0xFFFACC15).withValues(alpha: 0.25) : const Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: isSel ? const Color(0xFFFACC15) : const Color(0xFF334155),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${_isBonus ? "+" : "-"}$pt',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSel ? const Color(0xFFFACC15) : const Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
                       ),
                     ),
                   ],

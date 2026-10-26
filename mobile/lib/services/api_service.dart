@@ -739,10 +739,21 @@ class ApiService {
           newBadges.add(badge);
         }
         
-        final newXp = shouldActuallyAward ? (curUser.xp + 100) : curUser.xp;
+        final prog = shouldActuallyAward
+            ? XpProgression.aggiungiXp(
+                livelloAttuale: curUser.livello,
+                xpLivelloAttuale: curUser.xp,
+                deltaXp: 100,
+                xpTotaliAttuali: curUser.xpTotali,
+              )
+            : XpProgression.calcolaProgressione(xpTotali: curUser.xpTotali > 0 ? curUser.xpTotali : curUser.xp);
+
         _currentUser = curUser.copyWith(
           haVistoGuida: true,
-          xp: newXp,
+          livello: prog.livello,
+          xp: prog.xp,
+          xpProssimoLivello: prog.xpProssimoLivello,
+          xpTotali: prog.xpTotali,
           badgeList: newBadges,
         );
         await _saveSession(_currentUser!);
@@ -754,11 +765,11 @@ class ApiService {
             .set('haVistoGuida', true)
             .set('tutorialV3Completato', true)
             .set('tutorialPremioRiscattato', true)
+            .set('livello', prog.livello)
+            .set('xp', prog.xp)
+            .set('xpProssimoLivello', prog.xpProssimoLivello)
+            .set('xpTotali', prog.xpTotali)
             .addToSet('badgeList', badge);
-
-          if (shouldActuallyAward) {
-            mod = mod.inc('xp', 100);
-          }
 
           ObjectId? uObjId;
           try {
@@ -2187,21 +2198,34 @@ class ApiService {
                   for (var uDoc in uDocsForXp) {
                     if (matchesUserDoc(uDoc, rawCreatore)) {
                       final int curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
-                      final int nuoviXp = curXp + 100;
-                      final int nuovoLivello = (nuoviXp / 1000).floor() + 1;
+                      final int curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+                      final int curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+                      final prog = XpProgression.aggiungiXp(
+                        livelloAttuale: curLiv,
+                        xpLivelloAttuale: curXp,
+                        deltaXp: 100,
+                        xpTotaliAttuali: curTot,
+                      );
                       final List<dynamic> curStorico = List.from(uDoc['storicoVoti'] ?? []);
                       if (!curStorico.any((s) => s.toString().contains('Evento "$evTitolo" avviato con successo'))) {
                         curStorico.insert(0, logVoce);
                       }
                       await db.collection('Utenti').update(
                         where.id(uDoc['_id'] as ObjectId),
-                        modify.set('xp', nuoviXp).set('livello', nuovoLivello).set('storicoVoti', curStorico),
+                        modify
+                          .set('xp', prog.xp)
+                          .set('livello', prog.livello)
+                          .set('xpProssimoLivello', prog.xpProssimoLivello)
+                          .set('xpTotali', prog.xpTotali)
+                          .set('storicoVoti', curStorico),
                       );
 
                       if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
                         _currentUser = _currentUser!.copyWith(
-                          xp: nuoviXp,
-                          livello: nuovoLivello,
+                          xp: prog.xp,
+                          livello: prog.livello,
+                          xpProssimoLivello: prog.xpProssimoLivello,
+                          xpTotali: prog.xpTotali,
                           storicoVoti: [logVoce, ..._currentUser!.storicoVoti],
                         );
                       }
@@ -3409,6 +3433,8 @@ class ApiService {
 
   // --- PROPOSTA BONUS/MALUS LEGATA A UN EVENTO SPECIFICO ---
   Future<BonusMalus> proponiBonusMalusPerEvento(String eventoId, BonusMalus nuovoBonus, {bool awardXp = true}) async {
+    final int safePunti = nuovoBonus.punti.clamp(-100, 100);
+    nuovoBonus = nuovoBonus.copyWith(punti: safePunti == 0 ? 10 : safePunti);
     final rawAuthor = (_currentUser?.nickname.isNotEmpty == true
         ? _currentUser!.nickname
         : (nuovoBonus.propostoDa.trim().isNotEmpty
@@ -3662,10 +3688,18 @@ class ApiService {
     }
 
     if (_currentUser != null && awardXp) {
-      final nuoviXp = _currentUser!.xp + 50;
+      final prog = XpProgression.aggiungiXp(
+        livelloAttuale: _currentUser!.livello,
+        xpLivelloAttuale: _currentUser!.xp,
+        deltaXp: 50,
+        xpTotaliAttuali: _currentUser!.xpTotali,
+      );
       final logVoce = formattaVoceStorico('Proposto ${nuovoBonus.isBonus ? "Bonus" : "Malus"} "${nuovoBonus.titolo}" (+50 XP)');
       _currentUser = _currentUser!.copyWith(
-        xp: nuoviXp,
+        xp: prog.xp,
+        livello: prog.livello,
+        xpProssimoLivello: prog.xpProssimoLivello,
+        xpTotali: prog.xpTotali,
         storicoVoti: [
           logVoce,
           ..._currentUser!.storicoVoti,
@@ -3681,7 +3715,12 @@ class ApiService {
               curStorico.insert(0, logVoce);
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
-                modify.set('xp', _currentUser!.xp).set('storicoVoti', curStorico),
+                modify
+                  .set('xp', prog.xp)
+                  .set('livello', prog.livello)
+                  .set('xpProssimoLivello', prog.xpProssimoLivello)
+                  .set('xpTotali', prog.xpTotali)
+                  .set('storicoVoti', curStorico),
               ).timeout(const Duration(seconds: 4));
             }
           }
@@ -3812,7 +3851,20 @@ class ApiService {
         for (var uDoc in uDocs) {
           if (matchesUserDoc(uDoc, cleanDest)) {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
-            final oldXp = (uDoc['xp'] ?? 100) as int;
+            final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+            final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+            final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+
+            // Formula punti * 10 XP con tetto massimo di sicurezza a 100 punti (+1000 XP max)
+            final safePt = punti.clamp(-100, 100);
+            final deltaXp = safePt > 0 ? (safePt * 10) : 0;
+            final prog = XpProgression.aggiungiXp(
+              livelloAttuale: curLiv,
+              xpLivelloAttuale: curXp,
+              deltaXp: deltaXp,
+              xpTotaliAttuali: curTot,
+            );
+
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
             final formattedLog = formattaVoceStorico(logText);
             oldStorico.insert(0, formattedLog);
@@ -3827,14 +3879,20 @@ class ApiService {
               uSelector,
               modify
                   .set('puntiTotali', oldPunti + punti)
-                  .set('xp', oldXp + (punti > 0 ? punti * 10 : 0))
+                  .set('xp', prog.xp)
+                  .set('livello', prog.livello)
+                  .set('xpProssimoLivello', prog.xpProssimoLivello)
+                  .set('xpTotali', prog.xpTotali)
                   .set('storicoVoti', oldStorico),
             );
 
             if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
               _currentUser = _currentUser!.copyWith(
                 puntiTotali: oldPunti + punti,
-                xp: oldXp + (punti > 0 ? punti * 10 : 0),
+                xp: prog.xp,
+                livello: prog.livello,
+                xpProssimoLivello: prog.xpProssimoLivello,
+                xpTotali: prog.xpTotali,
                 storicoVoti: oldStorico.map((e) => e.toString()).toList(),
               );
               await _saveSession(_currentUser!);
@@ -4450,12 +4508,18 @@ class ApiService {
     await getVotazioni();
 
     if (_currentUser != null && !giaVotato) {
-      final nuoviXp = _currentUser!.xp + 25;
-      final nuovoLivello = (nuoviXp / 1000).floor() + 1;
+      final prog = XpProgression.aggiungiXp(
+        livelloAttuale: _currentUser!.livello,
+        xpLivelloAttuale: _currentUser!.xp,
+        deltaXp: 25,
+        xpTotaliAttuali: _currentUser!.xpTotali,
+      );
       final logVoce = formattaVoceStorico('Votato ${aFavore ? "FAVOREVOLE" : "CONTRARIO"} a "${v.titolo}" (+25 XP)');
       _currentUser = _currentUser!.copyWith(
-        xp: nuoviXp,
-        livello: nuovoLivello,
+        xp: prog.xp,
+        livello: prog.livello,
+        xpProssimoLivello: prog.xpProssimoLivello,
+        xpTotali: prog.xpTotali,
         storicoVoti: [
           logVoce,
           ..._currentUser!.storicoVoti,
@@ -4471,7 +4535,12 @@ class ApiService {
               curStorico.insert(0, logVoce);
               await db.collection('Utenti').update(
                 where.id(uDoc['_id'] as ObjectId),
-                modify.set('xp', _currentUser!.xp).set('livello', _currentUser!.livello).set('storicoVoti', curStorico),
+                modify
+                  .set('xp', prog.xp)
+                  .set('livello', prog.livello)
+                  .set('xpProssimoLivello', prog.xpProssimoLivello)
+                  .set('xpTotali', prog.xpTotali)
+                  .set('storicoVoti', curStorico),
               ).timeout(const Duration(seconds: 4));
             }
           }
@@ -4563,7 +4632,6 @@ class ApiService {
         for (var uDoc in uDocs) {
           if (matchesUserDoc(uDoc, cleanDest)) {
             final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
-            final oldXp = (uDoc['xp'] ?? 100) as int;
             final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
             final now = DateTime.now();
             final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -4577,20 +4645,18 @@ class ApiService {
             final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
 
             final newPunti = (oldPunti - punti).clamp(0, 999999);
-            final newXp = (oldXp - (punti > 0 ? punti * 10 : 0)).clamp(100, 999999);
 
+            // Nota di Game Design: L'XP guadagnato dal giocatore è esperienza permanente e non viene de-livellato
             await db.collection('Utenti').update(
               uSelector,
               modify
                   .set('puntiTotali', newPunti)
-                  .set('xp', newXp)
                   .set('storicoVoti', oldStorico),
             );
 
             if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
               _currentUser = _currentUser!.copyWith(
                 puntiTotali: newPunti,
-                xp: newXp,
                 storicoVoti: oldStorico.map((e) => e.toString()).toList(),
               );
               await _saveSession(_currentUser!);
@@ -5010,7 +5076,15 @@ class ApiService {
           final uDocs = await db.collection('Utenti').find().toList();
           for (var uDoc in uDocs) {
             if (matchesUserDoc(uDoc, richiesta.richiedente)) {
-              final curXp = (uDoc['xp'] as num?)?.toInt() ?? ((uDoc['puntiEsperienza'] as num?)?.toInt() ?? 100);
+              final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+              final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+              final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+              final prog = XpProgression.aggiungiXp(
+                livelloAttuale: curLiv,
+                xpLivelloAttuale: curXp,
+                deltaXp: 25,
+                xpTotaliAttuali: curTot,
+              );
               ObjectId? uObjId;
               try {
                 uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
@@ -5018,7 +5092,11 @@ class ApiService {
               final uSel = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
               await db.collection('Utenti').update(
                 uSel,
-                modify.set('xp', curXp + 25).set('puntiEsperienza', curXp + 25),
+                modify
+                  .set('xp', prog.xp)
+                  .set('livello', prog.livello)
+                  .set('xpProssimoLivello', prog.xpProssimoLivello)
+                  .set('xpTotali', prog.xpTotali),
               );
               break;
             }

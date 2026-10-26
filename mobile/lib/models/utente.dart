@@ -1,3 +1,83 @@
+class XpProgression {
+  /// XP necessari per completare un livello e passare a quello successivo: (livello + 1) * 1000.
+  /// Livello 1 -> 2: 2000 XP
+  /// Livello 2 -> 3: 3000 XP
+  /// Livello 3 -> 4: 4000 XP
+  /// Livello 4 -> 5: 5000 XP
+  static int xpNecessariPerLivello(int level) => (level < 1 ? 1 : level + 1) * 1000;
+
+  /// Ricalcola livello, XP nel livello corrente e XP necessari partendo dagli XP cumulativi totali
+  static ({int livello, int xp, int xpProssimoLivello, int xpTotali}) calcolaProgressione({
+    required int xpTotali,
+  }) {
+    int level = 1;
+    int curXp = xpTotali < 0 ? 0 : xpTotali;
+    int needed = xpNecessariPerLivello(level);
+
+    while (curXp >= needed) {
+      curXp -= needed;
+      level++;
+      needed = xpNecessariPerLivello(level);
+    }
+
+    return (
+      livello: level,
+      xp: curXp,
+      xpProssimoLivello: needed,
+      xpTotali: xpTotali < 0 ? 0 : xpTotali,
+    );
+  }
+
+  /// Calcola gli XP cumulativi totali partendo da livello e XP parziali nel livello
+  static int calcolaXpTotaliDaLivello(int level, int xpNelLivello) {
+    int sum = 0;
+    for (int l = 1; l < level; l++) {
+      sum += xpNecessariPerLivello(l);
+    }
+    return sum + (xpNelLivello < 0 ? 0 : xpNelLivello);
+  }
+
+  /// Aggiunge XP garantendo avanzamento di livello progressivo con conservazione dello scarto (carry-over)
+  static ({int livello, int xp, int xpProssimoLivello, int xpTotali}) aggiungiXp({
+    required int livelloAttuale,
+    required int xpLivelloAttuale,
+    required int deltaXp,
+    int? xpTotaliAttuali,
+  }) {
+    if (deltaXp <= 0) {
+      final needed = xpNecessariPerLivello(livelloAttuale);
+      final tot = xpTotaliAttuali ?? calcolaXpTotaliDaLivello(livelloAttuale, xpLivelloAttuale);
+      return (
+        livello: livelloAttuale < 1 ? 1 : livelloAttuale,
+        xp: xpLivelloAttuale,
+        xpProssimoLivello: needed,
+        xpTotali: tot,
+      );
+    }
+
+    int level = livelloAttuale < 1 ? 1 : livelloAttuale;
+    int curXp = xpLivelloAttuale + deltaXp;
+    int needed = xpNecessariPerLivello(level);
+
+    while (curXp >= needed) {
+      curXp -= needed;
+      level++;
+      needed = xpNecessariPerLivello(level);
+    }
+
+    final int newTotali = (xpTotaliAttuali != null)
+        ? (xpTotaliAttuali + deltaXp)
+        : calcolaXpTotaliDaLivello(level, curXp);
+
+    return (
+      livello: level,
+      xp: curXp,
+      xpProssimoLivello: needed,
+      xpTotali: newTotali,
+    );
+  }
+}
+
 class Utente {
   final String id;
   final String nome;
@@ -8,6 +88,7 @@ class Utente {
   final int livello;
   final int xp;
   final int xpProssimoLivello;
+  final int xpTotali;
   final int puntiTotali;
   final List<String> badgeList;
   final List<String> storicoVoti;
@@ -34,6 +115,7 @@ class Utente {
     required this.livello,
     required this.xp,
     required this.xpProssimoLivello,
+    this.xpTotali = 0,
     required this.puntiTotali,
     required this.badgeList,
     required this.storicoVoti,
@@ -61,9 +143,27 @@ class Utente {
     final parsedNome = rawName.isNotEmpty ? rawName : (rawNick.isNotEmpty ? rawNick : 'Utente');
     final parsedNick = rawNick.isNotEmpty ? rawNick : parsedNome;
 
-    final int rawXp = (json['xp'] as num?)?.toInt() ?? ((json['puntiEsperienza'] as num?)?.toInt() ?? 100);
-    final int calcLivello = 1 + (rawXp / 1000).floor();
-    final int calcNextXp = calcLivello * 1000;
+    int parsedLivello = (json['livello'] as num?)?.toInt() ?? 1;
+    int parsedXp = (json['xp'] as num?)?.toInt() ?? ((json['puntiEsperienza'] as num?)?.toInt() ?? 100);
+    int parsedXpProssimo = (json['xpProssimoLivello'] as num?)?.toInt() ?? 2000;
+    int parsedXpTotali = (json['xpTotali'] as num?)?.toInt() ?? 0;
+
+    if (parsedXpTotali > 0) {
+      final prog = XpProgression.calcolaProgressione(xpTotali: parsedXpTotali);
+      parsedLivello = prog.livello;
+      parsedXp = prog.xp;
+      parsedXpProssimo = prog.xpProssimoLivello;
+    } else if (parsedXp >= parsedXpProssimo || parsedXpProssimo <= 1000) {
+      // Dati legacy: converti partendo dagli XP cumulativi
+      final prog = XpProgression.calcolaProgressione(xpTotali: parsedXp);
+      parsedLivello = prog.livello;
+      parsedXp = prog.xp;
+      parsedXpProssimo = prog.xpProssimoLivello;
+      parsedXpTotali = prog.xpTotali;
+    } else {
+      parsedXpProssimo = XpProgression.xpNecessariPerLivello(parsedLivello);
+      parsedXpTotali = XpProgression.calcolaXpTotaliDaLivello(parsedLivello, parsedXp);
+    }
 
     // Genera o recupera Codice Amico (es. FE-1234)
     String friendCode = json['codiceAmico'] as String? ?? '';
@@ -106,9 +206,10 @@ class Utente {
       nickname: parsedNick,
       email: json['email'] as String? ?? '',
       avatarUrl: parsedAvatar,
-      livello: calcLivello,
-      xp: rawXp,
-      xpProssimoLivello: calcNextXp,
+      livello: parsedLivello,
+      xp: parsedXp,
+      xpProssimoLivello: parsedXpProssimo,
+      xpTotali: parsedXpTotali,
       puntiTotali: (json['puntiTotali'] as num?)?.toInt() ?? 0,
       badgeList: (json['badgeList'] as List<dynamic>?)
               ?.map((e) => e.toString())
@@ -150,6 +251,7 @@ class Utente {
       'livello': livello,
       'xp': xp,
       'xpProssimoLivello': xpProssimoLivello,
+      'xpTotali': xpTotali,
       'puntiTotali': puntiTotali,
       'badgeList': badgeList,
       'storicoVoti': storicoVoti,
@@ -179,6 +281,7 @@ class Utente {
     int? livello,
     int? xp,
     int? xpProssimoLivello,
+    int? xpTotali,
     int? puntiTotali,
     List<String>? badgeList,
     List<String>? storicoVoti,
@@ -205,6 +308,7 @@ class Utente {
       livello: livello ?? this.livello,
       xp: xp ?? this.xp,
       xpProssimoLivello: xpProssimoLivello ?? this.xpProssimoLivello,
+      xpTotali: xpTotali ?? this.xpTotali,
       puntiTotali: puntiTotali ?? this.puntiTotali,
       badgeList: badgeList ?? this.badgeList,
       storicoVoti: storicoVoti ?? this.storicoVoti,
