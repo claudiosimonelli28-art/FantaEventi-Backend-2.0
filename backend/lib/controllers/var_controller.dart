@@ -3,6 +3,8 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/richiesta_var.dart';
+import '../models/utente.dart';
+import '../utils/nickname_helper.dart';
 
 class VarController {
   // Helper per risposte JSON
@@ -180,10 +182,12 @@ class VarController {
         where.eq('stato', 'in_attesa').excludeFields(['fotoBase64']),
       ).toList();
 
-      final cleanGiudice = giudice.trim().toLowerCase();
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final cleanGiudice = NicknameHelper.resolve(giudice, uDocs);
+
       final filtered = docs.where((d) {
-        final dGiudice = (d['giudice'] ?? '').toString().trim().toLowerCase();
-        return dGiudice == cleanGiudice;
+        final dGiudice = (d['giudice'] ?? '').toString().trim();
+        return NicknameHelper.isSame(dGiudice, cleanGiudice, uDocs);
       }).map((d) {
         final map = Map<String, dynamic>.from(d);
         if (map['_id'] is ObjectId) {
@@ -223,19 +227,32 @@ class VarController {
         return _errorResponse('Questa richiesta VAR è già stata decisa');
       }
 
-      final cleanNick = testimone.trim().toLowerCase();
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final cleanNick = NicknameHelper.resolve(testimone, uDocs);
+
       await DbService.instance.richiesteVarCollection.update(
         selector,
-        modify.set('votiTestimoni.$cleanNick', conferma),
+        modify.set('votiTestimoni.${cleanNick.toLowerCase()}', conferma),
       );
 
-      // Aggiorna notifica testimone a stato votato
-      await DbService.instance.notificheCollection.update(
-        where.eq('varId', varId).and(where.eq('destinatario', testimone)),
-        modify.set('stato', conferma ? 'confermato' : 'negato').set('letto', true),
-      );
+      // Aggiorna notifica testimone a stato votato in modo sicuro tramite _id
+      final notDocs = await DbService.instance.notificheCollection.find(
+        where.eq('varId', varId),
+      ).toList();
+      for (var nDoc in notDocs) {
+        if (nDoc['_id'] is ObjectId) {
+          final dDest = (nDoc['destinatario'] ?? '').toString().trim();
+          final dTipo = (nDoc['tipo'] ?? '').toString();
+          if (dTipo == 'var_testimone' && NicknameHelper.isSame(dDest, cleanNick, uDocs)) {
+            await DbService.instance.notificheCollection.update(
+              where.id(nDoc['_id'] as ObjectId),
+              modify.set('stato', conferma ? 'confermato' : 'negato').set('letto', true),
+            );
+          }
+        }
+      }
 
-      print('👀 [VAR] Voto testimonianza registrato per $testimone su VAR $varId: $conferma');
+      print('👀 [VAR] Voto testimonianza registrato per $cleanNick su VAR $varId: $conferma');
       return _jsonResponse({'success': true});
     } catch (e) {
       return _errorResponse(e.toString(), statusCode: 500);
@@ -272,25 +289,64 @@ class VarController {
       final richiesta = RichiestaVar.fromMap(doc);
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch;
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final ptStr = richiesta.punti >= 0 ? '+${richiesta.punti}' : '${richiesta.punti}';
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+      // Reperimento partecipanti all'evento per broadcast
+      final evDocs = await DbService.instance.eventiCollection.find().toList();
+      final targetEv = evDocs.firstWhere(
+        (e) => (e['_id']?.toString() == richiesta.eventoId ||
+                (e['_id'] is ObjectId && (e['_id'] as ObjectId).oid == richiesta.eventoId) ||
+                e['id']?.toString() == richiesta.eventoId ||
+                e['titolo']?.toString().toLowerCase() == richiesta.eventoTitolo.toLowerCase()),
+        orElse: () => <String, dynamic>{},
+      );
+      final Set<String> eventParticipants = {};
+      if (targetEv.isNotEmpty) {
+        final pList = List.from(targetEv['partecipanti'] ?? []);
+        final iList = List.from(targetEv['invitati'] ?? []);
+        final cUser = (targetEv['propostoDa'] ?? targetEv['creatore'] ?? '').toString().trim();
+        if (cUser.isNotEmpty) eventParticipants.add(NicknameHelper.resolve(cUser, uDocs));
+        for (var p in [...pList, ...iList]) {
+          final s = p.toString().trim();
+          if (s.isNotEmpty) eventParticipants.add(NicknameHelper.resolve(s, uDocs));
+        }
+      }
+
+      final cleanRichiedente = NicknameHelper.resolve(richiesta.richiedente, uDocs);
+      final cleanBersaglio = NicknameHelper.resolve(richiesta.bersaglio, uDocs);
+      final cleanGiudice = NicknameHelper.resolve(giudice, uDocs);
+      bool isSanzionato = false;
+      int penaltyApplied = 0;
 
       if (approva) {
         // 1. Assegna punti al bersaglio
-        final cleanDest = richiesta.bersaglio.trim().toLowerCase();
-        final ptStr = richiesta.punti >= 0 ? '+${richiesta.punti}' : '${richiesta.punti}';
-        final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
         final logText = '📺 VAR: Ricevuto ${richiesta.punti >= 0 ? "Bonus" : "Malus"} "${richiesta.bonusMalusTitolo}" ($ptStr PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)';
 
-        // Aggiorna Utente destinatario
-        final uDocs = await DbService.instance.utentiCollection.find().toList();
         for (var uDoc in uDocs) {
-          final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-          if (uName == cleanDest) {
+          if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['nome'] ?? '', cleanBersaglio, uDocs)) {
             final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
+            final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+            final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+            final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+            final prog = XpProgression.aggiungiXp(
+              livelloAttuale: curLiv,
+              xpLivelloAttuale: curXp,
+              deltaXp: richiesta.punti > 0 ? richiesta.punti * 2 : 0,
+              xpTotaliAttuali: curTot,
+            );
             final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
-            curStorico.add(logText);
+            curStorico.insert(0, logText);
             await DbService.instance.utentiCollection.update(
               where.id(uDoc['_id'] as ObjectId),
-              modify.set('puntiTotali', curPts + richiesta.punti).set('storicoVoti', curStorico),
+              modify
+                .set('puntiTotali', curPts + richiesta.punti)
+                .set('xp', prog.xp)
+                .set('livello', prog.livello)
+                .set('xpProssimoLivello', prog.xpProssimoLivello)
+                .set('xpTotali', prog.xpTotali)
+                .set('storicoVoti', curStorico),
             );
             break;
           }
@@ -305,22 +361,36 @@ class VarController {
         final bmDoc = await DbService.instance.bonusMalusCollection.findOne(bmSelector);
         if (bmDoc != null) {
           final curAss = List<dynamic>.from(bmDoc['assegnatoA'] ?? []);
-          curAss.add(richiesta.bersaglio.trim());
+          final bool isMulti = bmDoc['riassegnabileMoltepliciVolte'] == true;
+          if (isMulti || !curAss.any((u) => NicknameHelper.isSame(u.toString(), cleanBersaglio, uDocs))) {
+            curAss.add(cleanBersaglio);
+          }
           await DbService.instance.bonusMalusCollection.update(
-            bmSelector,
+            where.id(bmDoc['_id'] as ObjectId),
             modify.set('assegnatoA', curAss),
           );
         }
 
-        // 2. Se era una denuncia Malus, assegna +25 XP al richiedente
+        // 2. Se era una denuncia Malus, assegna +25 XP al richiedente per merito civico
         if (richiesta.tipo == 'malus') {
           for (var uDoc in uDocs) {
-            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == richiesta.richiedente.trim().toLowerCase()) {
-              final curXp = (uDoc['xp'] as num?)?.toInt() ?? ((uDoc['puntiEsperienza'] as num?)?.toInt() ?? 100);
+            if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['nome'] ?? '', cleanRichiedente, uDocs)) {
+              final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+              final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+              final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+              final prog = XpProgression.aggiungiXp(
+                livelloAttuale: curLiv,
+                xpLivelloAttuale: curXp,
+                deltaXp: 25,
+                xpTotaliAttuali: curTot,
+              );
               await DbService.instance.utentiCollection.update(
                 where.id(uDoc['_id'] as ObjectId),
-                modify.set('xp', curXp + 25).set('puntiEsperienza', curXp + 25),
+                modify
+                  .set('xp', prog.xp)
+                  .set('livello', prog.livello)
+                  .set('xpProssimoLivello', prog.xpProssimoLivello)
+                  .set('xpTotali', prog.xpTotali),
               );
               break;
             }
@@ -333,40 +403,78 @@ class VarController {
           modify
               .set('stato', 'approvata')
               .set('dataDecisione', now.toIso8601String())
+              .set('giudiceEffettivo', cleanGiudice)
               .unset('fotoBase64'),
         );
 
         // 4. Invia notifica al richiedente
         await DbService.instance.notificheCollection.insertOne({
-          'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
-          'mittente': giudice,
-          'destinatario': richiesta.richiedente,
+          'notificaId': 'var_res_${ts}_${cleanRichiedente.toLowerCase()}',
+          'mittente': cleanGiudice,
+          'destinatario': cleanRichiedente,
           'titolo': '📺 VAR: Richiesta Approvata! ✅',
           'messaggio': 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
           'eventoId': richiesta.eventoId,
           'varId': varId,
           'tipo': 'var_esito',
-          'stato': 'approvato',
+          'stato': 'approvata',
           'letto': false,
           'data': now.toIso8601String(),
         });
+
+        // 5. Se il bersaglio è diverso dal richiedente, notifica al bersaglio
+        if (!NicknameHelper.isSame(cleanBersaglio, cleanRichiedente, uDocs)) {
+          await DbService.instance.notificheCollection.insertOne({
+            'notificaId': 'var_target_${ts}_${cleanBersaglio.toLowerCase()}',
+            'mittente': cleanGiudice,
+            'destinatario': cleanBersaglio,
+            'titolo': '📺 VAR: Sentenza Convalidata! ⚖️',
+            'messaggio': 'Il Giudice ha convalidato "${richiesta.bonusMalusTitolo}" ($ptStr PT) a tuo nome per l\'evento "${richiesta.eventoTitolo}".',
+            'eventoId': richiesta.eventoId,
+            'varId': varId,
+            'tipo': 'var_esito',
+            'stato': 'approvata',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        }
+
+        // 6. Notifica broadcast agli altri partecipanti
+        for (var p in eventParticipants) {
+          if (NicknameHelper.isSame(p, cleanRichiedente, uDocs) ||
+              NicknameHelper.isSame(p, cleanBersaglio, uDocs) ||
+              NicknameHelper.isSame(p, cleanGiudice, uDocs)) {
+            continue;
+          }
+          await DbService.instance.notificheCollection.insertOne({
+            'notificaId': 'var_bcast_${ts}_${p.toLowerCase()}',
+            'mittente': cleanGiudice,
+            'destinatario': p,
+            'titolo': '📺 VAR: Sentenza Convalidata',
+            'messaggio': 'Il Giudice ha convalidato "${richiesta.bonusMalusTitolo}" ($ptStr PT) a $cleanBersaglio per "${richiesta.eventoTitolo}".',
+            'eventoId': richiesta.eventoId,
+            'varId': varId,
+            'tipo': 'var_esito',
+            'stato': 'approvata',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        }
       } else {
         // Rigettata
         final bool doSanzione = sanzionaFalsaTestimonianza && richiesta.tipo == 'malus';
+        isSanzionato = doSanzione;
 
         if (doSanzione) {
           final penalty = (richiesta.penalitaPunti != 0 ? richiesta.penalitaPunti.abs() : 10) * -1;
-          final cleanRichiedente = richiesta.richiedente.trim();
+          penaltyApplied = penalty;
           final cleanEvId = richiesta.eventoId.trim();
 
-          final uDocs = await DbService.instance.utentiCollection.find().toList();
           for (var uDoc in uDocs) {
-            final uName = (uDoc['nome'] ?? uDoc['username'] ?? uDoc['nickname'] ?? '').toString().trim().toLowerCase();
-            if (uName == cleanRichiedente.toLowerCase()) {
+            if (NicknameHelper.isSame(uDoc['nickname'] ?? uDoc['nome'] ?? '', cleanRichiedente, uDocs)) {
               final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
               final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
-              final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-              curStorico.add('🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
+              curStorico.insert(0, '🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
 
               await DbService.instance.utentiCollection.update(
                 where.id(uDoc['_id'] as ObjectId),
@@ -406,7 +514,7 @@ class VarController {
               'punti': penalty,
               'assegnatoA': [cleanRichiedente],
               'riassegnabileMoltepliciVolte': true,
-              'propostoDa': giudice,
+              'propostoDa': cleanGiudice,
               'approvato': true,
               'createdAt': now.toIso8601String(),
             });
@@ -420,34 +528,83 @@ class VarController {
               .set('stato', 'rifiutata')
               .set('dataDecisione', now.toIso8601String())
               .set('sanzioneApplicata', doSanzione)
+              .set('giudiceEffettivo', cleanGiudice)
               .unset('fotoBase64'),
         );
 
         // Notifica al richiedente
         final sanzioneNotice = doSanzione ? ' Ti sono stati decurtati ${richiesta.penalitaPunti} PT per segnalazione infondata.' : '';
         await DbService.instance.notificheCollection.insertOne({
-          'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
-          'mittente': giudice,
-          'destinatario': richiesta.richiedente,
-          'titolo': '📺 VAR: Segnalazione Respinta',
+          'notificaId': 'var_res_${ts}_${cleanRichiedente.toLowerCase()}',
+          'mittente': cleanGiudice,
+          'destinatario': cleanRichiedente,
+          'titolo': doSanzione ? '🚨 VAR: Denuncia Respinta e Sanzionata! ❌' : '📺 VAR: Segnalazione Respinta ❌',
           'messaggio': 'Il Giudice ha esaminato e respinto la tua segnalazione per "${richiesta.bonusMalusTitolo}".$sanzioneNotice',
           'eventoId': richiesta.eventoId,
           'varId': varId,
           'tipo': 'var_esito',
-          'stato': 'rifiutato',
+          'stato': doSanzione ? 'sanzionato' : 'rifiutata',
           'letto': false,
           'data': now.toIso8601String(),
         });
+
+        // Se il bersaglio è diverso dal richiedente, notifica al bersaglio che è stato scagionato
+        if (!NicknameHelper.isSame(cleanBersaglio, cleanRichiedente, uDocs)) {
+          await DbService.instance.notificheCollection.insertOne({
+            'notificaId': 'var_target_${ts}_${cleanBersaglio.toLowerCase()}',
+            'mittente': cleanGiudice,
+            'destinatario': cleanBersaglio,
+            'titolo': '📺 VAR: Segnalazione Respinta',
+            'messaggio': 'La segnalazione contro di te per "${richiesta.bonusMalusTitolo}" è stata esaminata e respinta dal Giudice.',
+            'eventoId': richiesta.eventoId,
+            'varId': varId,
+            'tipo': 'var_esito',
+            'stato': 'rifiutata',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        }
       }
 
-      // Aggiorna notifica per il giudice
-      await DbService.instance.notificheCollection.update(
-        where.eq('varId', varId).and(where.eq('destinatario', giudice)),
-        modify.set('stato', approva ? 'approvata' : 'rifiutata').set('letto', true),
-      );
+      // Aggiorna notifica per il giudice e testimoni in modo sicuro tramite _id
+      final notDocs = await DbService.instance.notificheCollection.find(
+        where.eq('varId', varId),
+      ).toList();
+      for (var nDoc in notDocs) {
+        if (nDoc['_id'] is ObjectId) {
+          final dDest = (nDoc['destinatario'] ?? '').toString().trim();
+          final dTipo = (nDoc['tipo'] ?? '').toString();
+          if (NicknameHelper.isSame(dDest, cleanGiudice, uDocs) || dTipo == 'var_richiesta_giudice') {
+            await DbService.instance.notificheCollection.update(
+              where.id(nDoc['_id'] as ObjectId),
+              modify.set('stato', approva ? 'approvata' : 'rifiutata').set('letto', true),
+            );
+          } else if (dTipo == 'var_testimone' && nDoc['stato'] == 'in_attesa') {
+            await DbService.instance.notificheCollection.update(
+              where.id(nDoc['_id'] as ObjectId),
+              modify.set('stato', 'concluso').set('letto', true),
+            );
+          }
+        }
+      }
 
-      print('📺 [VAR] Decisione registrata per VAR $varId da $giudice: approvato=$approva');
-      return _jsonResponse({'success': true});
+      print('📺 [VAR] Decisione registrata per VAR $varId da $cleanGiudice: approvato=$approva');
+      return _jsonResponse({
+        'success': true,
+        'varId': varId,
+        'approvato': approva,
+        'richiedente': cleanRichiedente,
+        'bersaglio': cleanBersaglio,
+        'giudice': cleanGiudice,
+        'eventoId': richiesta.eventoId,
+        'eventoTitolo': richiesta.eventoTitolo,
+        'bonusMalusTitolo': richiesta.bonusMalusTitolo,
+        'punti': richiesta.punti,
+        'tipo': richiesta.tipo,
+        'destinatari': eventParticipants.toList(),
+        'sanzionato': isSanzionato,
+        'penalita': penaltyApplied,
+      });
     } catch (e) {
       print('❌ [VAR] Errore decisione: $e');
       return _errorResponse(e.toString(), statusCode: 500);

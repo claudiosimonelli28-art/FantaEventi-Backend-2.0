@@ -106,6 +106,8 @@ class BonusMalusController {
       } catch (_) {}
 
       // Invia notifica ai partecipanti ed invitati dell'evento
+      final Set<String> destinatariSet = {};
+      String eventoNome = eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento';
       try {
         ObjectId? objId;
         try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
@@ -124,10 +126,11 @@ class BonusMalusController {
           );
         }
 
-        final eventoNome = (evDoc['nome'] ?? evDoc['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
+        if (evDoc.isNotEmpty) {
+          eventoNome = (evDoc['nome'] ?? evDoc['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
+        }
 
-        final Set<String> destinatariSet = {};
-        final creatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '').toString().trim();
+        final creatore = (evDoc.isNotEmpty ? (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '') : '').toString().trim();
         if (creatore.isNotEmpty) destinatariSet.add(creatore);
 
         final rawPart = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
@@ -170,7 +173,12 @@ class BonusMalusController {
       } catch (_) {}
 
       return Response.ok(
-        jsonEncode({'message': 'Bonus/Malus creato con successo', 'id': bmHexId}),
+        jsonEncode({
+          'message': 'Bonus/Malus creato con successo',
+          'id': bmHexId,
+          'destinatari': destinatariSet.map((d) => NicknameHelper.resolve(d, allUtenti)).toList(),
+          'eventoTitolo': eventoNome,
+        }),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
@@ -286,6 +294,8 @@ class BonusMalusController {
       }
 
       // 4. Inserimento notifiche in-app per TUTTI i partecipanti dell'evento
+      final Set<String> destList = {};
+      String eventoNome = eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento';
       try {
         final allEventi = await DbService.instance.eventiCollection.find().toList();
         Map<String, dynamic>? targetEv;
@@ -301,9 +311,8 @@ class BonusMalusController {
           );
         }
 
-        final eventoNome = (targetEv['nome'] ?? targetEv['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
-        final Set<String> destList = {};
         if (targetEv.isNotEmpty) {
+          eventoNome = (targetEv['nome'] ?? targetEv['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
           final List<dynamic> pList = List.from(targetEv['partecipanti'] ?? []);
           final List<dynamic> iList = List.from(targetEv['invitati'] ?? []);
           for (var item in [...pList, ...iList]) {
@@ -340,7 +349,13 @@ class BonusMalusController {
       }
 
       return Response.ok(
-        jsonEncode({'message': 'Bonus assegnato con successo', 'punti': safePunti}),
+        jsonEncode({
+          'message': 'Bonus assegnato con successo',
+          'punti': safePunti,
+          'destinatari': destList.toList(),
+          'eventoTitolo': eventoNome,
+          'utenteDestinatario': utenteDestinatario,
+        }),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

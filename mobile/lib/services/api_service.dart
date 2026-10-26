@@ -3164,6 +3164,18 @@ class ApiService {
         final eventiDocs = await db.collection('Evento').find().toList();
         final votazioniDocs = await db.collection('Votazioni').find().toList();
         final bmDocs = await db.collection('BonusMalus').find().toList();
+        final varDocs = await db.collection('RichiesteVar').find().toList();
+
+        // Mappa delle RichiesteVar per ID hex / String
+        final Map<String, Map<String, dynamic>> varMap = {};
+        for (var v in varDocs) {
+          final vIdHex = v['_id'] is ObjectId ? (v['_id'] as ObjectId).toHexString().toLowerCase() : '';
+          final vIdStr = (v['_id']?.toString() ?? v['id']?.toString() ?? '').toLowerCase();
+          final vClean = vIdStr.replaceAll(RegExp(r'[^a-f0-9]'), '');
+          if (vIdHex.isNotEmpty) varMap[vIdHex] = v;
+          if (vIdStr.isNotEmpty) varMap[vIdStr] = v;
+          if (vClean.isNotEmpty) varMap[vClean] = v;
+        }
 
         // Mappa degli eventi validi: Hex / String / Titolo -> Doc
         final Map<String, Map<String, dynamic>> validEvents = {};
@@ -3346,6 +3358,35 @@ class ApiService {
               .replaceAll('Filippo ti ha invitato', 'Pippoforte ti ha invitato')
               .replaceAll('Antonio ti ha invitato', 'Ugnom ti ha invitato');
 
+          // Sincronizzazione automatica e self-healing dello stato VAR
+          final notVarId = (d['varId'] ?? '').toString().trim().toLowerCase();
+          final notVarClean = notVarId.replaceAll(RegExp(r'[^a-f0-9]'), '');
+          String finalStato = (d['stato'] ?? 'in_attesa').toString();
+          bool finalLetto = d['letto'] == true;
+
+          if (notVarId.isNotEmpty) {
+            final matchedVar = varMap[notVarId] ?? (notVarClean.isNotEmpty ? varMap[notVarClean] : null);
+            if (matchedVar != null) {
+              final vStato = (matchedVar['stato'] ?? '').toString().toLowerCase();
+              if (vStato == 'approvata' || vStato == 'approvato') {
+                finalStato = 'approvata';
+                finalLetto = true;
+              } else if (vStato == 'rifiutata' || vStato == 'rifiutato') {
+                finalStato = 'rifiutata';
+                finalLetto = true;
+              }
+              // Self-healing asincrono nel DB se ancora marcata come in_attesa
+              if (d['_id'] is ObjectId && (d['stato'] == 'in_attesa' || d['stato'] == 'in_votazione') && (finalStato == 'approvata' || finalStato == 'rifiutata')) {
+                try {
+                  db.collection('Notifiche').update(
+                    where.id(d['_id'] as ObjectId),
+                    modify.set('stato', finalStato).set('letto', true),
+                  );
+                } catch (_) {}
+              }
+            }
+          }
+
           notificheList.add({
             'id': idStr,
             'mittente': resolvedMittente,
@@ -3359,8 +3400,8 @@ class ApiService {
             'bonusTitolo': d['bonusTitolo'] ?? '',
             'tipo': d['tipo'] ?? 'invito',
             'varId': d['varId'] ?? '',
-            'stato': d['stato'] ?? 'in_attesa',
-            'letto': d['letto'] == true,
+            'stato': finalStato,
+            'letto': finalLetto,
             'votoEspresso': votoEspresso,
             'haGiaVotato': haGiaVotato,
             'votazioneChiusa': votazioneChiusa,
@@ -3769,18 +3810,28 @@ class ApiService {
             evMatch.creatore,
           ];
           final Set<String> uniqueDests = {};
+          final rawBackendDests = (resData['destinatari'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+          for (var b in rawBackendDests) {
+            final clean = b.trim();
+            if (clean.isNotEmpty && !isSamePerson(clean, curUserNick)) {
+              uniqueDests.add(resolveNickname(clean));
+            }
+          }
           for (var c in allCandidates) {
             final clean = c.trim();
             if (clean.isNotEmpty && !isSamePerson(clean, curUserNick)) {
               uniqueDests.add(resolveNickname(clean));
             }
           }
+          final String realEvTitolo = (resData['eventoTitolo']?.toString().isNotEmpty == true)
+              ? resData['eventoTitolo'].toString()
+              : evMatch.titolo;
           if (uniqueDests.isNotEmpty) {
             try {
               await PushNotificationService.instance.inviaPushAUtenti(
                 uniqueDests.toList(),
                 titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
-                messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
+                messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "$realEvTitolo". Entra a votare!',
                 data: {
                   'tipo': 'votazione',
                   'eventoId': eventoId,
@@ -4169,6 +4220,18 @@ class ApiService {
 
           // 2. Notifica push broadcast a TUTTI gli altri partecipanti dell\'evento
           final List<String> destList = [];
+          if (res.body.isNotEmpty && !res.body.contains('<html>')) {
+            try {
+              final resData = jsonDecode(res.body) as Map<String, dynamic>;
+              final rawDests = resData['destinatari'] as List<dynamic>? ?? [];
+              for (var d in rawDests) {
+                final s = d.toString().trim();
+                if (s.isNotEmpty && !destList.any((x) => x.toLowerCase() == s.toLowerCase())) {
+                  destList.add(s);
+                }
+              }
+            } catch (_) {}
+          }
           final evMatchIdx = _eventi.indexWhere(
             (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoTitolo.toLowerCase(),
           );
@@ -5532,8 +5595,118 @@ class ApiService {
     required bool approva,
     bool sanzionaFalsaTestimonianza = false,
   }) async {
+    invalidateCache();
+
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/var/decidi'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'varId': varId,
+            'giudice': giudiceNick,
+            'giudiceNick': giudiceNick,
+            'approva': approva,
+            'sanzionaFalsaTestimonianza': sanzionaFalsaTestimonianza,
+          }),
+        ).timeout(const Duration(seconds: 7));
+
+        if ((res.statusCode == 200 || res.statusCode == 201) && !res.body.contains('<html>')) {
+          final resData = jsonDecode(res.body) as Map<String, dynamic>;
+          final richiedente = (resData['richiedente'] ?? '').toString();
+          final bersaglio = (resData['bersaglio'] ?? '').toString();
+          final evId = (resData['eventoId'] ?? '').toString();
+          final evTitolo = (resData['eventoTitolo'] ?? 'Evento').toString();
+          final bmTitolo = (resData['bonusMalusTitolo'] ?? 'VAR').toString();
+          final int punti = (resData['punti'] as num?)?.toInt() ?? 0;
+          final bool isSanzionato = resData['sanzionato'] == true;
+          final List<dynamic> rawDests = resData['destinatari'] as List<dynamic>? ?? [];
+          final List<String> broadcastDests = rawDests.map((e) => e.toString()).toList();
+
+          // Invio Push Notification di sistema
+          if (approva) {
+            // Push al richiedente
+            if (richiedente.isNotEmpty) {
+              try {
+                await PushNotificationService.instance.inviaPushAUtenti(
+                  [richiedente],
+                  titolo: '📺 VAR: Richiesta Approvata! ✅',
+                  messaggio: 'Il Giudice ha convalidato la tua segnalazione per "$bmTitolo". I punti sono stati assegnati.',
+                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              } catch (_) {}
+            }
+
+            // Push al bersaglio se diverso dal richiedente
+            if (bersaglio.isNotEmpty && !isSamePerson(bersaglio, richiedente)) {
+              try {
+                final ptSign = punti >= 0 ? '+$punti' : '$punti';
+                await PushNotificationService.instance.inviaPushAUtenti(
+                  [bersaglio],
+                  titolo: '📺 VAR: Sentenza Convalidata! ⚖️',
+                  messaggio: 'Il Giudice ha convalidato "$bmTitolo" ($ptSign PT) a tuo nome per l\'evento "$evTitolo".',
+                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              } catch (_) {}
+            }
+
+            // Push broadcast agli altri partecipanti
+            final otherDests = broadcastDests.where((d) =>
+              !isSamePerson(d, richiedente) &&
+              !isSamePerson(d, bersaglio) &&
+              !isSamePerson(d, giudiceNick)
+            ).toList();
+            if (otherDests.isNotEmpty) {
+              try {
+                final ptSign = punti >= 0 ? '+$punti' : '$punti';
+                await PushNotificationService.instance.inviaPushAUtenti(
+                  otherDests,
+                  titolo: '📺 VAR: Sentenza Convalidata',
+                  messaggio: 'Il Giudice ha convalidato "$bmTitolo" ($ptSign PT) a $bersaglio per "$evTitolo".',
+                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              } catch (_) {}
+            }
+          } else {
+            // Respinta
+            if (richiedente.isNotEmpty) {
+              try {
+                await PushNotificationService.instance.inviaPushAUtenti(
+                  [richiedente],
+                  titolo: isSanzionato ? '🚨 VAR: Denuncia Respinta e Sanzionata! ❌' : '📺 VAR: Segnalazione Respinta ❌',
+                  messaggio: isSanzionato
+                      ? 'La tua denuncia per "$bmTitolo" è stata respinta come infondata. Sanzione applicata!'
+                      : 'La verifica per "$bmTitolo" non è stata convalidata dal Giudice.',
+                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              } catch (_) {}
+            }
+
+            if (bersaglio.isNotEmpty && !isSamePerson(bersaglio, richiedente)) {
+              try {
+                await PushNotificationService.instance.inviaPushAUtenti(
+                  [bersaglio],
+                  titolo: '📺 VAR: Segnalazione Respinta',
+                  messaggio: 'La segnalazione contro di te per "$bmTitolo" è stata esaminata e respinta dal Giudice.',
+                  data: {'tipo': 'var_esito', 'eventoId': evId, 'varId': varId},
+                ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              } catch (_) {}
+            }
+          }
+
+          invalidateCache();
+          return true;
+        } else if (res.statusCode == 400 && res.body.contains('già stata decisa')) {
+          // Richiesta già processata
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: scrittura DIRETTA su MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return false;
 
       ObjectId? objId;
@@ -5544,15 +5717,13 @@ class ApiService {
 
       final doc = await db.collection('RichiesteVar').findOne(selector);
       if (doc == null) return false;
-      if (doc['stato'] != 'in_attesa') return false; // Già processata
+      if (doc['stato'] != 'in_attesa') return true; // Già decisa
 
       final richiesta = RichiestaVar.fromJson(doc);
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch;
-
-      // ATOMIC CLAIM: aggiorna immediatamente lo stato della richiesta nel DB
-      // per garantire assoluta idempotenza ed impedire doppi addebiti da tocchi multipli o ritentativi
       final targetStato = approva ? 'approvata' : 'rifiutata';
+
       final updateClaim = await db.collection('RichiesteVar').update(
         selector.and(where.eq('stato', 'in_attesa')),
         modify
@@ -5564,67 +5735,87 @@ class ApiService {
       );
       final int nModified = (updateClaim['nModified'] as num?)?.toInt() ??
           ((updateClaim['n'] as num?)?.toInt() ?? 0);
-      if (nModified == 0) {
-        return false; // Concurrency guard: un'altra chiamata ha già processato la richiesta!
-      }
+      if (nModified == 0) return true;
 
       if (approva) {
-        // 1. Assegna punti al bersaglio
-        await assegnaBonusMalusAPartecipante(
-          eventoId: richiesta.eventoId,
-          bonusId: richiesta.bonusMalusId,
-          utenteDestinatario: richiesta.bersaglio,
-          punti: richiesta.punti,
-          eventoTitolo: richiesta.eventoTitolo,
-          bonusTitolo: richiesta.bonusMalusTitolo,
-        );
+        try {
+          await assegnaBonusMalusAPartecipante(
+            eventoId: richiesta.eventoId,
+            bonusId: richiesta.bonusMalusId,
+            utenteDestinatario: richiesta.bersaglio,
+            punti: richiesta.punti,
+            eventoTitolo: richiesta.eventoTitolo,
+            bonusTitolo: richiesta.bonusMalusTitolo,
+          );
+        } catch (_) {}
 
-        // 2. Se era una denuncia Malus, assegna +25 XP al richiedente per merito civico
         if (richiesta.tipo == 'malus') {
-          final uDocs = await db.collection('Utenti').find().toList();
-          for (var uDoc in uDocs) {
-            if (matchesUserDoc(uDoc, richiesta.richiedente)) {
-              final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
-              final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
-              final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
-              final prog = XpProgression.aggiungiXp(
-                livelloAttuale: curLiv,
-                xpLivelloAttuale: curXp,
-                deltaXp: 25,
-                xpTotaliAttuali: curTot,
-              );
-              ObjectId? uObjId;
-              try {
-                uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
-              } catch (_) {}
-              final uSel = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
-              await db.collection('Utenti').update(
-                uSel,
-                modify
-                  .set('xp', prog.xp)
-                  .set('livello', prog.livello)
-                  .set('xpProssimoLivello', prog.xpProssimoLivello)
-                  .set('xpTotali', prog.xpTotali),
-              );
-              break;
+          try {
+            final uDocs = await db.collection('Utenti').find().toList();
+            for (var uDoc in uDocs) {
+              if (matchesUserDoc(uDoc, richiesta.richiedente)) {
+                final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+                final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+                final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+                final prog = XpProgression.aggiungiXp(
+                  livelloAttuale: curLiv,
+                  xpLivelloAttuale: curXp,
+                  deltaXp: 25,
+                  xpTotaliAttuali: curTot,
+                );
+                ObjectId? uObjId;
+                try {
+                  uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
+                } catch (_) {}
+                final uSel = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
+                await db.collection('Utenti').update(
+                  uSel,
+                  modify
+                    .set('xp', prog.xp)
+                    .set('livello', prog.livello)
+                    .set('xpProssimoLivello', prog.xpProssimoLivello)
+                    .set('xpTotali', prog.xpTotali),
+                );
+                break;
+              }
             }
-          }
+          } catch (_) {}
         }
 
-        // 4. Invia notifica di successo al richiedente
-        await db.collection('Notifiche').insertOne({
-          'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
-          'mittente': giudiceNick,
-          'destinatario': richiesta.richiedente,
-          'titolo': '📺 VAR: Richiesta Approvata! ✅',
-          'messaggio': 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
-          'eventoId': richiesta.eventoId,
-          'varId': varId,
-          'tipo': 'var_esito',
-          'stato': 'approvato',
-          'letto': false,
-          'data': now.toIso8601String(),
-        });
+        try {
+          await db.collection('Notifiche').insertOne({
+            'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
+            'mittente': giudiceNick,
+            'destinatario': richiesta.richiedente,
+            'titolo': '📺 VAR: Richiesta Approvata! ✅',
+            'messaggio': 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
+            'eventoId': richiesta.eventoId,
+            'varId': varId,
+            'tipo': 'var_esito',
+            'stato': 'approvata',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        } catch (_) {}
+
+        if (!isSamePerson(richiesta.bersaglio, richiesta.richiedente)) {
+          try {
+            final ptSign = richiesta.punti >= 0 ? '+${richiesta.punti}' : '${richiesta.punti}';
+            await db.collection('Notifiche').insertOne({
+              'notificaId': 'var_target_${ts}_${richiesta.bersaglio.toLowerCase()}',
+              'mittente': giudiceNick,
+              'destinatario': richiesta.bersaglio,
+              'titolo': '📺 VAR: Sentenza Convalidata! ⚖️',
+              'messaggio': 'Il Giudice ha convalidato "${richiesta.bonusMalusTitolo}" ($ptSign PT) a tuo nome per l\'evento "${richiesta.eventoTitolo}".',
+              'eventoId': richiesta.eventoId,
+              'varId': varId,
+              'tipo': 'var_esito',
+              'stato': 'approvata',
+              'letto': false,
+              'data': now.toIso8601String(),
+            });
+          } catch (_) {}
+        }
 
         try {
           await PushNotificationService.instance.inviaPushAUtenti(
@@ -5635,198 +5826,43 @@ class ApiService {
           ).timeout(const Duration(seconds: 4), onTimeout: () {});
         } catch (_) {}
       } else {
-        // Rigettata
+        // Rigettata diretta fallback
         final bool doSanzione = sanzionaFalsaTestimonianza && richiesta.tipo == 'malus';
-
         if (doSanzione) {
-          final penalty = (richiesta.penalitaPunti != 0 ? richiesta.penalitaPunti.abs() : 10) * -1; // Garantisce numero negativo
-
-          // Applica decurtazione punti al denunciante nel DB Utenti
+          final penalty = (richiesta.penalitaPunti != 0 ? richiesta.penalitaPunti.abs() : 10) * -1;
           final cleanRichiedente = richiesta.richiedente.trim();
-          final cleanEvId = richiesta.eventoId.trim();
-          final uDocs = await db.collection('Utenti').find().toList();
-          for (var uDoc in uDocs) {
-            if (matchesUserDoc(uDoc, cleanRichiedente)) {
-              final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
-              final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
-              final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-              final logVoce = formattaVoceStorico('🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
-              curStorico.insert(0, logVoce);
-
-              await db.collection('Utenti').update(
-                where.id(uDoc['_id'] as ObjectId),
-                modify.set('puntiTotali', curPts + penalty).set('storicoVoti', curStorico),
-              );
-
-              if (_currentUser != null && matchesUserDoc(uDoc, _currentUser!.nickname)) {
-                _currentUser = _currentUser!.copyWith(
-                  puntiTotali: curPts + penalty,
-                  storicoVoti: curStorico,
+          try {
+            final uDocs = await db.collection('Utenti').find().toList();
+            for (var uDoc in uDocs) {
+              if (matchesUserDoc(uDoc, cleanRichiedente)) {
+                final curPts = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
+                final curStorico = List<String>.from(uDoc['storicoVoti'] ?? []);
+                final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+                final logVoce = formattaVoceStorico('🚨 Sanzione VAR: Falsa Testimonianza ($penalty PT) per l\'evento "${richiesta.eventoTitolo}" ($timeStr)');
+                curStorico.insert(0, logVoce);
+                await db.collection('Utenti').update(
+                  where.id(uDoc['_id'] as ObjectId),
+                  modify.set('puntiTotali', curPts + penalty).set('storicoVoti', curStorico),
                 );
-                await _saveSession(_currentUser!);
+                break;
               }
-              break;
             }
-          }
-
-          // Inserisce o aggiorna il Malus formale unico in BonusMalus così viene conteggiato nella Classifica Live Evento
-          final evTitle = richiesta.eventoTitolo.trim();
-          var existingBmDoc = await db.collection('BonusMalus').findOne(
-            where.eq('eventoId', cleanEvId).and(
-              where.eq('nome', '🚨 Falsa Testimonianza VAR').or(where.eq('titolo', '🚨 Falsa Testimonianza VAR'))
-            ),
-          );
-          if (existingBmDoc == null && evTitle.isNotEmpty) {
-            existingBmDoc = await db.collection('BonusMalus').findOne(
-              where.eq('eventoId', evTitle).and(
-                where.eq('nome', '🚨 Falsa Testimonianza VAR').or(where.eq('titolo', '🚨 Falsa Testimonianza VAR'))
-              ),
-            );
-          }
-
-          String sanzioneBmId;
-          if (existingBmDoc != null) {
-            // Aggiorna l'elenco assegnatoA del malus unico già esistente
-            sanzioneBmId = (existingBmDoc['_id'] as ObjectId?)?.oid ?? existingBmDoc['_id'].toString();
-            final List<dynamic> curAss = List.from(existingBmDoc['assegnatoA'] ?? []);
-            curAss.add(cleanRichiedente);
-            await db.collection('BonusMalus').update(
-              where.id(existingBmDoc['_id'] as ObjectId),
-              modify.set('assegnatoA', curAss).set('punti', penalty).set('riassegnabileMoltepliciVolte', true),
-            );
-
-            // Aggiorna l'istanza in memoria in _bonusMalusList
-            final memIdx = _bonusMalusList.indexWhere((b) =>
-                (b.id == sanzioneBmId || b.titolo == '🚨 Falsa Testimonianza VAR') &&
-                (b.eventoId.trim().toLowerCase() == cleanEvId.toLowerCase() ||
-                 b.eventoId.trim().toLowerCase() == evTitle.toLowerCase()));
-            if (memIdx != -1) {
-              final updatedAss = List<String>.from(_bonusMalusList[memIdx].assegnatoA)..add(cleanRichiedente);
-              _bonusMalusList[memIdx] = _bonusMalusList[memIdx].copyWith(
-                assegnatoA: updatedAss,
-                punti: penalty,
-                riassegnabileMoltepliciVolte: true,
-              );
-            } else {
-              _bonusMalusList.add(BonusMalus(
-                id: sanzioneBmId,
-                eventoId: cleanEvId,
-                titolo: '🚨 Falsa Testimonianza VAR',
-                descrizione: 'Sanzione per denuncia infondata',
-                punti: penalty,
-                categoria: 'VAR',
-                propostoDa: giudiceNick,
-                approvato: true,
-                stato: 'approvato',
-                assegnatoA: curAss.map((e) => e.toString()).toList(),
-                riassegnabileMoltepliciVolte: true,
-              ));
-            }
-          } else {
-            // Non esiste ancora: crealo una sola volta come malus ufficiale riassegnabile
-            final sanzioneBmDoc = {
-              'eventoId': cleanEvId,
-              'eventoTitolo': evTitle,
-              'nome': '🚨 Falsa Testimonianza VAR',
-              'titolo': '🚨 Falsa Testimonianza VAR',
-              'descrizione': 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
-              'punti': penalty,
-              'categoria': 'VAR',
-              'tipo': 'malus',
-              'propostoDa': giudiceNick,
-              'stato': 'approvato',
-              'approvato': true,
-              'assegnatoA': [cleanRichiedente],
-              'riassegnabileMoltepliciVolte': true,
-            };
-            final insertRes = await db.collection('BonusMalus').insertOne(sanzioneBmDoc);
-            sanzioneBmId = (sanzioneBmDoc['_id'] as ObjectId?)?.oid ??
-                (insertRes.id is ObjectId ? (insertRes.id as ObjectId).oid : insertRes.id?.toString() ?? 'sanzione_var_$ts');
-
-            _bonusMalusList.add(BonusMalus(
-              id: sanzioneBmId,
-              eventoId: cleanEvId,
-              titolo: '🚨 Falsa Testimonianza VAR',
-              descrizione: 'Sanzione per denuncia infondata su "${richiesta.bonusMalusTitolo}"',
-              punti: penalty,
-              categoria: 'VAR',
-              propostoDa: giudiceNick,
-              approvato: true,
-              stato: 'approvato',
-              assegnatoA: [cleanRichiedente],
-              riassegnabileMoltepliciVolte: true,
-            ));
-          }
-
-          // Aggiunge o aggiorna la voce di sanzione nei bonus/malus applicati dell'evento nel DB
-          ObjectId? evObjId;
-          try {
-            evObjId = ObjectId.fromHexString(cleanEvId);
           } catch (_) {}
-          final evDoc = await db.collection('Evento').findOne(
-            evObjId != null
-                ? where.id(evObjId)
-                : where.eq('_id', cleanEvId).or(where.eq('titolo', evTitle)),
-          );
-          if (evDoc != null) {
-            final List<dynamic> applied = List.from(evDoc['bonusMalusApplicati'] ?? []);
-            final existingAppIdx = applied.indexWhere((a) =>
-                (a['id'] == sanzioneBmId || a['titolo'] == '🚨 Falsa Testimonianza VAR' || a['nome'] == '🚨 Falsa Testimonianza VAR'));
-            if (existingAppIdx != -1) {
-              final Map<String, dynamic> appMap = Map<String, dynamic>.from(applied[existingAppIdx]);
-              final List<dynamic> assList = List.from(appMap['assegnatoA'] ?? []);
-              assList.add(cleanRichiedente);
-              appMap['assegnatoA'] = assList;
-              applied[existingAppIdx] = appMap;
-            } else {
-              applied.add({
-                'id': sanzioneBmId,
-                'titolo': '🚨 Falsa Testimonianza VAR',
-                'nome': '🚨 Falsa Testimonianza VAR',
-                'descrizione': 'Denuncia infondata per "${richiesta.bonusMalusTitolo}"',
-                'punti': penalty,
-                'categoria': 'VAR',
-                'assegnatoA': [cleanRichiedente],
-                'propostoDa': giudiceNick,
-                'eventoId': cleanEvId,
-              });
-            }
-            await db.collection('Evento').update(
-              where.id(evDoc['_id'] as ObjectId),
-              modify.set('bonusMalusApplicati', applied),
-            );
-          }
-
-          // Aggiorna anche l'evento in memoria
-          final evIdx = _eventi.indexWhere((e) =>
-              e.id.toLowerCase() == cleanEvId.toLowerCase() ||
-              e.titolo.toLowerCase() == richiesta.eventoTitolo.trim().toLowerCase());
-          if (evIdx != -1) {
-            final updatedPartecipanti = List<String>.from(_eventi[evIdx].partecipanti);
-            if (!updatedPartecipanti.any((p) => p.trim().toLowerCase() == cleanRichiedente.toLowerCase())) {
-              updatedPartecipanti.add(cleanRichiedente);
-            }
-            _eventi[evIdx] = _eventi[evIdx].copyWith(
-              partecipanti: updatedPartecipanti,
-            );
-          }
-
-          // Notifica rossa al denunciante sanzionato
-          await db.collection('Notifiche').insertOne({
-            'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
-            'mittente': giudiceNick,
-            'destinatario': richiesta.richiedente,
-            'titolo': '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
-            'messaggio': 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
-            'eventoId': richiesta.eventoId,
-            'varId': varId,
-            'tipo': 'var_esito',
-            'stato': 'sanzionato',
-            'letto': false,
-            'data': now.toIso8601String(),
-          });
 
           try {
+            await db.collection('Notifiche').insertOne({
+              'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
+              'mittente': giudiceNick,
+              'destinatario': richiesta.richiedente,
+              'titolo': '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
+              'messaggio': 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata: $penalty PT!',
+              'eventoId': richiesta.eventoId,
+              'varId': varId,
+              'tipo': 'var_esito',
+              'stato': 'sanzionato',
+              'letto': false,
+              'data': now.toIso8601String(),
+            });
             await PushNotificationService.instance.inviaPushAUtenti(
               [richiesta.richiedente],
               titolo: '🚨 VAR: Denuncia Respinta e Sanzionata! ❌',
@@ -5835,22 +5871,20 @@ class ApiService {
             ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         } else {
-          // Rifiutata senza sanzione (es. bonus non confermato)
-          await db.collection('Notifiche').insertOne({
-            'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
-            'mittente': giudiceNick,
-            'destinatario': richiesta.richiedente,
-            'titolo': '📺 VAR: Richiesta Non Convalidata ❌',
-            'messaggio': 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
-            'eventoId': richiesta.eventoId,
-            'varId': varId,
-            'tipo': 'var_esito',
-            'stato': 'rifiutato',
-            'letto': false,
-            'data': now.toIso8601String(),
-          });
-
           try {
+            await db.collection('Notifiche').insertOne({
+              'notificaId': 'var_res_${ts}_${richiesta.richiedente.toLowerCase()}',
+              'mittente': giudiceNick,
+              'destinatario': richiesta.richiedente,
+              'titolo': '📺 VAR: Richiesta Non Convalidata ❌',
+              'messaggio': 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
+              'eventoId': richiesta.eventoId,
+              'varId': varId,
+              'tipo': 'var_esito',
+              'stato': 'rifiutata',
+              'letto': false,
+              'data': now.toIso8601String(),
+            });
             await PushNotificationService.instance.inviaPushAUtenti(
               [richiesta.richiedente],
               titolo: '📺 VAR: Richiesta Non Convalidata ❌',
@@ -5859,24 +5893,31 @@ class ApiService {
             ).timeout(const Duration(seconds: 4), onTimeout: () {});
           } catch (_) {}
         }
-
-        // Aggiorna stato ed ELIMINA la foto dal DB
-        await db.collection('RichiesteVar').update(
-          selector,
-          modify
-              .set('stato', 'rifiutata')
-              .set('dataDecisione', now.toIso8601String())
-              .set('sanzioneApplicata', doSanzione)
-              .unset('fotoBase64'),
-        );
       }
 
-      // Aggiorna tutte le notifiche del VAR per il giudice su 'approvato' o 'rifiutato'
-      await db.collection('Notifiche').update(
-        where.eq('varId', varId).and(where.eq('tipo', 'var_richiesta_giudice')),
-        modify.set('stato', approva ? 'approvato' : 'rifiutato').set('letto', true),
-        multiUpdate: true,
-      );
+      // Aggiornamento sicuro delle notifiche per il giudice (tramite _id, senza multiUpdate)
+      try {
+        final notDocs = await db.collection('Notifiche').find(
+          where.eq('varId', varId),
+        ).toList();
+        for (var nDoc in notDocs) {
+          if (nDoc['_id'] is ObjectId) {
+            final dDest = (nDoc['destinatario'] ?? '').toString().trim();
+            final dTipo = (nDoc['tipo'] ?? '').toString();
+            if (isSamePerson(dDest, giudiceNick) || dTipo == 'var_richiesta_giudice') {
+              await db.collection('Notifiche').update(
+                where.id(nDoc['_id'] as ObjectId),
+                modify.set('stato', approva ? 'approvata' : 'rifiutata').set('letto', true),
+              );
+            } else if (dTipo == 'var_testimone' && nDoc['stato'] == 'in_attesa') {
+              await db.collection('Notifiche').update(
+                where.id(nDoc['_id'] as ObjectId),
+                modify.set('stato', 'concluso').set('letto', true),
+              );
+            }
+          }
+        }
+      } catch (_) {}
 
       invalidateCache();
       return true;

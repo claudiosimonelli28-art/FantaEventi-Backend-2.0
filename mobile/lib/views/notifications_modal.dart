@@ -831,13 +831,24 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                                 decoration: BoxDecoration(
-                                                  color: (stato == 'accettato' || stato == 'approvato' || stato == 'confermato')
+                                                  color: (stato == 'accettato' ||
+                                                          stato == 'accettata' ||
+                                                          stato == 'approvato' ||
+                                                          stato == 'approvata' ||
+                                                          stato == 'confermato' ||
+                                                          stato == 'confermata' ||
+                                                          stato == 'convalidato' ||
+                                                          stato == 'convalidata')
                                                       ? const Color(0xFF10B981)
                                                       : const Color(0xFFEF4444),
                                                   borderRadius: BorderRadius.circular(8),
                                                 ),
                                                 child: Text(
-                                                  stato.toUpperCase(),
+                                                  (stato == 'approvata' || stato == 'approvato' || stato == 'convalidata' || stato == 'convalidato')
+                                                      ? 'CONVALIDATA'
+                                                      : (stato == 'rifiutata' || stato == 'rifiutato' || stato == 'respinta' || stato == 'negato')
+                                                          ? 'RESPINTA'
+                                                          : stato.toUpperCase(),
                                                   style: GoogleFonts.poppins(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),
                                                 ),
                                               ),
