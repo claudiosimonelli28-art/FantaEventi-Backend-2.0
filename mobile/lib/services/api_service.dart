@@ -514,6 +514,28 @@ class ApiService {
   }
 
   Future<bool> eliminaAccount({String? utenteId, String? nickname, String? nome}) async {
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/utenti/elimina-account'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'utenteId': utenteId,
+            'nickname': nickname,
+            'nome': nome,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200) {
+          await logout();
+          invalidateCache();
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       final db = await _getMongoDb();
       if (db == null || !db.isConnected) return false;
@@ -885,7 +907,52 @@ class ApiService {
 
     final bool isEmailLogin = rawIdentifier.contains('@');
 
-    // 1. Prova PRIMA la connessione DIRETTA a MongoDB Atlas (Istantanea <30ms)
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/login'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'username': cleanIdentifier,
+            'email': cleanIdentifier,
+            'nickname': cleanIdentifier,
+            'password': cleanPassword,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (response.body.contains('<html>') || response.body.contains('Welcome to localhost.run')) {
+          continue;
+        }
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+        if (data['needsPasswordSetup'] == true) {
+          throw NeedsPasswordSetupException(
+            username: data['username']?.toString() ?? cleanIdentifier,
+            email: data['email']?.toString() ?? '',
+          );
+        }
+
+        if (response.statusCode == 200 && data.containsKey('utente')) {
+          _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
+          clearUserSessionCache();
+          await _saveSession(_currentUser!, rememberMe: rememberMe);
+          return _currentUser!;
+        } else if (response.statusCode == 403 || response.statusCode == 401) {
+          throw Exception(data['error']?.toString() ?? 'Password non corretta. Riprova!');
+        } else if (response.statusCode == 404 || data['notFound'] == true) {
+          throw Exception('Nessun utente trovato nel database per "$cleanIdentifier". Registrati prima di accedere!');
+        }
+      } catch (e) {
+        if (e is NeedsPasswordSetupException) rethrow;
+        if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
+          rethrow;
+        }
+      }
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
@@ -1218,6 +1285,28 @@ class ApiService {
       );
     }
 
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/utenti/check-nickname?nick=${Uri.encodeComponent(cleanNick)}'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final bool disp = data['disponibile'] == true;
+          final List<String> sugg = (data['suggerimenti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+          return NicknameCheckResult(
+            disponibile: disp,
+            messaggio: data['messaggio']?.toString(),
+            suggerimenti: sugg,
+          );
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
       if (db != null && db.isConnected) {
@@ -1278,7 +1367,45 @@ class ApiService {
     final hashedPassword = hashPassword(cleanPass);
     final cleanEmail = email.trim();
 
-    // 1. Inserimento DIRETTO in MongoDB Atlas (<30ms)
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final response = await http.post(
+          Uri.parse('$url/registrazione'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'nome': nome.trim(),
+            'cognome': cognome.trim(),
+            'username': cleanNick,
+            'nickname': cleanNick,
+            'email': cleanEmail,
+            'password': cleanPass,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+        if (response.statusCode == 200 && data.containsKey('utente')) {
+          _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
+          clearUserSessionCache();
+          await _saveSession(_currentUser!, rememberMe: rememberMe);
+          return _currentUser!;
+        } else if (data['suggerimenti'] != null) {
+          final sugg = (data['suggerimenti'] as List<dynamic>).map((e) => e.toString()).toList();
+          throw NicknameAlreadyTakenException(
+            nickname: cleanNick,
+            suggerimenti: sugg,
+          );
+        } else if (data.containsKey('error')) {
+          throw Exception(data['error'].toString());
+        }
+      } catch (e) {
+        if (e is NicknameAlreadyTakenException) rethrow;
+        if (e is Exception && e.toString().contains('esiste già')) rethrow;
+      }
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       final db = await _getMongoDb();
       if (db != null && db.isConnected) {
@@ -1822,6 +1949,51 @@ class ApiService {
   }
 
   Future<List<Utente>> _fetchUtentiFromDb() async {
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/utenti'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final List<dynamic> listJson = jsonDecode(res.body);
+          final List<Utente> list = [];
+          for (var item in listJson) {
+            final jsonMap = Map<String, dynamic>.from(item as Map);
+            final rawNome = (jsonMap['nome'] ?? '').toString().trim();
+            final rawNick = (jsonMap['nickname'] ?? jsonMap['username'] ?? '').toString().trim();
+            final resolvedNick = resolveNickname(rawNick.isNotEmpty ? rawNick : rawNome);
+            jsonMap['nome'] = rawNome.isNotEmpty ? rawNome : resolvedNick;
+            jsonMap['nickname'] = resolvedNick;
+            jsonMap['username'] = resolvedNick;
+
+            final uObj = Utente.fromJson(jsonMap);
+            list.add(uObj);
+
+            if (uObj.avatarUrl.isNotEmpty) {
+              _cacheSingleAvatar(uObj.nome, uObj.nickname, uObj.avatarUrl);
+            }
+
+            if (_currentUser != null &&
+                (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
+                 isSamePerson(uObj.nome, _currentUser!.nome))) {
+              _currentUser = uObj;
+              await _saveSession(_currentUser!);
+            }
+          }
+          if (list.isNotEmpty) {
+            _utenti.clear();
+            _utenti.addAll(list);
+            await _saveCachedUsersAndAvatars();
+            return List.unmodifiable(_utenti);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       Db? db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) {
@@ -2138,6 +2310,30 @@ class ApiService {
       return List.unmodifiable(_eventi);
     }
 
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/eventi'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final List<dynamic> listJson = jsonDecode(res.body);
+          final List<Evento> list = [];
+          for (var item in listJson) {
+            final jsonMap = Map<String, dynamic>.from(item as Map);
+            list.add(Evento.fromJson(jsonMap));
+          }
+          _eventi.clear();
+          _eventi.addAll(list);
+          _lastFetchTime = DateTime.now();
+          return List.unmodifiable(_eventi);
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       Db? db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) {
@@ -3187,7 +3383,26 @@ class ApiService {
     final nuovoStato = isPro ? 'accettato' : 'rifiutato';
     final votoEspresso = isPro ? 'pro' : 'contro';
 
-    // Aggiornamento DIRETTO su MongoDB Atlas
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/notifiche/rispondi'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'notificaId': notificaId,
+            'azione': azione,
+            'utente': utente,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200) {
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: aggiornamento DIRETTO su MongoDB Atlas
     try {
       Db? db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) {
@@ -3284,8 +3499,67 @@ class ApiService {
     payloadMap['invitati'] = invitati;
     payloadMap['partecipanti'] = [creatore, ...invitati];
 
-    // Scrittura DIRETTA e RESILIENTE dell'evento e delle notifiche su MongoDB Atlas (Singola Scrittura Infallibile)
     String realEvId = eventPayload.id;
+
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/eventi/crea'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'titolo': nuovoEvento.titolo,
+            'descrizione': nuovoEvento.descrizione,
+            'data': nuovoEvento.data.toIso8601String(),
+            'dataFine': nuovoEvento.dataFine.toIso8601String(),
+            'luogo': nuovoEvento.luogo,
+            'latitudine': nuovoEvento.latitudine,
+            'longitudine': nuovoEvento.longitudine,
+            'propostoDa': creatore,
+            'partecipanti': [creatore],
+            'invitati': invitati,
+            'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final resData = jsonDecode(res.body) as Map<String, dynamic>;
+          final insertedEvId = resData['id']?.toString() ?? '';
+          final savedEvento = eventPayload.copyWith(id: insertedEvId.isNotEmpty ? insertedEvId : realEvId);
+          _eventi.insert(0, savedEvento);
+
+          // Invia notifica push reale per la tendina di sistema a tutti gli invitati
+          if (invitati.isNotEmpty) {
+            try {
+              await PushNotificationService.instance.inviaPushAUtenti(
+                invitati,
+                titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
+                messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
+                data: {
+                  'tipo': 'invito',
+                  'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
+                },
+              ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            } catch (_) {}
+          }
+
+          // Aggiungi voce storico al creatore
+          if (_currentUser != null) {
+            final logVoce = formattaVoceStorico('Creato evento "${nuovoEvento.titolo}" (in attesa di avvio)');
+            _currentUser = _currentUser!.copyWith(
+              storicoVoti: [
+                logVoce,
+                ..._currentUser!.storicoVoti,
+              ],
+            );
+          }
+
+          return savedEvento;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: scrittura DIRETTA su MongoDB Atlas
     int maxAttempts = 2;
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -3457,7 +3731,48 @@ class ApiService {
 
     String bmHexId = 'bm_${DateTime.now().millisecondsSinceEpoch}';
 
-    // Scrittura DIRETTA e RESILIENTE su MongoDB Atlas con Transient Failure Retry
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/bonusmalus/crea'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'eventoId': eventoId,
+            'eventoTitolo': evMatch.titolo,
+            'nome': nuovoBonus.titolo,
+            'titolo': nuovoBonus.titolo,
+            'descrizione': nuovoBonus.descrizione,
+            'punti': safePunti,
+            'tipo': nuovoBonus.isBonus ? 'bonus' : 'malus',
+            'categoria': nuovoBonus.categoria,
+            'propostoDa': curUserNick,
+            'utente': curUserNick,
+            'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final resData = jsonDecode(res.body) as Map<String, dynamic>;
+          final insertedBmId = resData['id']?.toString() ?? '';
+          final finalBonus = nuovoBonus.copyWith(
+            id: insertedBmId.isNotEmpty ? insertedBmId : nuovoBonus.id,
+          );
+          _bonusMalusList.insert(0, finalBonus);
+          invalidateCache();
+          return finalBonus;
+        } else if (res.statusCode == 400) {
+          final resData = jsonDecode(res.body) as Map<String, dynamic>;
+          if (resData['error']?.toString().contains('esiste già') == true) {
+            throw Exception(resData['error'].toString());
+          }
+        }
+      } catch (e) {
+        if (e is Exception && e.toString().contains('esiste già')) rethrow;
+      }
+    }
+
+    // 2. Rete di salvataggio: scrittura DIRETTA su MongoDB Atlas
     int maxAttempts = 2;
     for (int attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
@@ -3775,6 +4090,48 @@ class ApiService {
     final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     final logText = '🏆 Ricevuto ${punti >= 0 ? "Bonus" : "Malus"} "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo" ($timeStr)';
 
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/bonusmalus/assegna'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'eventoId': eventoId,
+            'bonusId': bonusId,
+            'utenteDestinatario': utenteDestinatario,
+            'punti': punti,
+            'eventoTitolo': eventoTitolo,
+            'bonusTitolo': bonusTitolo,
+            'mittente': mittente,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200) {
+          // Aggiorna la memoria locale in-memory
+          for (int i = 0; i < _bonusMalusList.length; i++) {
+            if (_bonusMalusList[i].id == bonusId || _bonusMalusList[i].titolo.toLowerCase() == bonusTitolo.toLowerCase()) {
+              final List<String> list = List.from(_bonusMalusList[i].assegnatoA);
+              final isMulti = _bonusMalusList[i].riassegnabileMoltepliciVolte;
+              if (isMulti || !list.any((u) => u.trim().toLowerCase() == cleanDest)) {
+                list.add(utenteDestinatario);
+              }
+              _bonusMalusList[i] = _bonusMalusList[i].copyWith(assegnatoA: list);
+            }
+          }
+          return;
+        } else if (res.statusCode == 400) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          throw Exception(data['error']?.toString() ?? 'Impossibile assegnare il punteggio.');
+        }
+      } catch (e) {
+        if (e is Exception && (e.toString().contains('disponibile solo') || e.toString().contains('è concluso') || e.toString().contains('Impossibile assegnare'))) {
+          rethrow;
+        }
+      }
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     // 0. Controllo di sicurezza: l'assegnazione è permessa ESCLUSIVAMENTE quando l'evento è in corso
     try {
       final db = await _getMongoDb();
@@ -3996,6 +4353,22 @@ class ApiService {
   }
 
   Future<void> segnaSingolaNotificaComeLetta(String notificaId) async {
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/notifiche/segna-letta'),
+          headers: defaultHeaders,
+          body: jsonEncode({'notificaId': notificaId}),
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (res.statusCode == 200) {
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       Db? db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) {
@@ -4088,6 +4461,42 @@ class ApiService {
   }
 
   Future<List<Votazione>> getVotazioni() async {
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    for (String url in baseUrls) {
+      try {
+        final resBm = await http.get(
+          Uri.parse('$url/bonusmalus'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(milliseconds: 3500));
+
+        final resVot = await http.get(
+          Uri.parse('$url/votazioni'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(milliseconds: 3500));
+
+        if (resBm.statusCode == 200 && resVot.statusCode == 200 &&
+            !resBm.body.contains('<html>') && !resVot.body.contains('<html>')) {
+          final List<dynamic> bmListJson = jsonDecode(resBm.body);
+          final List<dynamic> votListJson = jsonDecode(resVot.body);
+
+          _bonusMalusList.clear();
+          for (var item in bmListJson) {
+            _bonusMalusList.add(BonusMalus.fromJson(Map<String, dynamic>.from(item as Map)));
+          }
+
+          final List<Votazione> list = [];
+          for (var item in votListJson) {
+            list.add(Votazione.fromJson(Map<String, dynamic>.from(item as Map)));
+          }
+
+          _votazioniList.clear();
+          _votazioniList.addAll(list);
+          return List.unmodifiable(_votazioniList);
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
     try {
       Db? db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) {
