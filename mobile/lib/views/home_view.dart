@@ -2074,29 +2074,38 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
 
                                       if (confermato != true) return;
 
-                                      await _viewModel.assegnaBonusMalusAPartecipante(
-                                        eventoId: ev.id,
-                                        bonusId: bm.id,
-                                        utenteDestinatario: part,
-                                        punti: bm.punti,
-                                        eventoTitolo: ev.titolo,
-                                        bonusTitolo: bm.titolo,
-                                      );
+                                      try {
+                                        await _viewModel.assegnaBonusMalusAPartecipante(
+                                          eventoId: ev.id,
+                                          bonusId: bm.id,
+                                          utenteDestinatario: part,
+                                          punti: bm.punti,
+                                          eventoTitolo: ev.titolo,
+                                          bonusTitolo: bm.titolo,
+                                        );
 
-                                      if (!bm.assegnatoA.any((u) => u.trim().toLowerCase() == part.trim().toLowerCase())) {
-                                        bm.assegnatoA.add(part);
+                                        if (!bm.assegnatoA.any((u) => u.trim().toLowerCase() == part.trim().toLowerCase())) {
+                                          bm.assegnatoA.add(part);
+                                        }
+
+                                        // Chiude il selettore bottom sheet per visualizzare la Home e il toast di conferma
+                                        Navigator.of(ctx).pop();
+
+                                        if (!mounted) return;
+                                        AppToast.showSuccess(
+                                          this.context,
+                                          'Regola Assegnata! 🏆',
+                                          '${bm.punti >= 0 ? "Bonus" : "Malus"} "${bm.titolo}" (${bm.punti >= 0 ? "+${bm.punti}" : bm.punti} PT) assegnato con successo a $part!',
+                                        );
+                                        _loadData(forceRefresh: true);
+                                      } catch (e) {
+                                        if (!mounted) return;
+                                        AppToast.showError(
+                                          modalContext,
+                                          'Errore Assegnazione',
+                                          e.toString().replaceAll('Exception: ', ''),
+                                        );
                                       }
-
-                                      setModalState(() {});
-                                      _loadData(silent: true, forceRefresh: true);
-
-                                      if (!mounted) return;
-                                      AppToast.showSuccess(
-                                        context,
-                                        'Regola Assegnata! 🏆',
-                                        '${bm.punti >= 0 ? "Bonus" : "Malus"} "${bm.titolo}" (${bm.punti >= 0 ? "+${bm.punti}" : bm.punti} PT) assegnato con successo a $part!',
-                                      );
-                                      _loadData(forceRefresh: true);
                                     },
                                     icon: const Icon(Icons.check_rounded, size: 16),
                                     label: const Text('Assegna'),

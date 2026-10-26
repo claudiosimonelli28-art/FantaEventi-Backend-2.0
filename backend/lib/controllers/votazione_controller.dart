@@ -101,6 +101,14 @@ class VotazioneController {
           }
         }
 
+        if (isApprovato && !giaApprovatoDaDb && bm['_id'] is ObjectId) {
+          try {
+            await DbService.instance.bonusMalusCollection.update(
+              where.id(bm['_id'] as ObjectId),
+              modify.set('stato', 'approvato').set('approvato', true),
+            );
+          } catch (_) {}
+        }
         final statoVot = isApprovato ? 'approvato' : (isRespinto ? 'respinto' : 'in_corso');
         final bmObj = BonusMalus(
           id: bmId,

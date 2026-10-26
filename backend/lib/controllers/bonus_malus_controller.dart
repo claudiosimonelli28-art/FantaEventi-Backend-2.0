@@ -192,6 +192,7 @@ class BonusMalusController {
       final utenteDestinatario = data['utenteDestinatario']?.toString() ?? data['partecipante']?.toString() ?? '';
       final eventoTitolo = data['eventoTitolo']?.toString() ?? 'Evento';
       final bonusTitolo = data['bonusTitolo']?.toString() ?? 'Bonus';
+      final mittente = (data['mittente']?.toString() ?? 'Sistema').trim();
       final rawPunti = (data['punti'] as num?)?.toInt() ?? 0;
       final safePunti = rawPunti > 100 ? 100 : (rawPunti < -100 ? -100 : rawPunti);
 
@@ -282,6 +283,60 @@ class BonusMalusController {
           );
           break;
         }
+      }
+
+      // 4. Inserimento notifiche in-app per TUTTI i partecipanti dell'evento
+      try {
+        final allEventi = await DbService.instance.eventiCollection.find().toList();
+        Map<String, dynamic>? targetEv;
+        if (evObjId != null) {
+          targetEv = allEventi.firstWhere((e) => e['_id'] == evObjId, orElse: () => {});
+        }
+        if (targetEv == null || targetEv.isEmpty) {
+          targetEv = allEventi.firstWhere(
+            (e) => (e['id']?.toString() == eventoId ||
+                    e['nome']?.toString().toLowerCase() == eventoTitolo.toLowerCase() ||
+                    e['titolo']?.toString().toLowerCase() == eventoTitolo.toLowerCase()),
+            orElse: () => {},
+          );
+        }
+
+        final eventoNome = (targetEv['nome'] ?? targetEv['titolo'] ?? (eventoTitolo.isNotEmpty ? eventoTitolo : 'Evento')).toString();
+        final Set<String> destList = {};
+        if (targetEv.isNotEmpty) {
+          final List<dynamic> pList = List.from(targetEv['partecipanti'] ?? []);
+          final List<dynamic> iList = List.from(targetEv['invitati'] ?? []);
+          for (var item in [...pList, ...iList]) {
+            final s = item.toString().trim();
+            if (s.isNotEmpty) destList.add(NicknameHelper.resolve(s, uDocs));
+          }
+        }
+        if (destList.isEmpty) {
+          destList.add(utenteDestinatario);
+        }
+
+        final bool isBonus = safePunti >= 0;
+        final String notificaTipo = isBonus ? 'assegnazione_bonus' : 'assegnazione_malus';
+        final String notificaTitolo = isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!';
+        final int ts = now.millisecondsSinceEpoch;
+
+        for (var d in destList) {
+          await DbService.instance.notificheCollection.insertOne({
+            'notificaId': 'bm_ass_${ts}_${d.toLowerCase()}',
+            'mittente': mittente.isNotEmpty ? mittente : 'Sistema',
+            'destinatario': d,
+            'titolo': notificaTitolo,
+            'messaggio': '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoNome"!',
+            'eventoId': eventoId,
+            'tipo': notificaTipo,
+            'stato': 'consegnato',
+            'letto': false,
+            'votoEspresso': 'pro',
+            'data': now.toIso8601String(),
+          });
+        }
+      } catch (errNot) {
+        print('Notice inserimento notifica assegnazione: $errNot');
       }
 
       return Response.ok(

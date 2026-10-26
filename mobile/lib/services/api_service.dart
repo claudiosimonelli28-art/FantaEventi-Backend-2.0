@@ -3760,6 +3760,36 @@ class ApiService {
           );
           _bonusMalusList.insert(0, finalBonus);
           invalidateCache();
+
+          // Invia notifica push reale per la tendina di sistema a tutti i partecipanti ed invitati
+          final List<String> allCandidates = [
+            ...evMatch.partecipanti,
+            ...evMatch.invitati,
+            evMatch.propostoDa,
+            evMatch.creatore,
+          ];
+          final Set<String> uniqueDests = {};
+          for (var c in allCandidates) {
+            final clean = c.trim();
+            if (clean.isNotEmpty && !isSamePerson(clean, curUserNick)) {
+              uniqueDests.add(resolveNickname(clean));
+            }
+          }
+          if (uniqueDests.isNotEmpty) {
+            try {
+              await PushNotificationService.instance.inviaPushAUtenti(
+                uniqueDests.toList(),
+                titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
+                messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
+                data: {
+                  'tipo': 'votazione',
+                  'eventoId': eventoId,
+                  'bonusId': insertedBmId.isNotEmpty ? insertedBmId : nuovoBonus.id,
+                },
+              ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            } catch (_) {}
+          }
+
           return finalBonus;
         } else if (res.statusCode == 400) {
           final resData = jsonDecode(res.body) as Map<String, dynamic>;
@@ -4119,6 +4149,53 @@ class ApiService {
               _bonusMalusList[i] = _bonusMalusList[i].copyWith(assegnatoA: list);
             }
           }
+
+          final bool isBonus = punti >= 0;
+          final String notificaTipo = isBonus ? 'assegnazione_bonus' : 'assegnazione_malus';
+          final String notificaTitolo = isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!';
+
+          // 1. Notifica push mirata con SUONO DEDICATO al destinatario che riceve il bonus o malus
+          try {
+            await PushNotificationService.instance.inviaPushAUtenti(
+              [utenteDestinatario],
+              titolo: notificaTitolo,
+              messaggio: 'Hai ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+              data: {
+                'tipo': notificaTipo,
+                'eventoId': eventoId,
+              },
+            ).timeout(const Duration(seconds: 4), onTimeout: () {});
+          } catch (_) {}
+
+          // 2. Notifica push broadcast a TUTTI gli altri partecipanti dell\'evento
+          final List<String> destList = [];
+          final evMatchIdx = _eventi.indexWhere(
+            (e) => e.id == eventoId || e.titolo.toLowerCase() == eventoTitolo.toLowerCase(),
+          );
+          if (evMatchIdx != -1) {
+            final evMatch = _eventi[evMatchIdx];
+            for (var item in [...evMatch.partecipanti, ...evMatch.invitati]) {
+              final s = item.trim();
+              if (s.isNotEmpty && !destList.any((d) => d.toLowerCase() == s.toLowerCase())) {
+                destList.add(s);
+              }
+            }
+          }
+          final altriPartecipanti = destList.where((d) => !isSamePerson(d, utenteDestinatario)).toList();
+          if (altriPartecipanti.isNotEmpty) {
+            try {
+              await PushNotificationService.instance.inviaPushAUtenti(
+                altriPartecipanti,
+                titolo: notificaTitolo,
+                messaggio: '$utenteDestinatario ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo"!',
+                data: {
+                  'tipo': notificaTipo,
+                  'eventoId': eventoId,
+                },
+              ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            } catch (_) {}
+          }
+
           return;
         } else if (res.statusCode == 400) {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -4891,6 +4968,31 @@ class ApiService {
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'approvato').set('approvato', true),
             );
+          }
+
+          // Invia notifica push broadcast per regola approvata
+          final Set<String> allParticipants = {};
+          final evMatchApprovaIdx = _eventi.indexWhere(
+            (e) => e.id == targetEvId || e.titolo.toLowerCase() == targetEvId.toLowerCase(),
+          );
+          if (evMatchApprovaIdx != -1) {
+            final evMatchApprova = _eventi[evMatchApprovaIdx];
+            allParticipants.addAll(evMatchApprova.partecipanti);
+            allParticipants.addAll(evMatchApprova.invitati);
+          }
+          if (allParticipants.isNotEmpty) {
+            try {
+              await PushNotificationService.instance.inviaPushAUtenti(
+                allParticipants.toList(),
+                titolo: '🎉 Nuova Regola Approvata: $targetBmTitle',
+                messaggio: 'La regola "$targetBmTitle" ha raggiunto il quorum ed è ora attiva nel catalogo!',
+                data: {
+                  'tipo': 'bonus_approvato',
+                  'eventoId': targetEvId,
+                  'bonusId': targetBmId,
+                },
+              ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            } catch (_) {}
           }
         } else if (nuovoStato == 'respinto') {
           ObjectId? bmObjId;
