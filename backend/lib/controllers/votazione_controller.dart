@@ -162,7 +162,11 @@ class VotazioneController {
       final data = jsonDecode(body) as Map<String, dynamic>;
 
       final idOrEventoId = data['id']?.toString() ?? data['votazioneId']?.toString() ?? data['bonusId']?.toString() ?? '';
-      final aFavore = data['aFavore'] == true || data['voto'] == 'pro' || data['voto'] == 'accetta';
+      final aFavore = data['aFavore'] == true ||
+          data['voto'] == 'pro' ||
+          data['voto'] == 'accetta' ||
+          data['voto'] == 'favorevole' ||
+          data['voto'] == 'si';
       final rawUser = data['utente']?.toString() ?? data['username']?.toString() ?? 'Cloud';
 
       final uDocs = await UtenteController.getCachedUtentiDocs();

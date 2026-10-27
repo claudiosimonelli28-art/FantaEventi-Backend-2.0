@@ -107,7 +107,7 @@ class UtenteController {
         now.difference(_lastUtentiFetch!) < _cacheDuration) {
       return _cachedUtentiDocs!;
     }
-    final docs = await DbService.instance.utentiCollection.find().toList();
+    final docs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
     _cachedUtentiDocs = docs;
     _lastUtentiFetch = now;
     return docs;
@@ -516,7 +516,7 @@ class UtenteController {
       }
 
       final cleanIdent = identifier.toLowerCase();
-      final docs = await DbService.instance.utentiCollection.find().toList();
+      final docs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
       Map<String, dynamic>? doc;
 
       for (var d in docs) {
@@ -736,7 +736,7 @@ class UtenteController {
         );
       }
 
-      final docs = await DbService.instance.utentiCollection.find().toList();
+      final docs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
       final existingLower = <String>{};
       for (var d in docs) {
         final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
@@ -867,7 +867,7 @@ class UtenteController {
         );
       }
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await getCachedUtentiDocs();
       final cleanUtente = NicknameHelper.resolve(utente, uDocs);
       final cleanTarget = NicknameHelper.resolve(target, uDocs);
 
@@ -962,7 +962,7 @@ class UtenteController {
         );
       }
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await getCachedUtentiDocs();
       final cleanUtente = NicknameHelper.resolve(utente, uDocs);
       final cleanTarget = NicknameHelper.resolve(target, uDocs);
 
@@ -1040,7 +1040,7 @@ class UtenteController {
         );
       }
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await getCachedUtentiDocs();
       final cleanUtente = NicknameHelper.resolve(utente, uDocs);
 
       List<String> bloccati = [];

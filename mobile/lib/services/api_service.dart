@@ -5377,9 +5377,20 @@ class ApiService {
     final curUser = _currentUser;
     if (curUser == null) return [];
     final tutti = await getUtenti();
-    final bloccatiLower = curUser.utentiBloccati.map((b) => b.toLowerCase()).toSet();
-    final amiciLower = curUser.amici.map((a) => a.toLowerCase()).where((a) => !bloccatiLower.contains(a)).toSet();
-    return tutti.where((u) => amiciLower.contains(u.nickname.toLowerCase())).toList();
+    final bloccatiLower = curUser.utentiBloccati.map((b) => resolveNickname(b).toLowerCase()).toSet();
+    final amiciLower = curUser.amici
+        .map((a) => resolveNickname(a).toLowerCase())
+        .where((a) => !bloccatiLower.contains(a))
+        .toSet();
+
+    return tutti.where((u) {
+      if (isSamePerson(u.nickname, curUser.nickname) || isSamePerson(u.nome, curUser.nome)) {
+        return false;
+      }
+      final uNick = resolveNickname(u.nickname).toLowerCase();
+      final uNome = resolveNickname(u.nome).toLowerCase();
+      return amiciLower.contains(uNick) || amiciLower.contains(uNome);
+    }).toList();
   }
 
   // ==========================================

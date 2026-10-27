@@ -98,6 +98,7 @@ void main() async {
   // Rotte Bonus / Malus
   app.get('/api/bonusmalus', bonusMalusCtrl.getBonusMalus);
   app.post('/api/bonusmalus/crea', bonusMalusCtrl.creaBonusMalus);
+  app.post('/api/bonus-malus/proponi', bonusMalusCtrl.creaBonusMalus);
   app.post('/api/bonusmalus/assegna', bonusMalusCtrl.assegnaBonusMalus);
   app.post('/api/bonusmalus/annulla-assegnazione', bonusMalusCtrl.annullaAssegnazioneBonus);
   app.post('/api/bonusmalus/elimina', bonusMalusCtrl.eliminaBonusMalus);
