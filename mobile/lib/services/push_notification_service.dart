@@ -84,10 +84,19 @@ class PushNotificationService {
     enableVibration: true,
   );
 
+  static const AndroidNotificationChannel channelRules = AndroidNotificationChannel(
+    'fantaeventi_rules',
+    '📜 Nuove Regole Approvate',
+    description: 'Suono quando una proposta supera il quorum ed entra nel catalogo',
+    importance: Importance.max,
+    playSound: true,
+    enableVibration: true,
+  );
+
   static const AndroidNotificationChannel channelGeneral = AndroidNotificationChannel(
     'fantaeventi_channel',
-    '🔔 Notifiche Generali',
-    description: 'Canale per votazioni di gruppo e aggiornamenti generali',
+    '🗳️ Nuove Proposte & Votazioni',
+    description: 'Suono quando un partecipante propone un nuovo Bonus/Malus da votare',
     importance: Importance.max,
     playSound: true,
     enableVibration: true,
@@ -96,10 +105,22 @@ class PushNotificationService {
   /// Ritorna il canale nativo Android appropriato in base alla tipologia di notifica
   static AndroidNotificationChannel getChannelForType(String? tipo) {
     final t = (tipo ?? '').toLowerCase().trim();
-    if (t.contains('bonus')) return channelBonus;
-    if (t.contains('malus')) return channelMalus;
+    // 1. VAR & Giudice Arbitro (richieste, testimonianze ed esito VAR)
     if (t.startsWith('var')) return channelVar;
+    // 2. Inviti ad eventi & Richieste di Amicizia
     if (t.contains('invito') || t.contains('amicizia')) return channelInvites;
+    // 3. Nuove Regole Approvate nel catalogo ufficiale
+    if (t == 'bonus_approvato' || t == 'malus_approvato' || t == 'regola_approvata' || t.contains('approvat')) {
+      return channelRules;
+    }
+    // 4. Nuove Proposte e Votazioni live da votare
+    if (t == 'bonus_malus' || t.contains('proposta') || t.contains('vota')) {
+      return channelGeneral;
+    }
+    // 5. Assegnazione Malus (penalità assegnate a un giocatore)
+    if (t.contains('malus')) return channelMalus;
+    // 6. Assegnazione Bonus (punti assegnati a un giocatore)
+    if (t.contains('bonus')) return channelBonus;
     return channelGeneral;
   }
 
@@ -144,6 +165,7 @@ class PushNotificationService {
         await androidPlugin.createNotificationChannel(channelMalus);
         await androidPlugin.createNotificationChannel(channelVar);
         await androidPlugin.createNotificationChannel(channelInvites);
+        await androidPlugin.createNotificationChannel(channelRules);
         await androidPlugin.createNotificationChannel(channelGeneral);
       }
 
@@ -292,6 +314,7 @@ class PushNotificationService {
     if (channelId == channelMalus.id) ch = channelMalus;
     if (channelId == channelVar.id) ch = channelVar;
     if (channelId == channelInvites.id) ch = channelInvites;
+    if (channelId == channelRules.id) ch = channelRules;
 
     await _localNotifications.show(
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000,

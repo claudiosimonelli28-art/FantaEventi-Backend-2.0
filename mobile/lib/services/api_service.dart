@@ -3364,13 +3364,13 @@ class ApiService {
               .replaceAll(' a Claudio ', ' a Cloud ')
               .replaceAll(' a Claude ', ' a Cloud ');
 
-          // Sincronizzazione automatica e self-healing dello stato VAR
+          // Sincronizzazione automatica e self-healing dello stato VAR (solo per notifiche operative, NON per var_esito)
           final notVarId = (d['varId'] ?? '').toString().trim().toLowerCase();
           final notVarClean = notVarId.replaceAll(RegExp(r'[^a-f0-9]'), '');
           String finalStato = (d['stato'] ?? 'in_attesa').toString();
           bool finalLetto = d['letto'] == true;
 
-          if (notVarId.isNotEmpty) {
+          if (notVarId.isNotEmpty && tipo != 'var_esito') {
             final matchedVar = varMap[notVarId] ?? (notVarClean.isNotEmpty ? varMap[notVarClean] : null);
             if (matchedVar != null) {
               final vStato = (matchedVar['stato'] ?? '').toString().toLowerCase();
@@ -5946,7 +5946,7 @@ class ApiService {
           if (nDoc['_id'] is ObjectId) {
             final dDest = (nDoc['destinatario'] ?? '').toString().trim();
             final dTipo = (nDoc['tipo'] ?? '').toString();
-            if (isSamePerson(dDest, giudiceNick) || dTipo == 'var_richiesta_giudice') {
+            if (dTipo == 'var_richiesta_giudice' && isSamePerson(dDest, giudiceNick)) {
               await db.collection('Notifiche').update(
                 where.id(nDoc['_id'] as ObjectId),
                 modify.set('stato', approva ? 'approvata' : 'rifiutata').set('letto', true),

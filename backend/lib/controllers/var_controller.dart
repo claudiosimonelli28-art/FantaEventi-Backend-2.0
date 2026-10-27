@@ -592,7 +592,7 @@ class VarController {
         if (nDoc['_id'] is ObjectId) {
           final dDest = (nDoc['destinatario'] ?? '').toString().trim();
           final dTipo = (nDoc['tipo'] ?? '').toString();
-          if (NicknameHelper.isSame(dDest, cleanGiudice, uDocs) || dTipo == 'var_richiesta_giudice') {
+          if (dTipo == 'var_richiesta_giudice' && NicknameHelper.isSame(dDest, cleanGiudice, uDocs)) {
             await DbService.instance.notificheCollection.update(
               where.id(nDoc['_id'] as ObjectId),
               modify.set('stato', approva ? 'approvata' : 'rifiutata').set('letto', true),

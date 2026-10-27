@@ -2109,7 +2109,7 @@ class _ProfileViewState extends State<ProfileView> {
                         ],
                       ),
                       subtitle: Text(
-                        'Personalizza il suono per Bonus, Malus, VAR ed Inviti',
+                        'Personalizza il suono per Bonus, Malus, VAR, Regole ed Inviti',
                         style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                       ),
                       trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
@@ -2776,7 +2776,35 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   const SizedBox(height: 12),
 
-                  // 4. INVITI AD EVENTI & AMICIZIE
+                  // 4. NUOVE REGOLE APPROVATE
+                  _buildSoundChannelCard(
+                    title: 'Nuove Regole Approvate',
+                    badge: 'REGOLA',
+                    badgeColor: const Color(0xFF10B981),
+                    subtitle: 'Quando una proposta supera il quorum ed entra nel catalogo',
+                    icon: Icons.verified_rounded,
+                    iconColor: const Color(0xFF10B981),
+                    channelId: 'fantaeventi_rules',
+                    testTitle: '🎉 Nuova Regola Approvata!',
+                    testBody: 'La regola proposta ha raggiunto il quorum ed è ora attiva nel catalogo!',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 5. NUOVE PROPOSTE & VOTAZIONI
+                  _buildSoundChannelCard(
+                    title: 'Nuove Proposte da Votare',
+                    badge: 'VOTI',
+                    badgeColor: const Color(0xFFF59E0B),
+                    subtitle: 'Quando un partecipante propone un nuovo Bonus/Malus',
+                    icon: Icons.how_to_vote_rounded,
+                    iconColor: const Color(0xFFF59E0B),
+                    channelId: 'fantaeventi_channel',
+                    testTitle: '⚡ Nuova Proposta da Votare!',
+                    testBody: 'Cloud ha proposto un nuovo Bonus da votare nella tua lega!',
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 6. INVITI AD EVENTI & AMICIZIE
                   _buildSoundChannelCard(
                     title: 'Inviti & Richieste Amicizia',
                     badge: 'SOCIAL',
@@ -2786,21 +2814,7 @@ class _ProfileViewState extends State<ProfileView> {
                     iconColor: const Color(0xFFA855F7),
                     channelId: 'fantaeventi_invites',
                     testTitle: '🎉 Nuovo Invito ad Evento!',
-                    testBody: 'Un amico ti ha invitato ad una nuova sfida FantaEventi!',
-                  ),
-                  const SizedBox(height: 12),
-
-                  // 5. GENERALI & VOTAZIONI
-                  _buildSoundChannelCard(
-                    title: 'Generali & Nuove Votazioni',
-                    badge: 'VOTI',
-                    badgeColor: const Color(0xFFF59E0B),
-                    subtitle: 'Regole proposte da votare e avvisi generali',
-                    icon: Icons.how_to_vote_rounded,
-                    iconColor: const Color(0xFFF59E0B),
-                    channelId: 'fantaeventi_channel',
-                    testTitle: '⚡ Nuova Proposta da Votare!',
-                    testBody: 'È stata proposta una nuova regola nella tua lega!',
+                    testBody: 'Cloud ti ha invitato ad una nuova sfida FantaEventi!',
                   ),
                   const SizedBox(height: 22),
 
