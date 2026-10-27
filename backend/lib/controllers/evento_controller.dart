@@ -176,6 +176,18 @@ class EventoController {
         'penalitaFalsaTestimonianza': data['penalitaFalsaTestimonianza'] ?? -10,
       };
 
+      // Anti-duplicazione idempotente: se un evento identico è già stato creato dal medesimo creatore, restituiscilo
+      final existingRecent = await DbService.instance.eventiCollection.findOne(
+        where.eq('titolo', titolo).and(where.eq('propostoDa', propostoDa)),
+      );
+      if (existingRecent != null) {
+        final existingId = existingRecent['_id']?.oid ?? existingRecent['_id']?.toString() ?? '';
+        return Response.ok(
+          jsonEncode({'message': 'Evento già creato con successo', 'id': existingId}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
       final res = await DbService.instance.eventiCollection.insertOne(eventoMap);
       final insertedId = res.id?.oid ?? '';
 
@@ -265,6 +277,15 @@ class EventoController {
             .addToSet('partecipanti', utenteName)
             .pullAll('invitati', pullList),
         );
+
+        // Se c'era una notifica di invito per questo utente, segnalala come accettata e letta
+        try {
+          await DbService.instance.notificheCollection.update(
+            where.eq('eventoId', eventoId).and(where.eq('destinatario', utenteName)).and(where.eq('tipo', 'invito')),
+            modify.set('stato', 'accettato').set('letto', true),
+            multiUpdate: true,
+          );
+        } catch (_) {}
       }
 
       return Response.ok(

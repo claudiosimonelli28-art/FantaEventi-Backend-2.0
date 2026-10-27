@@ -608,13 +608,16 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 ? null
                                 : () async {
                                     try {
+                                      final wasInvited = _invitatiInSospeso.contains(_viewModel.currentUserNick);
                                       await _viewModel.partecipaAdEvento();
                                       widget.onRefresh();
                                       if (!mounted) return;
                                       AppToast.showSuccess(
                                         context,
-                                        'Iscrizione completata! 🎉',
-                                        'Ti sei iscritto a "${_evento.titolo}".',
+                                        wasInvited ? 'Invito accettato! 🎉' : 'Iscrizione completata! 🎉',
+                                        wasInvited
+                                            ? 'Hai accettato l\'invito a "${_evento.titolo}".'
+                                            : 'Ti sei iscritto a "${_evento.titolo}".',
                                       );
                                     } catch (e) {
                                       if (!mounted) return;
@@ -632,10 +635,14 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       ? Icons.flag_rounded
                                       : _evento.isInCorso
                                           ? Icons.lock_clock_rounded
-                                          : Icons.person_add),
+                                          : (_invitatiInSospeso.contains(_viewModel.currentUserNick)
+                                              ? Icons.check_circle_rounded
+                                              : Icons.person_add)),
                               color: (_evento.isAnnullato || _evento.isConcluso || _evento.isInCorso)
                                   ? const Color(0xFF64748B)
-                                  : const Color(0xFF0F172A),
+                                  : (_invitatiInSospeso.contains(_viewModel.currentUserNick)
+                                      ? Colors.white
+                                      : const Color(0xFF0F172A)),
                             ),
                             label: Text(
                               _evento.isAnnullato
@@ -644,15 +651,21 @@ class _EventDetailViewState extends State<EventDetailView> {
                                       ? 'EVENTO CONCLUSO'
                                       : _evento.isInCorso
                                           ? 'ISCRIZIONI CHIUSE'
-                                          : 'PARTECIPA'),
+                                          : (_invitatiInSospeso.contains(_viewModel.currentUserNick)
+                                              ? 'ACCETTA INVITO'
+                                              : 'PARTECIPA')),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: (_evento.isAnnullato || _evento.isConcluso || _evento.isInCorso)
                                   ? const Color(0xFF334155)
-                                  : const Color(0xFFFACC15),
+                                  : (_invitatiInSospeso.contains(_viewModel.currentUserNick)
+                                      ? const Color(0xFF10B981)
+                                      : const Color(0xFFFACC15)),
                               foregroundColor: (_evento.isAnnullato || _evento.isConcluso || _evento.isInCorso)
                                   ? const Color(0xFF64748B)
-                                  : const Color(0xFF0F172A),
+                                  : (_invitatiInSospeso.contains(_viewModel.currentUserNick)
+                                      ? Colors.white
+                                      : const Color(0xFF0F172A)),
                               disabledBackgroundColor: const Color(0xFF334155),
                               disabledForegroundColor: const Color(0xFF64748B),
                               padding: const EdgeInsets.symmetric(vertical: 14),

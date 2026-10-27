@@ -2978,7 +2978,7 @@ class ApiService {
           try {
             await db.collection('Notifiche').update(
               where.eq('eventoId', eventoId).and(where.eq('destinatario', nicknameOrId)).and(where.eq('tipo', 'invito')),
-              modify.set('stato', 'accettata'),
+              modify.set('stato', 'accettato').set('letto', true),
               multiUpdate: true,
             );
           } catch (_) {}
@@ -3682,7 +3682,7 @@ class ApiService {
             'invitati': invitati,
             'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
           }),
-        ).timeout(const Duration(seconds: 8));
+        ).timeout(const Duration(seconds: 15));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final resData = jsonDecode(res.body) as Map<String, dynamic>;
@@ -3734,28 +3734,40 @@ class ApiService {
           throw Exception('Impossibile connettersi al database per creare l\'evento.');
         }
 
-        final evRes = await db.collection('Evento').insertOne({
-          'titolo': nuovoEvento.titolo,
-          'nome': nuovoEvento.titolo,
-          'descrizione': nuovoEvento.descrizione,
-          'data': nuovoEvento.data.toIso8601String(),
-          'dataFine': nuovoEvento.dataFine.toIso8601String(),
-          'luogo': nuovoEvento.luogo,
-          if (nuovoEvento.latitudine != null) 'latitudine': nuovoEvento.latitudine,
-          if (nuovoEvento.longitudine != null) 'longitudine': nuovoEvento.longitudine,
-          'stato': 'in_programma',
-          'propostoDa': creatore,
-          'creatore': creatore,
-          'partecipanti': [creatore],
-          'invitati': invitati,
-          'copertinaUrl': nuovoEvento.copertinaUrl,
-          'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
-          'xpCreatoreAssegnati': false,
-        }).timeout(const Duration(seconds: 5));
+        // Anti-duplicazione di sicurezza: se già inserito dal server, non duplicare
+        final existingEv = await db.collection('Evento').findOne(
+          where.eq('titolo', nuovoEvento.titolo).and(where.eq('propostoDa', creatore)),
+        );
+        String insertedEvId = '';
+        if (existingEv != null) {
+          insertedEvId = existingEv['_id']?.toHexString() ?? existingEv['_id']?.toString() ?? '';
+          if (insertedEvId.isNotEmpty) {
+            realEvId = insertedEvId;
+          }
+        } else {
+          final evRes = await db.collection('Evento').insertOne({
+            'titolo': nuovoEvento.titolo,
+            'nome': nuovoEvento.titolo,
+            'descrizione': nuovoEvento.descrizione,
+            'data': nuovoEvento.data.toIso8601String(),
+            'dataFine': nuovoEvento.dataFine.toIso8601String(),
+            'luogo': nuovoEvento.luogo,
+            if (nuovoEvento.latitudine != null) 'latitudine': nuovoEvento.latitudine,
+            if (nuovoEvento.longitudine != null) 'longitudine': nuovoEvento.longitudine,
+            'stato': 'in_programma',
+            'propostoDa': creatore,
+            'creatore': creatore,
+            'partecipanti': [creatore],
+            'invitati': invitati,
+            'copertinaUrl': nuovoEvento.copertinaUrl,
+            'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
+            'xpCreatoreAssegnati': false,
+          }).timeout(const Duration(seconds: 5));
 
-        final insertedEvId = evRes.id?.toHexString() ?? '';
-        if (insertedEvId.isNotEmpty) {
-          realEvId = insertedEvId;
+          insertedEvId = evRes.id?.toHexString() ?? '';
+          if (insertedEvId.isNotEmpty) {
+            realEvId = insertedEvId;
+          }
         }
 
         for (var invUser in invitati) {
