@@ -3934,8 +3934,32 @@ class ApiService {
           final insertedBmId = resData['id']?.toString() ?? '';
           final finalBonus = nuovoBonus.copyWith(
             id: insertedBmId.isNotEmpty ? insertedBmId : nuovoBonus.id,
+            eventoId: eventoId,
           );
+          _bonusMalusList.removeWhere((b) => b.id == finalBonus.id);
           _bonusMalusList.insert(0, finalBonus);
+
+          final numParticipants = evMatch.partecipanti.length >= 2 ? evMatch.partecipanti.length : 2;
+          final int quorum = (numParticipants / 2).floor() + 1;
+          final newVotazione = Votazione(
+            id: finalBonus.id,
+            titolo: nuovoBonus.titolo,
+            descrizione: nuovoBonus.descrizione.isNotEmpty ? nuovoBonus.descrizione : 'Proposta da $curUserNick',
+            bonusMalus: finalBonus,
+            votiFavorevoli: 1,
+            votiContrari: 0,
+            quorum: quorum,
+            stato: 'in_corso',
+            scadenza: DateTime.now().add(const Duration(days: 7)),
+            votiUtenti: {
+              curUserNick: 'pro',
+              curUserNick.toLowerCase(): 'pro',
+            },
+            nomeOrganizzatore: evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa,
+          );
+          _votazioniList.removeWhere((v) => v.id == newVotazione.id);
+          _votazioniList.insert(0, newVotazione);
+
           invalidateCache();
 
           // Invia notifica push reale per la tendina di sistema a tutti i partecipanti ed invitati
@@ -4090,6 +4114,32 @@ class ApiService {
               'data': DateTime.now().toIso8601String(),
             }).timeout(const Duration(seconds: 4));
           }
+
+          final fallbackBonus = nuovoBonus.copyWith(id: bmHexId, eventoId: eventoId);
+          _bonusMalusList.removeWhere((b) => b.id == bmHexId);
+          _bonusMalusList.insert(0, fallbackBonus);
+
+          final numParts = evMatch.partecipanti.length >= 2 ? evMatch.partecipanti.length : 2;
+          final int quorum = (numParts / 2).floor() + 1;
+          final newVotazione = Votazione(
+            id: bmHexId,
+            titolo: nuovoBonus.titolo,
+            descrizione: nuovoBonus.descrizione.isNotEmpty ? nuovoBonus.descrizione : 'Proposta da $curUserNick',
+            bonusMalus: fallbackBonus,
+            votiFavorevoli: 1,
+            votiContrari: 0,
+            quorum: quorum,
+            stato: 'in_corso',
+            scadenza: DateTime.now().add(const Duration(days: 7)),
+            votiUtenti: {
+              curUserNick: 'pro',
+              curUserNick.toLowerCase(): 'pro',
+            },
+            nomeOrganizzatore: evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa,
+          );
+          _votazioniList.removeWhere((v) => v.id == bmHexId);
+          _votazioniList.insert(0, newVotazione);
+          invalidateCache();
         } catch (_) {}
 
         // 4. Inserimento notifiche a TUTTI i partecipanti ed invitati dell'evento (escluso il proponente)
@@ -5076,9 +5126,7 @@ class ApiService {
 
     final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
     final evMatch = _eventi.firstWhere(
-      (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
-             (e.titolo.isNotEmpty && v.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
-             (e.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+      (e) => evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId),
       orElse: () => Evento(
         id: '',
         titolo: '',

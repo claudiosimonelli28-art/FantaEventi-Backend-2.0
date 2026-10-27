@@ -136,7 +136,7 @@ class HomeViewModel extends BaseViewModel {
         _apiService.getUtenti(),
         _apiService.getVotazioni(),
         _apiService.getNotifiche(nick),
-      ]).timeout(const Duration(seconds: 4), onTimeout: () => [[], <Votazione>[], <Map<String, dynamic>>[]]);
+      ]).timeout(const Duration(seconds: 10), onTimeout: () => [[], _votazioniList, <Map<String, dynamic>>[]]);
 
       if (isDisposed) return;
 
@@ -223,8 +223,7 @@ class HomeViewModel extends BaseViewModel {
       final isSameEv = b.eventoId.trim().toLowerCase() == ev.id.trim().toLowerCase() ||
           b.eventoId.trim().toLowerCase() == ev.titolo.trim().toLowerCase();
       final isApprovato = b.stato == 'approvato' || b.stato == 'confermato' || b.approvato;
-      final isMine = b.propostoDa.trim().toLowerCase() == cleanUser;
-      return isSameEv && (isApprovato || isMine);
+      return isSameEv && isApprovato;
     }).toList();
   }
 
@@ -233,9 +232,7 @@ class HomeViewModel extends BaseViewModel {
       final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
 
       final evMatch = _eventi.firstWhere(
-        (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
-               (e.titolo.isNotEmpty && v.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
-               (e.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+        (e) => evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId),
         orElse: () => Evento(
           id: '',
           titolo: '',
@@ -253,13 +250,15 @@ class HomeViewModel extends BaseViewModel {
       if (evMatch.id.isEmpty) return false;
       if (evMatch.stato.trim().toLowerCase() == 'concluso' || DateTime.now().isAfter(evMatch.dataFine)) return false;
 
-      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim().toLowerCase();
-      final pList = evMatch.partecipanti.map((p) => p.trim().toLowerCase()).toList();
-      final iList = evMatch.invitati.map((p) => p.trim().toLowerCase()).toList();
+      final cleanCreatore = (evMatch.creatore.isNotEmpty ? evMatch.creatore : evMatch.propostoDa).trim();
+      final pList = evMatch.partecipanti.map((p) => p.trim()).toList();
+      final iList = evMatch.invitati.map((p) => p.trim()).toList();
 
-      final bool isCoinvolto = cleanCreatore == cleanUser || cleanCreatore == cleanNick || cleanCreatore == cleanId ||
-                               pList.contains(cleanUser) || pList.contains(cleanNick) || pList.contains(cleanId) ||
-                               iList.contains(cleanUser) || iList.contains(cleanNick) || iList.contains(cleanId);
+      final bool isCoinvolto = _apiService.isSamePerson(cleanCreatore, cleanUser) ||
+                               _apiService.isSamePerson(cleanCreatore, cleanNick) ||
+                               _apiService.isSamePerson(cleanCreatore, cleanId) ||
+                               pList.any((p) => _apiService.isSamePerson(p, cleanUser) || _apiService.isSamePerson(p, cleanNick) || _apiService.isSamePerson(p, cleanId)) ||
+                               iList.any((p) => _apiService.isSamePerson(p, cleanUser) || _apiService.isSamePerson(p, cleanNick) || _apiService.isSamePerson(p, cleanId));
 
       return isCoinvolto;
     }).toList();
@@ -270,9 +269,7 @@ class HomeViewModel extends BaseViewModel {
       if (ev.isConcluso || DateTime.now().isAfter(ev.dataFine)) return false;
       return activeVotazioni.any((v) {
         final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
-        return (evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId)) ||
-               (ev.titolo.isNotEmpty && v.titolo.toLowerCase().contains(ev.titolo.toLowerCase())) ||
-               (ev.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(ev.titolo.toLowerCase()));
+        return evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId);
       });
     }).toList();
   }
@@ -280,9 +277,7 @@ class HomeViewModel extends BaseViewModel {
   List<Votazione> getVotesForEvent(Evento ev, List<Votazione> activeVotazioni) {
     return activeVotazioni.where((v) {
       final evId = v.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
-      return (evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId)) ||
-             (ev.titolo.isNotEmpty && v.titolo.toLowerCase().contains(ev.titolo.toLowerCase())) ||
-             (ev.titolo.isNotEmpty && v.descrizione.toLowerCase().contains(ev.titolo.toLowerCase()));
+      return evId.isNotEmpty && (ev.id.trim().toLowerCase() == evId || ev.titolo.trim().toLowerCase() == evId);
     }).toList();
   }
 

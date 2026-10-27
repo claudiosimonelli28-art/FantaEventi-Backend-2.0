@@ -28,9 +28,7 @@ class VoteViewModel extends BaseViewModel {
 
     final evId = _votazione.bonusMalus?.eventoId.trim().toLowerCase() ?? '';
     final evMatch = _apiService.eventi.firstWhere(
-      (e) => (evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId)) ||
-             (e.titolo.isNotEmpty && _votazione.titolo.toLowerCase().contains(e.titolo.toLowerCase())) ||
-             (e.titolo.isNotEmpty && _votazione.descrizione.toLowerCase().contains(e.titolo.toLowerCase())),
+      (e) => evId.isNotEmpty && (e.id.trim().toLowerCase() == evId || e.titolo.trim().toLowerCase() == evId),
       orElse: () => Evento(
         id: '',
         titolo: '',
