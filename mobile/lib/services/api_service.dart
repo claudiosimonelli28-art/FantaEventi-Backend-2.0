@@ -129,7 +129,7 @@ class ApiService {
       if (avStr != null && avStr.isNotEmpty) {
         final Map<String, dynamic> map = jsonDecode(avStr);
         map.forEach((k, v) {
-          if (v is String && v.isNotEmpty) {
+          if (v is String && v.isNotEmpty && !v.contains('pravatar') && !v.contains('unsplash.com/photo-1535713875002')) {
             final keyLower = k.toLowerCase().trim();
             final keyNoSpaces = keyLower.replaceAll(' ', '');
             _avatarCache[keyLower] = v;
@@ -145,7 +145,7 @@ class ApiService {
         for (var item in list) {
           final u = Utente.fromJson(Map<String, dynamic>.from(item as Map));
           loaded.add(u);
-          if (u.avatarUrl.isNotEmpty) {
+          if (u.avatarUrl.isNotEmpty && !u.avatarUrl.contains('pravatar') && !u.avatarUrl.contains('unsplash.com/photo-1535713875002')) {
             _cacheSingleAvatar(u.nome, u.nickname, u.avatarUrl);
           }
         }
@@ -618,6 +618,9 @@ class ApiService {
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
         final Map<String, dynamic> data = jsonDecode(userJsonStr);
         _currentUser = Utente.fromJson(data);
+        if (_currentUser != null && (_currentUser!.avatarUrl.contains('pravatar') || _currentUser!.avatarUrl.contains('unsplash.com/photo-1535713875002'))) {
+          _currentUser = _currentUser!.copyWith(avatarUrl: '');
+        }
         _rememberMeSession = true;
         await _loadCachedUsersAndAvatars();
         clearUserSessionCache();
@@ -1830,6 +1833,23 @@ class ApiService {
       await _saveCachedUsersAndAvatars();
     }
 
+    // 1. Invio primario al Backend REST Render (invalida la cache RAM del server e aggiorna il DB)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/utenti/avatar'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'utente': username,
+            'avatarUrl': newAvatarUrl,
+          }),
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          break;
+        }
+      } catch (_) {}
+    }
+
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
@@ -1861,7 +1881,7 @@ class ApiService {
 
             await db.collection('Utenti').update(
               sel,
-              modify.set('avatarUrl', newAvatarUrl),
+              modify.set('avatarUrl', newAvatarUrl).set('foto', newAvatarUrl),
             );
           }
         }
@@ -1905,17 +1925,27 @@ class ApiService {
             jsonMap['nickname'] = resolvedNick;
             jsonMap['username'] = resolvedNick;
 
-            final uObj = Utente.fromJson(jsonMap);
+            final rawServerAv = (jsonMap['avatarUrl'] ?? jsonMap['foto'] ?? '').toString().trim();
+            final validServerAv = (rawServerAv.isNotEmpty && !rawServerAv.contains('pravatar') && !rawServerAv.contains('unsplash.com/photo-1535713875002'))
+                ? rawServerAv
+                : '';
+            final uObj = Utente.fromJson(jsonMap).copyWith(avatarUrl: validServerAv);
             list.add(uObj);
 
-            if (uObj.avatarUrl.isNotEmpty) {
-              _cacheSingleAvatar(uObj.nome, uObj.nickname, uObj.avatarUrl);
+            if (validServerAv.isNotEmpty) {
+              _cacheSingleAvatar(uObj.nome, uObj.nickname, validServerAv);
             }
 
             if (_currentUser != null &&
                 (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
                  isSamePerson(uObj.nome, _currentUser!.nome))) {
-              final safeAvatar = uObj.avatarUrl.isNotEmpty ? uObj.avatarUrl : _currentUser!.avatarUrl;
+              final curAv = _currentUser!.avatarUrl;
+              final validCurAv = (curAv.isNotEmpty && !curAv.contains('pravatar') && !curAv.contains('unsplash.com/photo-1535713875002'))
+                  ? curAv
+                  : '';
+              final safeAvatar = validServerAv.isNotEmpty
+                  ? validServerAv
+                  : (validCurAv.isNotEmpty ? validCurAv : (_avatarCache[resolvedNick.toLowerCase()] ?? ''));
               _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
               await _saveSession(_currentUser!);
             }
@@ -1968,17 +1998,27 @@ class ApiService {
           jsonMap['countGiustiziere'] = d['countGiustiziere'] ?? 0;
           jsonMap['haVistoGuida'] = d['haVistoGuida'] == true;
 
-          final uObj = Utente.fromJson(jsonMap);
+          final rawServerAv = (jsonMap['avatarUrl'] ?? jsonMap['foto'] ?? '').toString().trim();
+          final validServerAv = (rawServerAv.isNotEmpty && !rawServerAv.contains('pravatar') && !rawServerAv.contains('unsplash.com/photo-1535713875002'))
+              ? rawServerAv
+              : '';
+          final uObj = Utente.fromJson(jsonMap).copyWith(avatarUrl: validServerAv);
           list.add(uObj);
 
-          if (uObj.avatarUrl.isNotEmpty) {
-            _cacheSingleAvatar(uObj.nome, uObj.nickname, uObj.avatarUrl);
+          if (validServerAv.isNotEmpty) {
+            _cacheSingleAvatar(uObj.nome, uObj.nickname, validServerAv);
           }
 
           if (_currentUser != null &&
               (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
                isSamePerson(uObj.nome, _currentUser!.nome))) {
-            final safeAvatar = uObj.avatarUrl.isNotEmpty ? uObj.avatarUrl : _currentUser!.avatarUrl;
+            final curAv = _currentUser!.avatarUrl;
+            final validCurAv = (curAv.isNotEmpty && !curAv.contains('pravatar') && !curAv.contains('unsplash.com/photo-1535713875002'))
+                ? curAv
+                : '';
+            final safeAvatar = validServerAv.isNotEmpty
+                ? validServerAv
+                : (validCurAv.isNotEmpty ? validCurAv : (_avatarCache[resolvedNick.toLowerCase()] ?? ''));
             _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
             await _saveSession(_currentUser!);
           }
@@ -2000,25 +2040,27 @@ class ApiService {
     final raw = nickname.trim().toLowerCase();
     if (clean.isEmpty) return '';
 
+    bool isValid(String? s) => s != null && s.isNotEmpty && !s.contains('pravatar') && !s.contains('unsplash.com/photo-1535713875002');
+
     if (_currentUser != null) {
       final cName = _currentUser!.nome.replaceAll(' ', '').trim().toLowerCase();
       final cNick = _currentUser!.nickname.replaceAll(' ', '').trim().toLowerCase();
       final cRawName = _currentUser!.nome.trim().toLowerCase();
       final cRawNick = _currentUser!.nickname.trim().toLowerCase();
-      if ((cName == clean || cNick == clean || cRawName == raw || cRawNick == raw) && _currentUser!.avatarUrl.isNotEmpty) {
+      if ((cName == clean || cNick == clean || cRawName == raw || cRawNick == raw) && isValid(_currentUser!.avatarUrl)) {
         return _currentUser!.avatarUrl;
       }
     }
 
-    if (_avatarCache.containsKey(clean) && _avatarCache[clean]!.isNotEmpty) {
+    if (_avatarCache.containsKey(clean) && isValid(_avatarCache[clean])) {
       return _avatarCache[clean]!;
     }
-    if (_avatarCache.containsKey(raw) && _avatarCache[raw]!.isNotEmpty) {
+    if (_avatarCache.containsKey(raw) && isValid(_avatarCache[raw])) {
       return _avatarCache[raw]!;
     }
 
     final u = getUtenteInMemoria(nickname);
-    if (u != null && u.avatarUrl.isNotEmpty) {
+    if (u != null && isValid(u.avatarUrl)) {
       _cacheSingleAvatar(u.nome, u.nickname, u.avatarUrl);
       return u.avatarUrl;
     }
@@ -2037,7 +2079,7 @@ class ApiService {
         if (res.statusCode == 200) {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
           final av = (data['avatarUrl'] ?? '').toString().trim();
-          if (av.isNotEmpty) {
+          if (av.isNotEmpty && !av.contains('pravatar') && !av.contains('unsplash.com/photo-1535713875002')) {
             _avatarCache[clean] = av;
             if (clean == 'cloud') _avatarCache['claudio'] = av;
             if (clean == 'claudio') _avatarCache['cloud'] = av;
@@ -2059,7 +2101,7 @@ class ApiService {
             : where.eq('nickname', nickname).or(where.eq('nome', nickname));
         final doc = await db.collection('Utenti').findOne(selector.fields(['avatarUrl', 'foto']));
         final av = (doc?['avatarUrl'] ?? doc?['foto'] ?? '').toString().trim();
-        if (av.isNotEmpty) {
+        if (av.isNotEmpty && !av.contains('pravatar') && !av.contains('unsplash.com/photo-1535713875002')) {
           _avatarCache[clean] = av;
           if (clean == 'cloud') _avatarCache['claudio'] = av;
           if (clean == 'claudio') _avatarCache['cloud'] = av;

@@ -1901,8 +1901,8 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
   String? _cachedAvatarUrl;
 
   ImageProvider _getStableAvatarProvider(String? avatarUrl) {
-    if (avatarUrl == null || avatarUrl.isEmpty) {
-      return const AssetImage('assets/images/cloud.png');
+    if (avatarUrl == null || avatarUrl.isEmpty || avatarUrl.contains('pravatar') || avatarUrl.contains('unsplash.com/photo-1535713875002')) {
+      return const AssetImage('assets/icon/app_icon.jpg');
     }
     if (avatarUrl != _cachedAvatarUrl) {
       _cachedAvatarUrl = avatarUrl;

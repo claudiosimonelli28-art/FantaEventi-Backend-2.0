@@ -107,7 +107,7 @@ class UtenteController {
         now.difference(_lastUtentiFetch!) < _cacheDuration) {
       return _cachedUtentiDocs!;
     }
-    final docs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
+    final docs = await DbService.instance.utentiCollection.find().toList();
     _cachedUtentiDocs = docs;
     _lastUtentiFetch = now;
     return docs;
@@ -350,9 +350,7 @@ class UtenteController {
       final nickClean = username.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
       final codePrefix = nickClean.length >= 3 ? nickClean.substring(0, 3) : 'FE';
       final friendCode = 'FE-$codePrefix${1000 + Random().nextInt(9000)}';
-      final avatar = (data['avatarUrl'] ?? '').toString().trim().isNotEmpty
-          ? data['avatarUrl'].toString().trim()
-          : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(username)}';
+      final avatar = (data['avatarUrl'] ?? '').toString().trim();
 
       final utenteMap = {
         'nome': (data['nome'] ?? '').toString().trim().isNotEmpty ? data['nome'].toString().trim() : username,
@@ -489,11 +487,18 @@ class UtenteController {
         );
       }
 
+      final cleanName = utenteName.toLowerCase();
+      final isClaudio = cleanName == 'cloud' || cleanName == 'claudio';
+      final selector = isClaudio
+          ? where.eq('nickname', 'Cloud').or(where.eq('nome', 'Claudio'))
+          : where.eq('username', utenteName)
+               .or(where.eq('nickname', utenteName))
+               .or(where.eq('nome', utenteName));
+
       await DbService.instance.utentiCollection.update(
-        where.eq('username', utenteName)
-             .or(where.eq('nickname', utenteName))
-             .or(where.eq('nome', utenteName)),
+        selector,
         modify.set('avatarUrl', avatarUrl).set('foto', avatarUrl),
+        multiUpdate: true,
       );
       invalidateCache();
 
@@ -559,7 +564,7 @@ class UtenteController {
       }
 
       final cleanIdent = identifier.toLowerCase();
-      final docs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
+      final docs = await DbService.instance.utentiCollection.find().toList();
       Map<String, dynamic>? doc;
 
       for (var d in docs) {
@@ -779,7 +784,7 @@ class UtenteController {
         );
       }
 
-      final docs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
+      final docs = await DbService.instance.utentiCollection.find().toList();
       final existingLower = <String>{};
       for (var d in docs) {
         final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();

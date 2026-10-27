@@ -69,9 +69,9 @@ class ProfileViewModel extends BaseViewModel {
     if (_fotoLocaleFile != null && _fotoLocaleFile!.existsSync()) {
       return FileImage(_fotoLocaleFile!);
     }
-    final effectiveUrl = _utente.avatarUrl.isNotEmpty
-        ? _utente.avatarUrl
-        : _apiService.getAvatarPerUtente(_utente.nickname);
+    final cur = _utente.avatarUrl;
+    final isCurValid = cur.isNotEmpty && !cur.contains('pravatar') && !cur.contains('unsplash.com/photo-1535713875002');
+    final effectiveUrl = isCurValid ? cur : _apiService.getAvatarPerUtente(_utente.nickname);
     return getAvatarImageProvider(effectiveUrl);
   }
 
@@ -113,8 +113,10 @@ class ProfileViewModel extends BaseViewModel {
         notifyListeners();
       }
 
-      // Se la foto profilo in memoria è vuota, recupera la vera foto dal server/database
-      if (_utente.avatarUrl.isEmpty) {
+      // Se la foto profilo in memoria è vuota o corrotta da vecchi avatar fake, recupera la vera foto dal server/database
+      final cur = _utente.avatarUrl;
+      final isCurValid = cur.isNotEmpty && !cur.contains('pravatar') && !cur.contains('unsplash.com/photo-1535713875002');
+      if (!isCurValid) {
         final realAvatar = await _apiService.fetchAvatarPerUtente(_utente.nickname);
         if (realAvatar.isNotEmpty && !isDisposed) {
           _utente = _utente.copyWith(avatarUrl: realAvatar);

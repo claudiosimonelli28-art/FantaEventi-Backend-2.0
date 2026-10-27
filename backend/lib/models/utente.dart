@@ -184,10 +184,10 @@ class Utente {
       friendCode = 'FE-$codeSeed$numSeed';
     }
 
-    final String rawAvatar = (map['avatarUrl'] ?? '').toString().trim();
-    final String parsedAvatar = rawAvatar.isNotEmpty
+    final String rawAvatar = (map['avatarUrl'] ?? map['foto'] ?? '').toString().trim();
+    final String parsedAvatar = (rawAvatar.isNotEmpty && !rawAvatar.contains('pravatar.cc'))
         ? rawAvatar
-        : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(parsedNick)}';
+        : '';
 
     ObjectId? mId = map['_id'] is ObjectId
         ? map['_id'] as ObjectId

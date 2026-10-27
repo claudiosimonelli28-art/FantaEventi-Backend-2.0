@@ -5,13 +5,17 @@ import 'package:flutter/material.dart';
 final Map<String, ImageProvider> _avatarProviderCache = {};
 
 ImageProvider getAvatarImageProvider(String? avatarUrl) {
-  const defaultAvatar = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80';
+  const fallbackAsset = AssetImage('assets/icon/app_icon.jpg');
   
   if (avatarUrl == null || avatarUrl.trim().isEmpty) {
-    return _avatarProviderCache.putIfAbsent(defaultAvatar, () => const NetworkImage(defaultAvatar));
+    return fallbackAsset;
   }
   
   final url = avatarUrl.trim();
+  
+  if (url.contains('pravatar.cc') || url.contains('unsplash.com/photo-1535713875002')) {
+    return fallbackAsset;
+  }
   
   if (_avatarProviderCache.containsKey(url)) {
     return _avatarProviderCache[url]!;
@@ -25,7 +29,7 @@ ImageProvider getAvatarImageProvider(String? avatarUrl) {
       _avatarProviderCache[url] = provider;
       return provider;
     } catch (_) {
-      return _avatarProviderCache.putIfAbsent(defaultAvatar, () => const NetworkImage(defaultAvatar));
+      return fallbackAsset;
     }
   }
   
@@ -41,7 +45,7 @@ ImageProvider getAvatarImageProvider(String? avatarUrl) {
     return provider;
   }
   
-  return _avatarProviderCache.putIfAbsent(defaultAvatar, () => const NetworkImage(defaultAvatar));
+  return fallbackAsset;
 }
 
 final Map<String, ImageProvider> _coverProviderCache = {};

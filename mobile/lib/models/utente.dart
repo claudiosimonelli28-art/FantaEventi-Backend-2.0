@@ -178,10 +178,10 @@ class Utente {
       friendCode = 'FE-$codeSeed$numSeed';
     }
 
-    final String rawAvatar = (json['avatarUrl'] ?? '').toString().trim();
-    final String parsedAvatar = rawAvatar.isNotEmpty
+    final String rawAvatar = (json['avatarUrl'] ?? json['foto'] ?? '').toString().trim();
+    final String parsedAvatar = (rawAvatar.isNotEmpty && !rawAvatar.contains('pravatar.cc'))
         ? rawAvatar
-        : 'https://i.pravatar.cc/150?u=${Uri.encodeComponent(parsedNick)}';
+        : '';
 
     final String parsedId = json['id'] as String? ?? json['_id']?.toString() ?? '';
     String parsedCognome = (json['cognome'] ?? '').toString().trim();
