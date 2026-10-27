@@ -2294,7 +2294,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/eventi'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 2000));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
@@ -2363,7 +2363,7 @@ class ApiService {
 
                   final evTitolo = (d['titolo'] ?? d['nome'] ?? 'Evento Fanta').toString().trim();
                   final logVoce = formattaVoceStorico('🏆 Evento "$evTitolo" avviato con successo (+100 XP)');
-                  final uDocsForXp = await db.collection('Utenti').find().toList();
+                  final uDocsForXp = await db.collection('Utenti').find(where.excludeFields(['avatarUrl'])).toList();
                   for (var uDoc in uDocsForXp) {
                     if (matchesUserDoc(uDoc, rawCreatore)) {
                       final int curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
@@ -2426,7 +2426,7 @@ class ApiService {
 
               final bmList = await db.collection('BonusMalus').find(where.eq('eventoId', idStr)).toList();
               final allVotazioni = await db.collection('Votazioni').find().toList();
-              final uDocs = await db.collection('Utenti').find().toList();
+              final uDocs = await db.collection('Utenti').find(where.excludeFields(['avatarUrl'])).toList();
 
               final Map<String, int> punteggi = {for (var p in partecipanti) p: 0};
               final Map<String, int> malusPerUtente = {for (var p in partecipanti) p.trim().toLowerCase(): 0};

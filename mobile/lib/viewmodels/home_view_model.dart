@@ -131,8 +131,8 @@ class HomeViewModel extends BaseViewModel {
 
       // 3. Caricamento sequenziale protetto per socket MongoDB delle risorse di supporto
       await _apiService.getUtenti();
-      final meBonus = await _apiService.getBonusMalusList();
       final meVoti = await _apiService.getVotazioni();
+      final meBonus = _apiService.bonusMalusList;
 
       final curUser = _apiService.currentUser;
       final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';

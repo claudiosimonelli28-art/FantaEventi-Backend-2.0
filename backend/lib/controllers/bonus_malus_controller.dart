@@ -5,6 +5,7 @@ import '../db/db_service.dart';
 import '../models/bonus_malus.dart';
 import '../models/utente.dart';
 import '../utils/nickname_helper.dart';
+import 'utente_controller.dart';
 
 class BonusMalusController {
   // GET /api/bonusmalus
@@ -32,7 +33,7 @@ class BonusMalusController {
 
       List<Map<String, dynamic>> allUtenti = [];
       try {
-        allUtenti = await DbService.instance.utentiCollection.find().toList();
+        allUtenti = await UtenteController.getCachedUtentiDocs();
       } catch (_) {}
 
       final rawProposto = data['utente']?.toString() ?? data['propostoDa']?.toString() ?? 'Cloud';
@@ -259,7 +260,7 @@ class BonusMalusController {
       }
 
       // 3. Aggiorna punti e storico utente con carry-over XP
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       for (var uDoc in uDocs) {
         final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? '').toString().trim().toLowerCase();
         final uName = (uDoc['nome'] ?? '').toString().trim().toLowerCase();
@@ -437,7 +438,7 @@ class BonusMalusController {
       final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] ⚠️ Annullata assegnazione bonus (-$safePunti PT) (ore $timeStr)';
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       for (var uDoc in uDocs) {
         final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? '').toString().trim().toLowerCase();
         final uName = (uDoc['nome'] ?? '').toString().trim().toLowerCase();

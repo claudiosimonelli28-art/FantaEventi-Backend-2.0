@@ -6,6 +6,7 @@ import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
 import '../models/utente.dart';
 import '../utils/nickname_helper.dart';
+import 'utente_controller.dart';
 
 class VotazioneController {
   // GET /api/votazioni
@@ -14,7 +15,7 @@ class VotazioneController {
       final bmDocs = await DbService.instance.bonusMalusCollection.find().toList();
       final votiDocs = await DbService.instance.votazioniCollection.find().toList();
       final evDocs = await DbService.instance.eventiCollection.find().toList();
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
 
       final List<Map<String, dynamic>> resultList = [];
 
@@ -164,7 +165,7 @@ class VotazioneController {
       final aFavore = data['aFavore'] == true || data['voto'] == 'pro' || data['voto'] == 'accetta';
       final rawUser = data['utente']?.toString() ?? data['username']?.toString() ?? 'Cloud';
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       final userNick = NicknameHelper.resolve(rawUser, uDocs);
 
       // 1. Verifica se l'utente ha già votato

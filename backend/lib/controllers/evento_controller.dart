@@ -5,6 +5,7 @@ import '../db/db_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
 import '../utils/nickname_helper.dart';
+import 'utente_controller.dart';
 
 class EventoController {
   // GET /api/eventi
@@ -12,7 +13,7 @@ class EventoController {
     try {
       final now = DateTime.now();
       final docs = await DbService.instance.eventiCollection.find().toList();
-      final utentiDocs = await DbService.instance.utentiCollection.find().toList();
+      final utentiDocs = await UtenteController.getCachedUtentiDocs();
 
       final List<Map<String, dynamic>> resultList = [];
 
@@ -133,7 +134,7 @@ class EventoController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final utentiDocs = await DbService.instance.utentiCollection.find().toList();
+      final utentiDocs = await UtenteController.getCachedUtentiDocs();
 
       final titolo = data['titolo'] ?? data['nome'] ?? 'Evento FantaEventi';
       final rawProposto = (data['propostoDa'] ?? data['creatoreId'] ?? 'Cloud').toString().trim();
@@ -305,7 +306,7 @@ class EventoController {
         );
       }
 
-      final utentiDocs = await DbService.instance.utentiCollection.find().toList();
+      final utentiDocs = await UtenteController.getCachedUtentiDocs();
       final creatoreDoc = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
       final isAllowed = creatoreDoc.isEmpty || NicknameHelper.isSame(creatoreDoc, utente, utentiDocs);
 
