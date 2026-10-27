@@ -1792,7 +1792,16 @@ class ApiService {
                u.nome.trim().toLowerCase() == curUser.nome.trim().toLowerCase(),
         orElse: () => curUser,
       );
-      _currentUser = match;
+      final safeAvatar = match.avatarUrl.isNotEmpty
+          ? match.avatarUrl
+          : (curUser.avatarUrl.isNotEmpty
+              ? curUser.avatarUrl
+              : (_avatarCache[curUser.nickname.toLowerCase()] ?? ''));
+      String finalAvatar = safeAvatar;
+      if (finalAvatar.isEmpty) {
+        finalAvatar = await fetchAvatarPerUtente(curUser.nickname);
+      }
+      _currentUser = match.copyWith(avatarUrl: finalAvatar);
       await _saveSession(_currentUser!);
       return _currentUser;
     } catch (_) {
@@ -1906,7 +1915,8 @@ class ApiService {
             if (_currentUser != null &&
                 (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
                  isSamePerson(uObj.nome, _currentUser!.nome))) {
-              _currentUser = uObj;
+              final safeAvatar = uObj.avatarUrl.isNotEmpty ? uObj.avatarUrl : _currentUser!.avatarUrl;
+              _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
               await _saveSession(_currentUser!);
             }
           }
@@ -1968,7 +1978,8 @@ class ApiService {
           if (_currentUser != null &&
               (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
                isSamePerson(uObj.nome, _currentUser!.nome))) {
-            _currentUser = uObj;
+            final safeAvatar = uObj.avatarUrl.isNotEmpty ? uObj.avatarUrl : _currentUser!.avatarUrl;
+            _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
             await _saveSession(_currentUser!);
           }
         }
@@ -2012,6 +2023,54 @@ class ApiService {
       return u.avatarUrl;
     }
 
+    return '';
+  }
+
+  Future<String> fetchAvatarPerUtente(String nickname) async {
+    final clean = nickname.trim().toLowerCase();
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/utenti/avatar?utente=${Uri.encodeComponent(nickname)}'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final av = (data['avatarUrl'] ?? '').toString().trim();
+          if (av.isNotEmpty) {
+            _avatarCache[clean] = av;
+            if (clean == 'cloud') _avatarCache['claudio'] = av;
+            if (clean == 'claudio') _avatarCache['cloud'] = av;
+            if (_currentUser != null && (isSamePerson(clean, _currentUser!.nickname) || isSamePerson(clean, _currentUser!.nome))) {
+              _currentUser = _currentUser!.copyWith(avatarUrl: av);
+              await _saveSession(_currentUser!);
+            }
+            return av;
+          }
+        }
+      } catch (_) {}
+    }
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final isClaudio = clean == 'cloud' || clean == 'claudio';
+        final selector = isClaudio
+            ? where.eq('nickname', 'Cloud').or(where.eq('nome', 'Claudio'))
+            : where.eq('nickname', nickname).or(where.eq('nome', nickname));
+        final doc = await db.collection('Utenti').findOne(selector.fields(['avatarUrl', 'foto']));
+        final av = (doc?['avatarUrl'] ?? doc?['foto'] ?? '').toString().trim();
+        if (av.isNotEmpty) {
+          _avatarCache[clean] = av;
+          if (clean == 'cloud') _avatarCache['claudio'] = av;
+          if (clean == 'claudio') _avatarCache['cloud'] = av;
+          if (_currentUser != null && (isSamePerson(clean, _currentUser!.nickname) || isSamePerson(clean, _currentUser!.nome))) {
+            _currentUser = _currentUser!.copyWith(avatarUrl: av);
+            await _saveSession(_currentUser!);
+          }
+          return av;
+        }
+      }
+    } catch (_) {}
     return '';
   }
 

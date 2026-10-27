@@ -73,6 +73,7 @@ void main() async {
   app.post('/api/utenti/richiedi-reset-password', utenteCtrl.richiediResetPassword);
   app.post('/api/utenti/conferma-reset-password', utenteCtrl.confermaResetPassword);
   app.post('/api/utenti/avatar', utenteCtrl.aggiornaAvatar);
+  app.get('/api/utenti/avatar', utenteCtrl.getAvatar);
   app.post('/api/utenti/elimina-account', utenteCtrl.eliminaAccount);
   app.get('/api/utenti', utenteCtrl.getUtenti);
   app.post('/api/utenti/blocca', utenteCtrl.bloccaUtente);

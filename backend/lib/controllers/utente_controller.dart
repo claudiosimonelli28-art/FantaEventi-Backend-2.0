@@ -212,6 +212,18 @@ class UtenteController {
         );
       }
 
+      // Recupera la foto profilo reale dell'utente se esclusa dalla cache
+      if ((doc['avatarUrl'] == null || doc['avatarUrl'].toString().isEmpty) && doc['_id'] != null) {
+        try {
+          final fullDoc = await DbService.instance.utentiCollection.findOne(
+            where.id(doc['_id'] as ObjectId).fields(['avatarUrl', 'foto']),
+          );
+          if (fullDoc != null) {
+            doc['avatarUrl'] = fullDoc['avatarUrl'] ?? fullDoc['foto'] ?? '';
+          }
+        } catch (_) {}
+      }
+
       final utente = Utente.fromMap(doc);
       if (utente.isBanned) {
         print('⛔ Utente "${utente.username}" è sospeso/bannato.');
@@ -492,6 +504,37 @@ class UtenteController {
       );
     } catch (e) {
       print('❌ Errore salvataggio avatar: $e');
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // GET /api/utenti/avatar?utente=...
+  Future<Response> getAvatar(Request request) async {
+    try {
+      final utente = (request.url.queryParameters['utente'] ?? request.url.queryParameters['nick'] ?? '').trim();
+      if (utente.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'parametro utente mancante'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+      final clean = utente.toLowerCase();
+      final isClaudio = clean == 'claudio' || clean == 'cloud';
+      final selector = isClaudio
+          ? where.eq('nickname', 'Cloud').or(where.eq('nome', 'Claudio'))
+          : where.eq('nickname', utente).or(where.eq('nome', utente));
+      final doc = await DbService.instance.utentiCollection.findOne(
+        selector.fields(['avatarUrl', 'foto', 'nickname', 'nome']),
+      );
+      final avatar = (doc?['avatarUrl'] ?? doc?['foto'] ?? '').toString();
+      return Response.ok(
+        jsonEncode({'avatarUrl': avatar}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
       return Response.internalServerError(
         body: jsonEncode({'error': e.toString()}),
         headers: {'content-type': 'application/json'},

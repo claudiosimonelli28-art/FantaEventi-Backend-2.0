@@ -66,9 +66,13 @@ class ProfileViewModel extends BaseViewModel {
       ApiService.filtraStorico(_utente.storicoVoti, maxGiorni: _filtroGiorniStorico);
 
   ImageProvider get currentAvatarImage {
-    return _fotoLocaleFile != null && _fotoLocaleFile!.existsSync()
-        ? FileImage(_fotoLocaleFile!)
-        : getAvatarImageProvider(_utente.avatarUrl);
+    if (_fotoLocaleFile != null && _fotoLocaleFile!.existsSync()) {
+      return FileImage(_fotoLocaleFile!);
+    }
+    final effectiveUrl = _utente.avatarUrl.isNotEmpty
+        ? _utente.avatarUrl
+        : _apiService.getAvatarPerUtente(_utente.nickname);
+    return getAvatarImageProvider(effectiveUrl);
   }
 
   String get rankTitle {
@@ -107,6 +111,15 @@ class ProfileViewModel extends BaseViewModel {
         _utente = updatedUser;
         _aggiornaConteggiTitoli(_utente);
         notifyListeners();
+      }
+
+      // Se la foto profilo in memoria è vuota, recupera la vera foto dal server/database
+      if (_utente.avatarUrl.isEmpty) {
+        final realAvatar = await _apiService.fetchAvatarPerUtente(_utente.nickname);
+        if (realAvatar.isNotEmpty && !isDisposed) {
+          _utente = _utente.copyWith(avatarUrl: realAvatar);
+          notifyListeners();
+        }
       }
 
       final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
