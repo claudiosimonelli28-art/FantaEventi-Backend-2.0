@@ -172,9 +172,40 @@ class VotazioneController {
       final uDocs = await UtenteController.getCachedUtentiDocs();
       final userNick = NicknameHelper.resolve(rawUser, uDocs);
 
+      // Risolvi il BonusMalus e il relativo ID reale
+      Map<String, dynamic>? bmDoc;
+      ObjectId? bmObjId;
+      try { bmObjId = ObjectId.fromHexString(idOrEventoId); } catch (_) {}
+      if (bmObjId != null) {
+        bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(bmObjId));
+      }
+      if (bmDoc == null) {
+        bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.eq('nome', idOrEventoId));
+      }
+      if (bmDoc == null && bmObjId != null) {
+        final vDoc = await DbService.instance.votazioniCollection.findOne(where.id(bmObjId));
+        if (vDoc != null) {
+          final realBmId = (vDoc['bonusId'] ?? vDoc['votazioneId'] ?? '').toString();
+          ObjectId? realBmObjId;
+          try { realBmObjId = ObjectId.fromHexString(realBmId); } catch (_) {}
+          if (realBmObjId != null) {
+            bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(realBmObjId));
+          }
+        }
+      }
+
+      final realBmHex = bmDoc != null
+          ? (bmDoc['_id'] is ObjectId ? (bmDoc['_id'] as ObjectId).oid : bmDoc['_id'].toString())
+          : idOrEventoId;
+
       // 1. Verifica se l'utente ha già votato
       final existingVote = await DbService.instance.votazioniCollection.findOne(
-        where.eq('votazioneId', idOrEventoId).and(where.eq('utente', userNick)),
+        where.eq('utente', userNick).and(
+          where.eq('votazioneId', realBmHex)
+               .or(where.eq('bonusId', realBmHex))
+               .or(where.eq('votazioneId', idOrEventoId))
+               .or(where.eq('bonusId', idOrEventoId)),
+        ),
       );
       final bool giaVotato = existingVote != null;
 
@@ -186,8 +217,8 @@ class VotazioneController {
         );
       } else {
         await DbService.instance.votazioniCollection.insertOne({
-          'votazioneId': idOrEventoId,
-          'bonusId': idOrEventoId,
+          'votazioneId': realBmHex,
+          'bonusId': realBmHex,
           'utente': userNick,
           'voto': aFavore ? 'pro' : 'contro',
           'data': DateTime.now().toIso8601String(),
@@ -196,31 +227,6 @@ class VotazioneController {
 
       // 2b. Valuta Quorum e aggiorna BonusMalus se target raggiunto
       try {
-        Map<String, dynamic>? bmDoc;
-        ObjectId? bmObjId;
-        try { bmObjId = ObjectId.fromHexString(idOrEventoId); } catch (_) {}
-        if (bmObjId != null) {
-          bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(bmObjId));
-        }
-        if (bmDoc == null) {
-          bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.eq('nome', idOrEventoId));
-        }
-        if (bmDoc == null && bmObjId != null) {
-          final vDoc = await DbService.instance.votazioniCollection.findOne(where.id(bmObjId));
-          if (vDoc != null) {
-            final realBmId = (vDoc['bonusId'] ?? vDoc['votazioneId'] ?? '').toString();
-            ObjectId? realBmObjId;
-            try { realBmObjId = ObjectId.fromHexString(realBmId); } catch (_) {}
-            if (realBmObjId != null) {
-              bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(realBmObjId));
-            }
-          }
-        }
-
-        final realBmHex = bmDoc != null
-            ? (bmDoc['_id'] is ObjectId ? (bmDoc['_id'] as ObjectId).oid : bmDoc['_id'].toString())
-            : idOrEventoId;
-
         final allVotes = await DbService.instance.votazioniCollection.find(
           where.eq('votazioneId', realBmHex)
                .or(where.eq('bonusId', realBmHex))
@@ -240,15 +246,15 @@ class VotazioneController {
           final numPart = partecipanti.isNotEmpty ? partecipanti.length : 2;
           final quorum = (numPart / 2).ceil();
 
-          if (proCount >= quorum) {
-            await DbService.instance.bonusMalusCollection.update(
-              where.id(bmDoc['_id'] as ObjectId),
-              modify.set('stato', 'approvato').set('approvato', true),
-            );
-          } else if (controCount >= quorum) {
+          if (controCount >= quorum && controCount > proCount) {
             await DbService.instance.bonusMalusCollection.update(
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'respinto').set('approvato', false),
+            );
+          } else if (proCount >= quorum && proCount >= controCount) {
+            await DbService.instance.bonusMalusCollection.update(
+              where.id(bmDoc['_id'] as ObjectId),
+              modify.set('stato', 'approvato').set('approvato', true),
             );
           }
         }
