@@ -9,6 +9,7 @@ import 'package:backend/controllers/bonus_malus_controller.dart';
 import 'package:backend/controllers/votazione_controller.dart';
 import 'package:backend/controllers/notifica_controller.dart';
 import 'package:backend/controllers/var_controller.dart';
+import 'package:backend/controllers/privacy_controller.dart';
 
 Middleware _corsMiddleware() {
   return (Handler innerHandler) {
@@ -94,6 +95,11 @@ void main() async {
   app.get('/api/var/giudice', varCtrl.getRichiesteVarGiudice);
   app.post('/api/var/vota-testimone', varCtrl.votaTestimonianza);
   app.post('/api/var/decidi', varCtrl.decidiRichiesta);
+
+  // Informativa sulla Privacy & Termini di Servizio (Web endpoint pubblico per Google Play & Apple Store)
+  app.get('/privacy', PrivacyController.getPrivacyPolicy);
+  app.get('/privacy-policy', PrivacyController.getPrivacyPolicy);
+  app.get('/termini', PrivacyController.getPrivacyPolicy);
 
   final handler = Pipeline()
       .addMiddleware(logRequests())

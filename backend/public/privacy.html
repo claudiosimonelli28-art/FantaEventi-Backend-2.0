@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FantaEventi — Informativa sulla Privacy & Termini di Servizio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0B0F19;
+            --bg-card: #151D2F;
+            --bg-card-hover: #1E293B;
+            --border: #243049;
+            --gold: #F59E0B;
+            --gold-light: #FDE68A;
+            --emerald: #10B981;
+            --purple: #A855F7;
+            --red: #EF4444;
+            --text-title: #FFFFFF;
+            --text-body: #CBD5E1;
+            --text-muted: #94A3B8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-body);
+            line-height: 1.7;
+            padding: 0;
+        }
+
+        /* HEADER */
+        header {
+            background: linear-gradient(180deg, rgba(21, 29, 47, 0.95) 0%, rgba(11, 15, 25, 0.9) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 40px 20px 30px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
+        }
+
+        .brand-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .brand-logo {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+        }
+
+        h1 {
+            font-family: 'Poppins', sans-serif;
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--text-title);
+        }
+
+        h1 span {
+            color: var(--gold);
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* NAVIGATION TABS */
+        .nav-tabs {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 24px;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 10px 22px;
+            border-radius: 30px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-title);
+            border-color: var(--gold);
+            background: var(--bg-card-hover);
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--gold) 0%, #D97706 100%);
+            color: #0B0F19;
+            border-color: var(--gold);
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.25);
+        }
+
+        /* CONTAINER */
+        .container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 0 20px 80px;
+        }
+
+        /* SECTION CARD */
+        .doc-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 36px 32px;
+            margin-bottom: 36px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-icon {
+            font-size: 26px;
+            width: 48px;
+            height: 48px;
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        h2 {
+            font-family: 'Poppins', sans-serif;
+            font-size: 22px;
+            color: var(--text-title);
+            font-weight: 700;
+        }
+
+        h3 {
+            font-family: 'Poppins', sans-serif;
+            font-size: 16px;
+            color: var(--gold-light);
+            margin: 22px 0 8px;
+            font-weight: 600;
+        }
+
+        p {
+            margin-bottom: 14px;
+            color: var(--text-body);
+        }
+
+        ul, ol {
+            margin: 10px 0 18px 24px;
+            color: var(--text-body);
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        strong {
+            color: var(--text-title);
+        }
+
+        /* BADGES */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .badge-gold {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--gold);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .badge-emerald {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--emerald);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+        }
+
+        .badge-red {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--red);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        /* CALLOUT BOX */
+        .callout {
+            background: rgba(245, 158, 11, 0.08);
+            border-left: 4px solid var(--gold);
+            border-radius: 0 12px 12px 0;
+            padding: 16px 20px;
+            margin: 20px 0;
+        }
+
+        .callout-emerald {
+            background: rgba(16, 185, 129, 0.08);
+            border-left-color: var(--emerald);
+        }
+
+        .callout-red {
+            background: rgba(239, 68, 68, 0.08);
+            border-left-color: var(--red);
+        }
+
+        /* DATA TABLE */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px;
+            font-size: 14px;
+        }
+
+        .data-table th, .data-table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .data-table th {
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--gold);
+            font-weight: 600;
+        }
+
+        .data-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* FOOTER */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 40px 20px;
+            text-align: center;
+            background: var(--bg-main);
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        footer a {
+            color: var(--gold);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 640px) {
+            header {
+                padding: 24px 16px 20px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            .doc-section {
+                padding: 24px 18px;
+            }
+            .data-table th, .data-table td {
+                padding: 10px 8px;
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="brand-container">
+            <div class="brand-logo">🏆</div>
+            <h1>Fanta<span>Eventi</span></h1>
+        </div>
+        <p class="subtitle">Documento Ufficiale di Trasparenza Legale & Tutela della Community</p>
+        <div class="nav-tabs">
+            <a href="#privacy" class="tab-btn active">🔒 Informativa Privacy (GDPR)</a>
+            <a href="#termini" class="tab-btn">📜 Termini e Condizioni di Servizio</a>
+            <a href="#contatti" class="tab-btn">📩 Contatti & Assistenza</a>
+        </div>
+    </header>
+
+    <div class="container">
+
+        <!-- ================= PARTE I: PRIVACY POLICY ================= -->
+        <article id="privacy" class="doc-section">
+            <div class="section-header">
+                <div class="section-icon">🔒</div>
+                <div>
+                    <span class="badge badge-gold">Conformità Reg. UE 2016/679 (GDPR)</span>
+                    <h2>PARTE I — Informativa sulla Privacy (Privacy Policy)</h2>
+                </div>
+            </div>
+
+            <p><strong>Ultimo aggiornamento:</strong> 27 Ottobre 2026<br>
+            <strong>Applicazione:</strong> FantaEventi (disponibile per Android & iOS)</p>
+
+            <div class="callout">
+                <p>La presente Informativa sulla Privacy descrive in modo chiaro, trasparente e dettagliato le modalità di raccolta, utilizzo, conservazione e protezione dei dati personali degli utenti dell'applicazione mobile <strong>FantaEventi</strong>, nel pieno rispetto del Regolamento Generale sulla Protezione dei Dati dell'Unione Europea (<strong>GDPR - Regolamento UE 2016/679</strong>) e delle linee guida per gli sviluppatori di <strong>Google Play Console</strong> ed <strong>Apple App Store</strong>.</p>
+            </div>
+
+            <h3>Articolo 1 — Titolare del Trattamento dei Dati</h3>
+            <p>Il Titolare del Trattamento dei dati personali è:</p>
+            <ul>
+                <li><strong>Titolare:</strong> Claudio Simonelli (Sviluppatore Indipendente di FantaEventi)</li>
+                <li><strong>Sede:</strong> Italia / Unione Europea</li>
+                <li><strong>Email Ufficiale Assistenza e Privacy:</strong> <a href="mailto:fantaeventi.assistenza@gmail.com" style="color: var(--gold); text-decoration: none; font-weight: 600;">fantaeventi.assistenza@gmail.com</a></li>
+            </ul>
+
+            <h3>Articolo 2 — Categorie di Dati Personali Raccolti</h3>
+            <p>FantaEventi raccoglie e tratta esclusivamente i dati strettamente necessari all'erogazione delle dinamiche di gioco e delle funzionalità dell'applicazione:</p>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Tipologia Dato</th>
+                        <th>Finalità d'Uso</th>
+                        <th>Natura del Conferimento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Nome e Cognome</strong></td>
+                        <td>Identificazione dell'utente nel sistema e facilitazione della ricerca/riconoscimento da parte dei propri amici nelle leghe di gioco.</td>
+                        <td>Obbligatorio per la registrazione</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Nickname (Nome Utente)</strong></td>
+                        <td>Identificativo pubblico mostrato nelle classifiche live, nelle votazioni, nelle sentenze VAR e nelle attività degli eventi.</td>
+                        <td>Obbligatorio per la registrazione</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Indirizzo Email</strong></td>
+                        <td>Autenticazione sicura (login), gestione dell'account e recupero delle credenziali.</td>
+                        <td>Obbligatorio per la registrazione</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Password</strong></td>
+                        <td>Autenticazione protetta. Viene cifrata con algoritmi crittografici di hashing irreversibile (impossibile leggerla in chiaro).</td>
+                        <td>Obbligatorio per la registrazione</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Foto Profilo</strong></td>
+                        <td>Personalizzazione visiva dell'avatar nelle classifiche e nelle sfide degli eventi.</td>
+                        <td>Facoltativo</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dati di Gioco & Attività</strong></td>
+                        <td>Punteggi, bonus/malus assegnati, votazioni su regole, storico attività, richieste e sentenze del VAR.</td>
+                        <td>Generati dall'uso del gioco</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Token Notifiche Push (FCM)</strong></td>
+                        <td>Codice tecnico anonimo generato da Google Firebase per recapitare avvisi su schermo (inviti, punti assegnati, esito VAR).</td>
+                        <td>Facoltativo (previo consenso)</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Posizione GPS (Mappa)</strong></td>
+                        <td>Posizionamento manuale del punto di ritrovo dell'evento sulla mappa. <em>Nessun tracciamento in background.</em></td>
+                        <td>Facoltativo</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Fotocamera / Galleria</strong></td>
+                        <td>Scatto o selezione foto per profilo, copertina evento o prova fotografica VAR.</td>
+                        <td>Facoltativo (solo su azione esplicita)</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Articolo 3 — Pubblicità e Circuiti Terzi (Google AdMob)</h3>
+            <p>Al fine di garantire la sostenibilità economica dei server cloud, la manutenzione continua e lo sviluppo gratuito di nuove funzionalità, <strong>FantaEventi</strong> integra spazi pubblicitari erogati dal partner certificato <strong>Google AdMob (Google LLC)</strong>.</p>
+            <ul>
+                <li>Google AdMob può raccogliere ed elaborare identificatori pubblicitari univoci del dispositivo (ad esempio l'Advertising ID di Android o l'IDFA di iOS) e dati tecnici di diagnostica per l'erogazione di annunci.</li>
+                <li><strong>Consenso Utente (CMP / GDPR):</strong> In conformità alla direttiva europea e alle linee guida di Google, all'avvio dell'applicazione per gli utenti residenti nello Spazio Economico Europeo (SEE) viene presentata una finestra di consenso certificata. L'utente ha la facoltà di scegliere liberamente se acconsentire alla ricezione di annunci personalizzati oppure optare per annunci generici non profilati, con possibilità di modificare le proprie preferenze in qualsiasi momento.</li>
+            </ul>
+
+            <h3>Articolo 4 — Basi Giuridiche del Trattamento</h3>
+            <p>I dati personali sono trattati in conformità all'Art. 6 del GDPR in base alle seguenti condizioni di liceità:</p>
+            <ol>
+                <li><strong>Esecuzione di un contratto o servizio:</strong> necessario per creare l'account, calcolare i punteggi di lega e consentire la partecipazione agli eventi tra amici.</li>
+                <li><strong>Consenso esplicito:</strong> per l'invio delle notifiche push, l'erogazione di annunci personalizzati e l'accesso ai permessi hardware del dispositivo (GPS, fotocamera, galleria).</li>
+                <li><strong>Legittimo interesse e sicurezza:</strong> per proteggere l'infrastruttura di gioco da accessi abusivi, manomissioni o violazioni del regolamento della community.</li>
+            </ol>
+
+            <h3>Articolo 5 — Conservazione dei Dati, Architettura Cloud e Sicurezza</h3>
+            <p>La sicurezza dei dati è garantita attraverso tecnologie all'avanguardia:</p>
+            <ul>
+                <li><strong>Crittografia in transito:</strong> ogni comunicazione tra l'applicazione mobile e i server viaggia esclusivamente su canale crittografato protetto <strong>HTTPS / TLS</strong>.</li>
+                <li><strong>Infrastruttura Server Protetta:</strong>
+                    <ul>
+                        <li><strong>MongoDB Atlas:</strong> cluster di database cloud protetto da credenziali isolate e crittografia dei dischi a riposo.</li>
+                        <li><strong>Render:</strong> server applicativo sicuro per l'esecuzione protetta delle API REST.</li>
+                        <li><strong>Google Firebase:</strong> infrastruttura di livello enterprise per la distribuzione sicura dei token e dei messaggi push.</li>
+                    </ul>
+                </li>
+                <li><strong>Assoluta Assenza di Cessione a Terzi:</strong> I dati personali degli utenti <strong>non vengono in alcun caso venduti, ceduti, noleggiati o scambiati</strong> con broker di dati commerciali o soggetti terzi non legati al funzionamento essenziale del servizio.</li>
+            </ul>
+
+            <h3>Articolo 6 — Diritti dell'Interessato e Cancellazione Totale dell'Account (Art. 17 GDPR)</h3>
+            <p>Ogni utente gode dei pieni diritti previsti dagli articoli 15-22 del GDPR, inclusi l'accesso, la rettifica, la portabilità e la cancellazione dei dati:</p>
+
+            <div class="callout callout-emerald">
+                <p><strong>Cancellazione Istantanea Direttamente dall'App:</strong><br>
+                L'utente può eliminare per sempre e in completa autonomia il proprio account in qualsiasi momento seguendo il percorso ufficiale:<br>
+                <strong><code>Profilo</code> ➔ <code>Area Riservata</code> ➔ <code>Zona Pericolo</code> ➔ <code>Elimina Definitivamente Account</code></strong>.<br>
+                La conferma dell'azione rimuove in tempo reale e in modo irreversibile dal database tutte le informazioni anagrafiche, le credenziali, i punteggi, i badge sbloccati, lo storico e l'associazione agli eventi.</p>
+            </div>
+
+            <p>In alternativa, l'utente può inviare una richiesta formale di cancellazione dei propri dati scrivendo all'indirizzo email del Titolare: <a href="mailto:fantaeventi.assistenza@gmail.com" style="color: var(--gold); text-decoration: none; font-weight: 600;">fantaeventi.assistenza@gmail.com</a>.</p>
+
+            <h3>Articolo 7 — Tutela dei Minori</h3>
+            <p>FantaEventi è destinata ad un pubblico di età pari o superiore a <strong>13 anni</strong> (o alla maggiore età di consenso digitale stabilita dal proprio Paese di residenza):</p>
+            <ul>
+                <li>Registrandosi sull'applicazione, l'utente dichiara sotto la propria esclusiva responsabilità di avere compiuto almeno 13 anni.</li>
+                <li>Sugli Store (Google Play ed Apple App Store) l'applicazione adotta le classificazioni di contenuto adeguate per impedire il download sui dispositivi associati a profili minori soggetti a controllo parentale (es. Google Family Link).</li>
+                <li>Qualora il Titolare rilevasse la presenza di un account riconducibile a un minore di 13 anni registrato in assenza di autorizzazione genitoriale, provvederà all'immediata disattivazione dell'account e alla cancellazione dei relativi dati.</li>
+            </ul>
+        </article>
+
+        <!-- ================= PARTE II: TERMINI DI SERVIZIO ================= -->
+        <article id="termini" class="doc-section">
+            <div class="section-header">
+                <div class="section-icon">📜</div>
+                <div>
+                    <span class="badge badge-gold">Regolamento della Community & Linee Guida Store</span>
+                    <h2>PARTE II — Termini e Condizioni di Utilizzo (Terms of Service)</h2>
+                </div>
+            </div>
+
+            <div class="callout">
+                <p>L'utilizzo dell'applicazione mobile <strong>FantaEventi</strong> implica l'accettazione integrale dei presenti Termini e Condizioni. Se l'utente non concorda con quanto indicato, è invitato a non utilizzare l'applicazione e a cancellare il proprio account.</p>
+            </div>
+
+            <h3>Articolo 1 — Finalità Esclusivamente Ricreativa (Nessun Gioco d'Azzardo)</h3>
+            <p>FantaEventi è una piattaforma ludica e sociale ideata esclusivamente per l'intrattenimento amichevole e l'organizzazione di sfide sportive/goliardiche tra gruppi di conoscenti.</p>
+            <ul>
+                <li><strong>Valore Esclusivamente Virtuale:</strong> Tutti i punti assegnati, i bonus, i malus, le classifiche, i moltiplicatori di lega, i badge e i livelli XP hanno <strong>valore puramente simbolico e virtuale</strong>.</li>
+                <li><strong>Divieto di Transazioni Economiche:</strong> L'applicazione <strong>non prevede, non consente e non gestisce scommesse in denaro reale</strong>, non richiede quote d'ingresso a pagamento e non distribuisce premi in denaro o beni aventi valore monetario.</li>
+            </ul>
+
+            <h3>Articolo 2 — Regole di Condotta e Contenuti Vietati (UGC Policy)</h3>
+            <p>Gli utenti sono gli unici ed esclusivi responsabili di tutti i contenuti (testi, titoli di eventi, regole proposte, commenti, foto profilo e foto allegate) generati o condivisi sull'applicazione. È fatto severo divieto di:</p>
+            <ol>
+                <li>Utilizzare nickname, nomi eventi o testi contenenti espressioni oscene, bestemmie, ingiurie, minacce, diffamazione o incitamento all'odio e alla discriminazione di qualsiasi tipo (razziale, etnico, sessuale o religioso).</li>
+                <li>Pubblicare immagini pornografiche, pedopornografiche, esplicitamente sessuali, violente o lesive della dignità della persona.</li>
+                <li>Violare il diritto d'autore, marchi registrati o i diritti di privacy di terze persone senza consenso.</li>
+                <li>Adottare comportamenti fraudolenti o sfruttare falle tecniche per alterare le classifiche di gioco.</li>
+            </ol>
+
+            <h3>Articolo 3 — Sistema di Tutela Amici: Blocco Utente, Segnalazione e Moderazione (Apple Guideline 1.2)</h3>
+            <p>In conformità con le direttive Apple per i contenuti generati dagli utenti (UGC Guideline 1.2), FantaEventi mette a disposizione di ciascun utente strumenti diretti di protezione all'interno della schermata <strong>Amici</strong> del proprio Profilo:</p>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Azione Utente</th>
+                        <th>Come Funziona & Conseguenze</th>
+                        <th>Notifiche di Sistema</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong style="color: var(--red);">🚫 Blocca Utente</strong></td>
+                        <td>Toccando i tre puntini accanto a un amico e selezionando "Blocca", si apre un modale di conferma: l'utente viene <strong>immediatamente rimosso dalla lista amici</strong> e ogni sua interazione diretta viene interrotta fino a sblocco manuale.</td>
+                        <td>All'utente bloccato viene recapitata la notifica ufficiale: <em>"[Nome] ti ha bloccato. Momentaneamente non siete più amici fino a quando non verrai sbloccato."</em><br>In caso di successivo sblocco, riceverà: <em>"[Nome] ti ha sbloccato."</em></td>
+                    </tr>
+                    <tr>
+                        <td><strong style="color: var(--gold);">⚠️ Segnala Utente</strong></td>
+                        <td>L'utente può segnalare un partecipante molesto indicando il motivo dettagliato della violazione (es. profilo volgare, comportamento scorretto). Il report viene trasmesso in tempo reale al database.</td>
+                        <td>La segnalazione viene presa in carico dai moderatori entro 24 ore lavorative.</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="callout callout-emerald">
+                <p><strong>Pannello di Moderazione Amministratore (Cloud):</strong><br>
+                Tutte le segnalazioni inviate dagli utenti confluiscono direttamente nel <strong>Centro Moderazione & Segnalazioni</strong>, accessibile esclusivamente all'account del creatore e sviluppatore dell'applicazione (Cloud) all'interno dell'Area Riservata.<br>
+                L'amministratore ha il potere insindacabile di:</p>
+                <ul>
+                    <li>Inviare un'ammonizione formale di richiamo all'account segnalato.</li>
+                    <li>Rimuovere istantaneamente contenuti contrari alle regole.</li>
+                    <li><strong>Sospendere o Bannare definitivamente l'account molesto</strong> dall'applicazione, revocandone l'accesso al servizio.</li>
+                </ul>
+            </div>
+
+            <h3>Articolo 4 — Limitazione di Responsabilità</h3>
+            <p>L'applicazione viene fornita nello stato di fatto e di disponibilità in cui si trova (<em>"as is"</em>), senza garanzie esplicite o implicite:</p>
+            <ul>
+                <li>Il Titolare si adopera con la massima diligenza per garantire l'elevata disponibilità del servizio, ma non risponde di eventuali interruzioni, rallentamenti o perdite temporanee di connessione dipendenti dai provider infrastrutturali (MongoDB Atlas, Render, Firebase) o dalla connettività internet mobile dell'utente.</li>
+                <li>Il Titolare non è in alcun modo responsabile per eventuali dissapori, dispute o contrasti personali che dovessero scaturire tra i partecipanti in merito all'attribuzione dei punti, all'esito delle votazioni di gruppo o alle sentenze emesse dagli arbitri nel modulo VAR.</li>
+            </ul>
+
+            <h3>Articolo 5 — Modifiche ai Termini di Servizio</h3>
+            <p>Il Titolare si riserva il diritto di aggiornare o modificare i presenti Termini per adeguarli a novità legislative o miglioramenti tecnici dell'applicazione. Le modifiche rilevanti saranno pubblicate su questa pagina web e notificate agli utenti all'interno dell'applicazione.</p>
+
+            <h3>Articolo 6 — Legge Applicabile e Foro Competente</h3>
+            <p>I presenti Termini sono disciplinati dalla <strong>Legge Italiana</strong> e dai regolamenti dell'<strong>Unione Europea</strong>. Per qualsiasi controversia civile derivante dall'interpretazione o esecuzione del presente regolamento, sarà competente il foro stabilito dalle normative vigenti a tutela del consumatore.</p>
+        </article>
+
+        <!-- ================= PARTE III: CONTATTI ================= -->
+        <article id="contatti" class="doc-section">
+            <div class="section-header">
+                <div class="section-icon">📩</div>
+                <div>
+                    <h2>PARTE III — Contatti Ufficiali & Supporto</h2>
+                </div>
+            </div>
+
+            <p>Per qualsiasi domanda relativa alla tutela della privacy, segnalazioni urgenti di abusi, richieste di chiarimento sui Termini di Servizio o supporto tecnico, il punto di contatto ufficiale ed esclusivo è:</p>
+
+            <div class="callout callout-emerald" style="text-align: center; padding: 24px;">
+                <p style="font-size: 16px; margin-bottom: 8px;"><strong>Email Ufficiale Supporto FantaEventi:</strong></p>
+                <a href="mailto:fantaeventi.assistenza@gmail.com" style="font-size: 20px; font-weight: 700; color: var(--gold); text-decoration: none;">fantaeventi.assistenza@gmail.com</a>
+                <p style="font-size: 13px; color: var(--text-muted); margin-top: 8px;">Tempo medio di riscontro: entro 24 ore lavorative.</p>
+            </div>
+        </article>
+
+    </div>
+
+    <footer>
+        <p>© 2026 <strong>FantaEventi</strong> — Ideato e sviluppato da <strong>Claudio Simonelli</strong>. Tutti i diritti riservati.</p>
+        <p style="margin-top: 8px; font-size: 13px;">Documento ufficiale valido per Google Play Console & Apple App Store.</p>
+    </footer>
+
+</body>
+</html>
