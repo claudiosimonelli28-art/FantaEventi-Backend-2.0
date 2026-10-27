@@ -56,7 +56,14 @@ class HomeViewModel extends BaseViewModel {
 
   // --- INIZIALIZZAZIONE & TIMERS ---
   void inizializza() {
-    loadData(forceRefresh: true);
+    // Se ci sono già dati caricati in ApiService o in memoria, mostrali istantaneamente a zero attesa!
+    if (_apiService.eventi.isNotEmpty) {
+      _eventi = List<Evento>.from(_apiService.eventi);
+      _bonusMalusList = List<BonusMalus>.from(_apiService.bonusMalusList);
+      _votazioniList = List<Votazione>.from(_apiService.votazioniList);
+      notifyListeners();
+    }
+    loadData(forceRefresh: true, silent: _eventi.isNotEmpty);
     _checkLongTermInactivity();
     _startLiveSyncTimer();
   }
@@ -99,13 +106,27 @@ class HomeViewModel extends BaseViewModel {
     _isFetchingData = true;
 
     try {
-      if (!silent) {
+      // 1. Il self-healing dell'utente e delle amicizie viene eseguito in background
+      //    SENZA bloccare l'interfaccia o far attendere l'utente davanti allo spinner!
+      unawaited(_apiService.syncCurrentUserFromDb());
+
+      final bool hasExistingData = _eventi.isNotEmpty;
+      if (!silent && !hasExistingData) {
         setLoading(true);
-        await _apiService.syncCurrentUserFromDb();
       }
 
-      // Caricamento ordinato: zero collisioni sul socket singolo di MongoDB
+      // 2. Caricamento prioritario immediato degli eventi
       final meEventi = await _apiService.getEventi(forceRefresh: forceRefresh);
+      if (isDisposed) return;
+      _eventi = List<Evento>.from(meEventi);
+
+      // Sblocca SUBITO la schermata: gli eventi appaiono all'istante!
+      if (!silent && !hasExistingData) {
+        setLoading(false);
+        notifyListeners();
+      }
+
+      // 3. Caricamento sequenziale protetto per socket MongoDB delle risorse di supporto
       await _apiService.getUtenti();
       final meBonus = await _apiService.getBonusMalusList();
       final meVoti = await _apiService.getVotazioni();
@@ -124,27 +145,19 @@ class HomeViewModel extends BaseViewModel {
 
       if (isDisposed) return;
 
-      _eventi = List<Evento>.from(meEventi);
       _bonusMalusList = List<BonusMalus>.from(meBonus);
       _votazioniList = List<Votazione>.from(meVoti);
       _numeroNotifiche = inAttesa;
       _networkError = false;
 
-      if (!silent) {
-        setLoading(false);
-        unawaited(_pushService.syncCurrentDeviceToken());
-      } else {
-        notifyListeners();
-      }
+      notifyListeners();
+      unawaited(_pushService.syncCurrentDeviceToken());
     } catch (e) {
       if (_eventi.isEmpty) {
         _networkError = true;
       }
-      if (!silent) {
-        setLoading(false);
-      } else {
-        notifyListeners();
-      }
+      setLoading(false);
+      notifyListeners();
     } finally {
       _isFetchingData = false;
     }

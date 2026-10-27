@@ -265,7 +265,7 @@ class ApiService {
   final List<RichiestaVar> _richiesteVar = [];
 
   DateTime? _lastFetchTime;
-  static const Duration _cacheDuration = Duration(seconds: 3);
+  static const Duration _cacheDuration = Duration(seconds: 45);
 
   void invalidateCache() {
     _lastFetchTime = null;
@@ -283,6 +283,7 @@ class ApiService {
   Utente? get currentUser => _currentUser;
   List<Evento> get eventi => List.unmodifiable(_eventi);
   List<BonusMalus> get bonusMalusList => List.unmodifiable(_bonusMalusList);
+  List<Votazione> get votazioniList => List.unmodifiable(_votazioniList);
 
   static String hashPassword(String password) {
     const salt = 'FantaEventi2026_Secure_Salt_#99';

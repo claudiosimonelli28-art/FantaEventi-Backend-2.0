@@ -2138,10 +2138,14 @@ class _ProfileViewState extends State<ProfileView> {
                           child: const Icon(Icons.shield_rounded, color: Color(0xFFF59E0B), size: 22),
                         ),
                         title: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              'Centro Moderazione & Segnalazioni',
-                              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            Flexible(
+                              child: Text(
+                                'Centro Moderazione',
+                                style: GoogleFonts.poppins(fontSize: 13.5, fontWeight: FontWeight.bold, color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Container(
@@ -2158,8 +2162,10 @@ class _ProfileViewState extends State<ProfileView> {
                           ],
                         ),
                         subtitle: Text(
-                          'Esamina i report degli utenti: ammonisci o banna account molesti',
+                          'Esamina segnalazioni, ammonisci o banna',
                           style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFCBD5E1)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFFF59E0B), size: 14),
                         onTap: () {
