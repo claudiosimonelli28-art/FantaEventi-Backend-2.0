@@ -47,6 +47,11 @@ Middleware _mongoDbMiddleware() {
 
 void main() async {
   await DbService.instance.connect();
+  try {
+    await UtenteController.getCachedUtentiDocs();
+  } catch (e) {
+    print('⚠️ Pre-caching utenti fallito: $e');
+  }
 
   final app = Router();
   final utenteCtrl = UtenteController();

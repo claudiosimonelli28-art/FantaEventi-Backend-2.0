@@ -90,6 +90,29 @@ Future<bool> sendResetEmail({
 
 
 class UtenteController {
+  static List<Map<String, dynamic>>? _cachedUtentiDocs;
+  static DateTime? _lastUtentiFetch;
+  static const _cacheDuration = Duration(minutes: 2);
+
+  static void invalidateCache() {
+    _cachedUtentiDocs = null;
+    _lastUtentiFetch = null;
+  }
+
+  static Future<List<Map<String, dynamic>>> getCachedUtentiDocs({bool forceRefresh = false}) async {
+    final now = DateTime.now();
+    if (!forceRefresh &&
+        _cachedUtentiDocs != null &&
+        _lastUtentiFetch != null &&
+        now.difference(_lastUtentiFetch!) < _cacheDuration) {
+      return _cachedUtentiDocs!;
+    }
+    final docs = await DbService.instance.utentiCollection.find().toList();
+    _cachedUtentiDocs = docs;
+    _lastUtentiFetch = now;
+    return docs;
+  }
+
   // POST /api/login
   Future<Response> login(Request request) async {
     try {
@@ -111,7 +134,7 @@ class UtenteController {
       final cleanIdentifierLower = rawIdentifier.toLowerCase();
       final isEmailLogin = rawIdentifier.contains('@');
 
-      final allDocs = await DbService.instance.utentiCollection.find().toList();
+      final allDocs = await getCachedUtentiDocs();
       Map<String, dynamic>? doc;
 
       for (var d in allDocs) {
@@ -221,7 +244,7 @@ class UtenteController {
   Future<Response> getUtenti(Request request) async {
     try {
       print('📥 [HTTP GET /api/utenti] Recupero lista utenti dal database...');
-      final docs = await DbService.instance.utentiCollection.find().toList();
+      final docs = await getCachedUtentiDocs();
       print('📦 [MongoDB] Trovati ${docs.length} utenti nel database.');
       final utenti = docs.map((d) => Utente.fromMap(d).toJson()).toList();
       return Response.ok(
@@ -265,7 +288,7 @@ class UtenteController {
 
       final formattedEmail = email.isNotEmpty ? email : '${username.toLowerCase().replaceAll(' ', '')}@fantaeventi.it';
 
-      final allDocs = await DbService.instance.utentiCollection.find().toList();
+      final allDocs = await DbService.instance.utentiCollection.find(where.excludeFields(['avatarUrl'])).toList();
       final existingLower = <String>{};
       for (var d in allDocs) {
         final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
@@ -354,6 +377,7 @@ class UtenteController {
 
       final res = await DbService.instance.utentiCollection.insertOne(utenteMap);
       final salvato = await DbService.instance.utentiCollection.findOne(where.id(res.id as ObjectId));
+      invalidateCache();
 
       print('✅ [MongoDB] NUOVO UTENTE REGISTRATO CON PASSWORD! ID: ${res.id}');
 
@@ -416,6 +440,7 @@ class UtenteController {
         selector,
         modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
       );
+      invalidateCache();
 
       final updatedDoc = await DbService.instance.utentiCollection.findOne(selector);
       final utente = Utente.fromMap(updatedDoc!);
@@ -458,6 +483,7 @@ class UtenteController {
              .or(where.eq('nome', utenteName)),
         modify.set('avatarUrl', avatarUrl).set('foto', avatarUrl),
       );
+      invalidateCache();
 
       print('📸 [MongoDB] Avatar salvato permanentemente in MongoDB Atlas per l\'utente "$utenteName"!');
       return Response.ok(
@@ -673,6 +699,7 @@ class UtenteController {
         where.id(userDoc['_id'] as ObjectId),
         modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
       );
+      invalidateCache();
 
       // Elimina il token monouso
       await DbService.instance.passwordResetCollection.remove(where.id(resetToken['_id'] as ObjectId));
@@ -811,6 +838,7 @@ class UtenteController {
         }
       }
 
+      invalidateCache();
       return Response.ok(
         jsonEncode({'message': 'Account eliminato con successo'}),
         headers: {'content-type': 'application/json'},
@@ -905,6 +933,7 @@ class UtenteController {
         'letto': false,
       });
 
+      invalidateCache();
       return Response.ok(
         jsonEncode({'success': true, 'message': 'Utente bloccato con successo'}),
         headers: {'content-type': 'application/json'},
@@ -964,6 +993,7 @@ class UtenteController {
         'letto': false,
       });
 
+      invalidateCache();
       return Response.ok(
         jsonEncode({'success': true, 'message': 'Utente sbloccato con successo'}),
         headers: {'content-type': 'application/json'},

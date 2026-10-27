@@ -210,14 +210,14 @@ class ApiService {
 
     try {
       final newDb = await Db.create(_mongoUri);
-      await newDb.open().timeout(const Duration(seconds: 7));
+      await newDb.open(secure: true).timeout(const Duration(seconds: 7));
       _db = newDb;
       completer.complete(_db);
       return _db;
     } catch (_) {
       try {
         final directDb = await Db.create(_directMongoSeedlist);
-        await directDb.open().timeout(const Duration(seconds: 8));
+        await directDb.open(secure: true).timeout(const Duration(seconds: 8));
         _db = directDb;
         completer.complete(_db);
         return _db;
@@ -525,7 +525,7 @@ class ApiService {
             'nickname': nickname,
             'nome': nome,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200) {
           await logout();
@@ -919,7 +919,7 @@ class ApiService {
             'nickname': cleanIdentifier,
             'password': cleanPassword,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (response.body.contains('<html>') || response.body.contains('Welcome to localhost.run')) {
           continue;
@@ -960,7 +960,7 @@ class ApiService {
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 8));
+        final docs = await db.collection('Utenti').find(where.excludeFields(['avatarUrl'])).toList().timeout(const Duration(seconds: 8));
 
         for (var d in docs) {
           final actualNick = (d['nickname'] ?? d['username'] ?? '').toString().trim();
@@ -1017,41 +1017,41 @@ class ApiService {
               throw Exception('Password non corretta. Riprova!');
             }
 
+            // Recupera il documento completo con avatarUrl solo per l'utente loggato
+            final fullDoc = await db.collection('Utenti').findOne(where.id(d['_id']));
+            final userDoc = fullDoc ?? d;
+
             final jsonMap = {
-              'id': d['_id']?.toHexString() ?? d['_id']?.toString() ?? '',
+              'id': userDoc['_id']?.toHexString() ?? userDoc['_id']?.toString() ?? '',
               'nome': primaryNome,
               'cognome': actualCognome,
               'username': primaryNick,
               'nickname': primaryNick,
               'email': actualEmail,
-              'avatarUrl': d['avatarUrl'] ?? '',
-              'livello': d['livello'] ?? 1,
-              'xp': d['xp'] ?? 100,
-              'xpProssimoLivello': d['xpProssimoLivello'] ?? 1000,
-              'puntiTotali': d['puntiTotali'] ?? 0,
-              'badgeList': _extractAndHealBadgeList(d, db),
-              'storicoVoti': d['storicoVoti'] ?? [],
-              'codiceAmico': d['codiceAmico'] ?? '',
-              'amici': d['amici'] ?? [],
-              'richiesteAmicizia': d['richiesteAmicizia'] ?? [],
-              'badgeVincitore': d['badgeVincitore'] ?? [],
-              'countGiudice': d['countGiudice'] ?? 0,
-              'countReMalus': d['countReMalus'] ?? 0,
-              'countFantasma': d['countFantasma'] ?? 0,
-              'countSbirro': d['countSbirro'] ?? 0,
-              'countGiustiziere': d['countGiustiziere'] ?? 0,
-              'haVistoGuida': d['haVistoGuida'] == true,
-              'dataRegistrazione': d['dataRegistrazione'] ?? d['dataCreazione'] ?? '',
-              'utentiBloccati': d['utentiBloccati'] ?? [],
-              'isBanned': d['isBanned'] == true,
+              'avatarUrl': userDoc['avatarUrl'] ?? '',
+              'livello': userDoc['livello'] ?? 1,
+              'xp': userDoc['xp'] ?? 100,
+              'xpProssimoLivello': userDoc['xpProssimoLivello'] ?? 1000,
+              'puntiTotali': userDoc['puntiTotali'] ?? 0,
+              'badgeList': _extractAndHealBadgeList(userDoc, db),
+              'storicoVoti': userDoc['storicoVoti'] ?? [],
+              'codiceAmico': userDoc['codiceAmico'] ?? '',
+              'amici': userDoc['amici'] ?? [],
+              'richiesteAmicizia': userDoc['richiesteAmicizia'] ?? [],
+              'badgeVincitore': userDoc['badgeVincitore'] ?? [],
+              'countGiudice': userDoc['countGiudice'] ?? 0,
+              'countReMalus': userDoc['countReMalus'] ?? 0,
+              'countFantasma': userDoc['countFantasma'] ?? 0,
+              'countSbirro': userDoc['countSbirro'] ?? 0,
+              'countGiustiziere': userDoc['countGiustiziere'] ?? 0,
+              'haVistoGuida': userDoc['haVistoGuida'] == true,
+              'dataRegistrazione': userDoc['dataRegistrazione'] ?? userDoc['dataCreazione'] ?? '',
+              'utentiBloccati': userDoc['utentiBloccati'] ?? [],
+              'isBanned': userDoc['isBanned'] == true,
             };
-            for (var docItem in docs) {
-              final aUrl = (docItem['avatarUrl'] ?? '').toString();
-              final aNome = (docItem['nome'] ?? '').toString();
-              final aNick = (docItem['nickname'] ?? docItem['username'] ?? '').toString();
-              if (aUrl.isNotEmpty) {
-                _cacheSingleAvatar(aNome, aNick, aUrl);
-              }
+            final uAvatar = (userDoc['avatarUrl'] ?? '').toString();
+            if (uAvatar.isNotEmpty) {
+              _cacheSingleAvatar(primaryNome, primaryNick, uAvatar);
             }
             _currentUser = Utente.fromJson(jsonMap);
             if (_currentUser!.isBanned) {
@@ -1259,7 +1259,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/utenti/check-nickname?nick=${Uri.encodeComponent(cleanNick)}'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -1349,7 +1349,7 @@ class ApiService {
             'email': cleanEmail,
             'password': cleanPass,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         final data = jsonDecode(response.body) as Map<String, dynamic>;
 
@@ -1932,7 +1932,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/utenti'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
@@ -3417,7 +3417,7 @@ class ApiService {
             'azione': azione,
             'utente': utente,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200) {
           return;
@@ -3543,7 +3543,7 @@ class ApiService {
             'invitati': invitati,
             'penalitaFalsaTestimonianza': nuovoEvento.penalitaFalsaTestimonianza,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final resData = jsonDecode(res.body) as Map<String, dynamic>;
@@ -3773,7 +3773,7 @@ class ApiService {
             'utente': curUserNick,
             'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final resData = jsonDecode(res.body) as Map<String, dynamic>;
@@ -4168,7 +4168,7 @@ class ApiService {
             'bonusTitolo': bonusTitolo,
             'mittente': mittente,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200) {
           // Aggiorna la memoria locale in-memory
@@ -4516,7 +4516,7 @@ class ApiService {
           Uri.parse('$url/notifiche/segna-letta'),
           headers: defaultHeaders,
           body: jsonEncode({'notificaId': notificaId}),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200) {
           return;
@@ -4623,12 +4623,12 @@ class ApiService {
         final resBm = await http.get(
           Uri.parse('$url/bonusmalus'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         final resVot = await http.get(
           Uri.parse('$url/votazioni'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (resBm.statusCode == 200 && resVot.statusCode == 200 &&
             !resBm.body.contains('<html>') && !resVot.body.contains('<html>')) {
@@ -5411,7 +5411,7 @@ class ApiService {
             'utente': curNick,
             'target': cleanTarget,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
           final currentBloccati = List<String>.from(curUser.utentiBloccati);
           if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
@@ -5535,7 +5535,7 @@ class ApiService {
             'utente': curNick,
             'target': cleanTarget,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
           final currentBloccati = List<String>.from(curUser.utentiBloccati);
           currentBloccati.removeWhere((b) => b.toLowerCase() == cleanTarget.toLowerCase());
@@ -5633,7 +5633,7 @@ class ApiService {
             'motivo': motivo,
             'dettagli': dettagli,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) return true;
       } catch (_) {}
     }
@@ -5665,7 +5665,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/segnalazioni?utente=$curNick'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
           final List<dynamic> listJson = jsonDecode(res.body);
           return listJson.map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -5710,7 +5710,7 @@ class ApiService {
             'azione': azione,
             'segnalato': segnalato,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
           if (azione == 'ammonisci') {
             unawaited(PushNotificationService.instance.inviaPushAUtenti(
