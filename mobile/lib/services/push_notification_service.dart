@@ -371,8 +371,11 @@ class PushNotificationService {
 
       final token = overrideToken ?? await _messaging!.getToken();
       if (token != null && token.isNotEmpty) {
-        await ApiService().salvaFcmToken(token);
-        await prefs.setString('cached_fcm_token', token);
+        final cachedToken = prefs.getString('cached_fcm_token');
+        if (cachedToken != token || forceRefresh) {
+          await ApiService().salvaFcmToken(token);
+          await prefs.setString('cached_fcm_token', token);
+        }
         debugPrint('FCM Token registrato per l\'utente corrente (${cur.nome}): $token');
       }
     } catch (e) {

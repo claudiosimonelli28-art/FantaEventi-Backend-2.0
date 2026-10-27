@@ -172,14 +172,14 @@ class ApiService {
   static String get _mongoUri {
     const envUri = String.fromEnvironment('MONGODB_URI');
     if (envUri.isNotEmpty && envUri.startsWith('mongodb') && envUri.contains('appName=Cluster0') && !envUri.contains('^')) {
-      return envUri;
+      return envUri.contains('safeAtlas=true') ? envUri : (envUri.contains('?') ? '$envUri&safeAtlas=true' : '$envUri?safeAtlas=true');
     }
     return utf8.decode(base64.decode(
-        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOlQzUlVINEdKRGZhWGVlZUBjbHVzdGVyMC56YmJxZmNyLm1vbmdvZGIubmV0L0ZhbnRhRXZlbnRpP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eSZhcHBOYW1lPUNsdXN0ZXIw'));
+        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOlQzUlVINEdKRGZhWGVlZUBjbHVzdGVyMC56YmJxZmNyLm1vbmdvZGIubmV0L0ZhbnRhRXZlbnRpP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eSZhcHBOYW1lPUNsdXN0ZXIwJnNhZmVBdGxhcz10cnVl'));
   }
 
   static String get _directMongoSeedlist => utf8.decode(base64.decode(
-      'bW9uZ29kYjovL0xvcmVuem86VDNSVUg0R0pEZmFYZWVlQGFjLXphbDQ3M3ctc2hhcmQtMDAtMDAuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNyxhYy16YWw0NzN3LXNoYXJkLTAwLTAxLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMi56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3L0ZhbnRhRXZlbnRpP3NzbD10cnVlJnJlcGxpY2FTZXQ9YXRsYXMtemFsNDczdy1zaGFyZC0wJmF1dGhTb3VyY2U9YWRtaW4mcmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5'));
+      'bW9uZ29kYjovL0xvcmVuem86VDNSVUg0R0pEZmFYZWVlQGFjLXphbDQ3M3ctc2hhcmQtMDAtMDAuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNyxhYy16YWw0NzN3LXNoYXJkLTAwLTAxLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMi56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3L0ZhbnRhRXZlbnRpP3NzbD10cnVlJnJlcGxpY2FTZXQ9YXRsYXMtemFsNDczdy1zaGFyZC0wJmF1dGhTb3VyY2U9YWRtaW4mcmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5JnNhZmVBdGxhcz10cnVl'));
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
@@ -2134,7 +2134,7 @@ class ApiService {
   /// a tutti i partecipanti e vincitori (@Cloud, @Ugnom, @Pippoforte, ecc.).
   Future<void> sanificaERiconciliaEventiETitoli({bool force = false}) async {
     final now = DateTime.now();
-    if (!force && _lastReconciliationTime != null && now.difference(_lastReconciliationTime!).inSeconds < 10) {
+    if (!force && _lastReconciliationTime != null && now.difference(_lastReconciliationTime!).inSeconds < 60) {
       return;
     }
     _lastReconciliationTime = now;
@@ -2143,9 +2143,9 @@ class ApiService {
       final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return;
 
-      final evDocs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 8));
-      final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 8));
-      final bmList = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 8));
+      final evDocs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
+      final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
+      final bmList = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 4));
 
       bool userDocsModified = false;
 
@@ -2338,7 +2338,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/eventi'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(milliseconds: 2000));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
@@ -2363,9 +2363,9 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
-        await sanificaERiconciliaEventiETitoli();
+        unawaited(sanificaERiconciliaEventiETitoli());
 
-        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 8));
+        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
 
         final now = DateTime.now();
         final List<Evento> list = [];
