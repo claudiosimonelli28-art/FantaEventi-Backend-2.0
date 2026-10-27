@@ -3207,99 +3207,83 @@ class _ProfileViewState extends State<ProfileView> {
     showDialog(
       context: context,
       builder: (ctx) {
-        bool isBlocking = false;
-        return StatefulBuilder(
-          builder: (dialogCtx, setDialogState) => AlertDialog(
-            backgroundColor: const Color(0xFF1E293B),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
-              children: [
-                const Icon(Icons.block_rounded, color: Color(0xFFEF4444), size: 24),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Bloccare @$targetNick?',
-                    style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.block_rounded, color: Color(0xFFEF4444), size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Bloccare @$targetNick?',
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                 ),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Sei sicuro di voler bloccare @$targetNick?',
-                  style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '• Verrà rimosso permanentemente dalla tua lista amici.\n'
-                  '• Non potrete più invitarvi a vicenda ad eventi né interagire nel gioco.\n'
-                  '• Riceverà una notifica che lo informa del blocco.',
-                  style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12, height: 1.5),
-                ),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline_rounded, color: Color(0xFF10B981), size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Potrai sbloccarlo in qualsiasi momento dalla tua Area Riservata nella sezione "Utenti Bloccati".',
-                          style: GoogleFonts.inter(color: const Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w500),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: isBlocking ? null : () => Navigator.of(ctx).pop(),
-                child: Text('ANNULLA', style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFEF4444),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: isBlocking ? null : () async {
-                  setDialogState(() {
-                    isBlocking = true;
-                  });
-                  final ok = await _viewModel.bloccaUtente(targetNick);
-                  if (ctx.mounted) {
-                    Navigator.of(ctx).pop();
-                  }
-                  if (mounted) {
-                    setState(() {});
-                    if (onBlocked != null) onBlocked();
-                    if (ok) {
-                      AppToast.showSuccess(context, 'Utente Bloccato', '@$targetNick è stato bloccato e rimosso dagli amici.');
-                    } else {
-                      AppToast.showError(context, 'Errore', 'Impossibile bloccare l\'utente. Riprova.');
-                    }
-                  }
-                },
-                child: isBlocking
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                      )
-                    : Text('SÌ, BLOCCA', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Sei sicuro di voler bloccare @$targetNick?',
+                style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '• Verrà rimosso permanentemente dalla tua lista amici.\n'
+                '• Non potrete più invitarvi a vicenda ad eventi né interagire nel gioco.\n'
+                '• Riceverà una notifica che lo informa del blocco.',
+                style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12, height: 1.5),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, color: Color(0xFF10B981), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Potrai sbloccarlo in qualsiasi momento dalla tua Area Riservata nella sezione "Utenti Bloccati".',
+                        style: GoogleFonts.inter(color: const Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('ANNULLA', style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFEF4444),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                if (onBlocked != null) onBlocked();
+                setState(() {});
+                AppToast.showSuccess(context, 'Utente Bloccato', '@$targetNick è stato bloccato e rimosso dagli amici.');
+                _viewModel.bloccaUtente(targetNick).then((ok) {
+                  if (!ok && mounted) {
+                    AppToast.showError(context, 'Errore', 'Impossibile completare il blocco sul server.');
+                  }
+                });
+              },
+              child: Text('SÌ, BLOCCA', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );
