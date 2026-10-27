@@ -2143,9 +2143,10 @@ class ApiService {
       final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return;
 
-      final evDocs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
-      final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
-      final bmList = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 4));
+      final evDocs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4), onTimeout: () => []);
+      final uDocs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4), onTimeout: () => []);
+      final bmList = await db.collection('BonusMalus').find().toList().timeout(const Duration(seconds: 4), onTimeout: () => []);
+      if (evDocs.isEmpty || uDocs.isEmpty) return;
 
       bool userDocsModified = false;
 
@@ -2363,8 +2364,6 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
-        unawaited(sanificaERiconciliaEventiETitoli());
-
         final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
 
         final now = DateTime.now();
