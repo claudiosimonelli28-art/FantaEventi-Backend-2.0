@@ -124,9 +124,9 @@ class HomeViewModel extends BaseViewModel {
 
       if (isDisposed) return;
 
-      _eventi = meEventi;
-      _bonusMalusList = meBonus;
-      _votazioniList = meVoti;
+      _eventi = List<Evento>.from(meEventi);
+      _bonusMalusList = List<BonusMalus>.from(meBonus);
+      _votazioniList = List<Votazione>.from(meVoti);
       _numeroNotifiche = inAttesa;
       _networkError = false;
 
@@ -267,7 +267,9 @@ class HomeViewModel extends BaseViewModel {
   // --- AZIONI SUI DATI ---
   Future<void> eliminaEvento(String eventoId, String nick) async {
     await _apiService.eliminaEvento(eventoId, nick);
-    _eventi.removeWhere((e) => e.id == eventoId);
+    _eventi = _eventi.where((e) => e.id != eventoId).toList();
+    _bonusMalusList = _bonusMalusList.where((b) => b.eventoId != eventoId && b.id != eventoId).toList();
+    _votazioniList = _votazioniList.where((v) => v.bonusMalus?.eventoId != eventoId && v.id != eventoId).toList();
     notifyListeners();
   }
 
@@ -277,6 +279,8 @@ class HomeViewModel extends BaseViewModel {
 
   Future<void> eliminaBonusMalus(String bonusId) async {
     await _apiService.eliminaBonusMalus(bonusId);
+    _bonusMalusList = _bonusMalusList.where((b) => b.id != bonusId).toList();
+    notifyListeners();
   }
 
   Future<void> assegnaBonusMalusAPartecipante({

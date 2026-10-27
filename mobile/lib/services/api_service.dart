@@ -3127,8 +3127,8 @@ class ApiService {
     }
 
     _eventi.removeWhere((e) => e.id == eventoId);
-    _bonusMalusList.removeWhere((b) => b.id == eventoId);
-    _votazioniList.removeWhere((v) => v.id == eventoId);
+    _bonusMalusList.removeWhere((b) => b.eventoId == eventoId || b.id == eventoId);
+    _votazioniList.removeWhere((v) => v.bonusMalus?.eventoId == eventoId || v.id == eventoId);
 
     // Fallback su Render (solo se l'eliminazione diretta su MongoDB non è riuscita)
     if (!directSuccess) {
