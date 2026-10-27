@@ -107,7 +107,9 @@ class UtenteController {
         now.difference(_lastUtentiFetch!) < _cacheDuration) {
       return _cachedUtentiDocs!;
     }
-    final docs = await DbService.instance.utentiCollection.find().toList();
+    final docs = await DbService.instance.utentiCollection.find(
+      where.excludeFields(['avatarUrl', 'foto']),
+    ).toList();
     _cachedUtentiDocs = docs;
     _lastUtentiFetch = now;
     return docs;
@@ -636,7 +638,9 @@ class UtenteController {
       }
 
       final cleanIdent = identifier.toLowerCase();
-      final docs = await DbService.instance.utentiCollection.find().toList();
+      final docs = await DbService.instance.utentiCollection.find(
+      where.excludeFields(['avatarUrl', 'foto']),
+    ).toList();
       Map<String, dynamic>? doc;
 
       for (var d in docs) {
@@ -856,7 +860,9 @@ class UtenteController {
         );
       }
 
-      final docs = await DbService.instance.utentiCollection.find().toList();
+      final docs = await DbService.instance.utentiCollection.find(
+      where.excludeFields(['avatarUrl', 'foto']),
+    ).toList();
       final existingLower = <String>{};
       for (var d in docs) {
         final uNick = (d['nickname'] ?? d['username'] ?? '').toString().trim().toLowerCase();
@@ -915,7 +921,7 @@ class UtenteController {
       final cleanNick = (nickname ?? '').trim().toLowerCase();
       final cleanName = (nome ?? '').trim().toLowerCase();
 
-      final allUsers = await DbService.instance.utentiCollection.find().toList();
+      final allUsers = await getCachedUtentiDocs();
       Map<String, dynamic>? targetUser;
 
       for (var u in allUsers) {

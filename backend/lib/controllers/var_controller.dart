@@ -5,6 +5,7 @@ import '../db/db_service.dart';
 import '../models/richiesta_var.dart';
 import '../models/utente.dart';
 import '../utils/nickname_helper.dart';
+import 'utente_controller.dart';
 
 class VarController {
   // Helper per risposte JSON
@@ -182,7 +183,7 @@ class VarController {
         where.eq('stato', 'in_attesa').excludeFields(['fotoBase64']),
       ).toList();
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       final cleanGiudice = NicknameHelper.resolve(giudice, uDocs);
 
       final filtered = docs.where((d) {
@@ -227,7 +228,7 @@ class VarController {
         return _errorResponse('Questa richiesta VAR è già stata decisa');
       }
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       final cleanNick = NicknameHelper.resolve(testimone, uDocs);
 
       await DbService.instance.richiesteVarCollection.update(
@@ -292,7 +293,7 @@ class VarController {
       final richiesta = RichiestaVar.fromMap(doc);
       final now = DateTime.now();
       final ts = now.millisecondsSinceEpoch;
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       final ptStr = richiesta.punti >= 0 ? '+${richiesta.punti}' : '${richiesta.punti}';
       final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 

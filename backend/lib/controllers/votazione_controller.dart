@@ -196,16 +196,41 @@ class VotazioneController {
 
       // 2b. Valuta Quorum e aggiorna BonusMalus se target raggiunto
       try {
+        Map<String, dynamic>? bmDoc;
+        ObjectId? bmObjId;
+        try { bmObjId = ObjectId.fromHexString(idOrEventoId); } catch (_) {}
+        if (bmObjId != null) {
+          bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(bmObjId));
+        }
+        if (bmDoc == null) {
+          bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.eq('nome', idOrEventoId));
+        }
+        if (bmDoc == null && bmObjId != null) {
+          final vDoc = await DbService.instance.votazioniCollection.findOne(where.id(bmObjId));
+          if (vDoc != null) {
+            final realBmId = (vDoc['bonusId'] ?? vDoc['votazioneId'] ?? '').toString();
+            ObjectId? realBmObjId;
+            try { realBmObjId = ObjectId.fromHexString(realBmId); } catch (_) {}
+            if (realBmObjId != null) {
+              bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(realBmObjId));
+            }
+          }
+        }
+
+        final realBmHex = bmDoc != null
+            ? (bmDoc['_id'] is ObjectId ? (bmDoc['_id'] as ObjectId).oid : bmDoc['_id'].toString())
+            : idOrEventoId;
+
         final allVotes = await DbService.instance.votazioniCollection.find(
-          where.eq('votazioneId', idOrEventoId).or(where.eq('bonusId', idOrEventoId)),
+          where.eq('votazioneId', realBmHex)
+               .or(where.eq('bonusId', realBmHex))
+               .or(where.eq('votazioneId', idOrEventoId))
+               .or(where.eq('bonusId', idOrEventoId)),
         ).toList();
+
         final proCount = allVotes.where((v) => v['voto'] == 'pro' || v['voto'] == 'favorevole' || v['voto'] == 'si' || v['aFavore'] == true).length;
         final controCount = allVotes.where((v) => v['voto'] == 'contro' || v['voto'] == 'no' || v['aFavore'] == false).length;
 
-        ObjectId? bmObjId;
-        try { bmObjId = ObjectId.fromHexString(idOrEventoId); } catch (_) {}
-        final bmSel = bmObjId != null ? where.id(bmObjId) : where.eq('_id', idOrEventoId).or(where.eq('nome', idOrEventoId));
-        final bmDoc = await DbService.instance.bonusMalusCollection.findOne(bmSel);
         if (bmDoc != null) {
           final evId = (bmDoc['eventoId'] ?? '').toString();
           ObjectId? evObjId;

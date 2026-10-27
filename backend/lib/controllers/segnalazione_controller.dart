@@ -3,6 +3,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../utils/nickname_helper.dart';
+import 'utente_controller.dart';
 
 class SegnalazioneController {
   /// Registra una nuova segnalazione inviata da un utente
@@ -111,7 +112,7 @@ class SegnalazioneController {
 
       final sSelector = sObjId != null ? where.id(sObjId) : where.eq('_id', segnalazioneId);
 
-      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
       final cleanSegnalato = NicknameHelper.resolve(segnalato, uDocs);
 
       if (azione == 'ammonisci') {
