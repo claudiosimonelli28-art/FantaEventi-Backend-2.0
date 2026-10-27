@@ -547,6 +547,78 @@ class UtenteController {
     }
   }
 
+  // POST /api/utenti/fcm-token
+  Future<Response> registraFcmToken(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final utenteName = (data['utente'] ?? data['username'] ?? data['nickname'])?.toString().trim() ?? '';
+      final token = data['token']?.toString().trim() ?? '';
+
+      if (utenteName.isEmpty || token.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'utente e token obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await getCachedUtentiDocs();
+      final cleanName = NicknameHelper.resolve(utenteName, uDocs);
+      for (var u in uDocs) {
+        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanName, uDocs)) {
+          await DbService.instance.utentiCollection.update(
+            where.id(u['_id'] as ObjectId),
+            modify.addToSet('fcmTokens', token),
+          );
+          break;
+        }
+      }
+      invalidateCache();
+      return Response.ok(
+        jsonEncode({'success': true, 'message': 'FCM token registrato con successo'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // POST /api/utenti/fcm-token/rimuovi
+  Future<Response> rimuoviFcmToken(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final token = data['token']?.toString().trim() ?? '';
+
+      if (token.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'token obbligatorio'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      await DbService.instance.utentiCollection.update(
+        where.eq('fcmTokens', token),
+        modify.pull('fcmTokens', token),
+        multiUpdate: true,
+      );
+      invalidateCache();
+      return Response.ok(
+        jsonEncode({'success': true, 'message': 'FCM token rimosso con successo'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
   // POST /api/utenti/richiedi-reset-password
   Future<Response> richiediResetPassword(Request request) async {
     try {

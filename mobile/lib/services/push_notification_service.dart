@@ -371,11 +371,9 @@ class PushNotificationService {
 
       final token = overrideToken ?? await _messaging!.getToken();
       if (token != null && token.isNotEmpty) {
-        final cachedToken = prefs.getString('cached_fcm_token');
-        if (cachedToken != token || forceRefresh) {
-          await ApiService().salvaFcmToken(token);
-          await prefs.setString('cached_fcm_token', token);
-        }
+        // Registra SEMPRE il token su Render e MongoDB Atlas (operazione addToSet idempotente e sicura)
+        await ApiService().salvaFcmToken(token);
+        await prefs.setString('cached_fcm_token', token);
         debugPrint('FCM Token registrato per l\'utente corrente (${cur.nome}): $token');
       }
     } catch (e) {
@@ -386,6 +384,8 @@ class PushNotificationService {
   /// Rimuove il token FCM corrente dal profilo MongoDB Atlas (chiamato al Logout)
   Future<void> unregisterCurrentDeviceToken() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cached_fcm_token');
       final token = await _messaging?.getToken();
       if (token != null && token.isNotEmpty) {
         await ApiService().rimuoviFcmToken(token);

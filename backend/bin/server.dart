@@ -74,6 +74,8 @@ void main() async {
   app.post('/api/utenti/conferma-reset-password', utenteCtrl.confermaResetPassword);
   app.post('/api/utenti/avatar', utenteCtrl.aggiornaAvatar);
   app.get('/api/utenti/avatar', utenteCtrl.getAvatar);
+  app.post('/api/utenti/fcm-token', utenteCtrl.registraFcmToken);
+  app.post('/api/utenti/fcm-token/rimuovi', utenteCtrl.rimuoviFcmToken);
   app.post('/api/utenti/elimina-account', utenteCtrl.eliminaAccount);
   app.get('/api/utenti', utenteCtrl.getUtenti);
   app.post('/api/utenti/blocca', utenteCtrl.bloccaUtente);

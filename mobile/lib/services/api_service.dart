@@ -322,6 +322,33 @@ class ApiService {
     final cur = _currentUser;
     final cleanToken = token.trim();
     if (cur == null || cleanToken.isEmpty) return;
+
+    // 1. Invio primario al Backend REST Render
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/utenti/fcm-token'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'utente': cur.nickname.isNotEmpty ? cur.nickname : cur.nome,
+            'token': cleanToken,
+          }),
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          break;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Aggiornamento in-memory
+    if (!_currentUser!.fcmTokens.contains(cleanToken)) {
+      _currentUser = _currentUser!.copyWith(
+        fcmTokens: [..._currentUser!.fcmTokens, cleanToken],
+      );
+      await _saveSession(_currentUser!);
+    }
+
+    // 3. Fallback di ridondanza su MongoDB Atlas
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
@@ -332,13 +359,17 @@ class ApiService {
           }
         } catch (_) {}
 
+        final isClaudio = cur.nome.toLowerCase() == 'claudio' || cur.nickname.toLowerCase() == 'cloud';
         final selector = uObjId != null
             ? where.id(uObjId)
-            : where.eq('nome', cur.nome);
+            : (isClaudio
+                ? where.eq('nickname', 'Cloud').or(where.eq('nome', 'Claudio'))
+                : where.eq('nome', cur.nome).or(where.eq('nickname', cur.nickname)));
 
         await db.collection('Utenti').update(
           selector,
           modify.addToSet('fcmTokens', cleanToken),
+          multiUpdate: true,
         );
         debugPrint('✅ FCM token registrato su MongoDB per ${cur.nome}: $cleanToken');
       }
@@ -354,6 +385,22 @@ class ApiService {
   Future<void> rimuoviFcmTokenGlobale(String token) async {
     final cleanToken = token.trim();
     if (cleanToken.isEmpty) return;
+
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/utenti/fcm-token/rimuovi'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'token': cleanToken,
+          }),
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          break;
+        }
+      } catch (_) {}
+    }
+
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
