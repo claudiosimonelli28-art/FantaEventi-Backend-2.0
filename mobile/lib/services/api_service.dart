@@ -936,6 +936,10 @@ class ApiService {
 
         if (response.statusCode == 200 && data.containsKey('utente')) {
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
+          if (_currentUser!.isBanned) {
+            clearUserSessionCache();
+            throw Exception('Account sospeso. Questo profilo è stato bloccato per violazione delle linee guida della community.');
+          }
           clearUserSessionCache();
           await _saveSession(_currentUser!, rememberMe: rememberMe);
           return _currentUser!;
@@ -946,7 +950,7 @@ class ApiService {
         }
       } catch (e) {
         if (e is NeedsPasswordSetupException) rethrow;
-        if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
+        if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password') || e.toString().contains('sospeso') || e.toString().contains('bloccato'))) {
           rethrow;
         }
       }
@@ -1038,6 +1042,8 @@ class ApiService {
               'countGiustiziere': d['countGiustiziere'] ?? 0,
               'haVistoGuida': d['haVistoGuida'] == true,
               'dataRegistrazione': d['dataRegistrazione'] ?? d['dataCreazione'] ?? '',
+              'utentiBloccati': d['utentiBloccati'] ?? [],
+              'isBanned': d['isBanned'] == true,
             };
             for (var docItem in docs) {
               final aUrl = (docItem['avatarUrl'] ?? '').toString();
@@ -1048,6 +1054,10 @@ class ApiService {
               }
             }
             _currentUser = Utente.fromJson(jsonMap);
+            if (_currentUser!.isBanned) {
+              clearUserSessionCache();
+              throw Exception('Account sospeso. Questo profilo è stato bloccato per violazione delle linee guida della community.');
+            }
             clearUserSessionCache();
             await _saveCachedUsersAndAvatars();
             await _saveSession(_currentUser!, rememberMe: rememberMe);
@@ -1064,7 +1074,7 @@ class ApiService {
     } catch (e) {
       markMongoDbDisconnected();
       if (e is NeedsPasswordSetupException) rethrow;
-      if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password') || e.toString().contains('Attenzione alle maiuscole/minuscole'))) {
+      if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password') || e.toString().contains('Attenzione alle maiuscole/minuscole') || e.toString().contains('sospeso') || e.toString().contains('bloccato'))) {
         rethrow;
       }
     }
@@ -1194,6 +1204,8 @@ class ApiService {
               'countGiustiziere': d['countGiustiziere'] ?? 0,
               'haVistoGuida': d['haVistoGuida'] == true,
               'dataRegistrazione': d['dataRegistrazione'] ?? d['dataCreazione'] ?? '',
+              'utentiBloccati': d['utentiBloccati'] ?? [],
+              'isBanned': d['isBanned'] == true,
             };
             _currentUser = Utente.fromJson(jsonMap);
             clearUserSessionCache();
@@ -1838,12 +1850,21 @@ class ApiService {
           for (var uDoc in uDocs) {
             if (matchesUserDoc(uDoc, cleanNick)) {
               final List<dynamic> currentAmici = List.from(uDoc['amici'] ?? []);
+              final List<dynamic> currentBloccati = List.from(uDoc['utentiBloccati'] ?? []);
               bool changed = false;
               for (var a in amiciDaNotifiche) {
+                if (currentBloccati.any((b) => b.toString().trim().toLowerCase() == a.toLowerCase())) {
+                  continue; // Non ri-aggiungere un utente bloccato!
+                }
                 if (!currentAmici.any((existing) => existing.toString().trim().toLowerCase() == a.toLowerCase())) {
                   currentAmici.add(a);
                   changed = true;
                 }
+              }
+              final initialAmiciLen = currentAmici.length;
+              currentAmici.removeWhere((a) => currentBloccati.any((b) => b.toString().trim().toLowerCase() == a.toString().trim().toLowerCase()));
+              if (currentAmici.length != initialAmiciLen) {
+                changed = true;
               }
               if (changed) {
                 ObjectId? uObjId;
@@ -5410,8 +5431,389 @@ class ApiService {
     final curUser = _currentUser;
     if (curUser == null) return [];
     final tutti = await getUtenti();
-    final amiciLower = curUser.amici.map((a) => a.toLowerCase()).toSet();
+    final bloccatiLower = curUser.utentiBloccati.map((b) => b.toLowerCase()).toSet();
+    final amiciLower = curUser.amici.map((a) => a.toLowerCase()).where((a) => !bloccatiLower.contains(a)).toSet();
     return tutti.where((u) => amiciLower.contains(u.nickname.toLowerCase())).toList();
+  }
+
+  // ==========================================
+  // BLOCCO & SBLOCCO UTENTI (Apple UGC 1.2)
+  // ==========================================
+
+  Future<bool> bloccaUtente(String targetNick) async {
+    final curUser = _currentUser;
+    if (curUser == null) return false;
+    final curNick = curUser.nickname.isNotEmpty ? curUser.nickname : curUser.nome;
+    final cleanTarget = targetNick.trim();
+
+    // 1. Chiamata primaria su Backend REST Render Starter
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/utenti/blocca'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'utente': curNick,
+            'target': cleanTarget,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+        if (res.statusCode == 200) {
+          final currentBloccati = List<String>.from(curUser.utentiBloccati);
+          if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
+            currentBloccati.add(cleanTarget);
+          }
+          final currentAmici = List<String>.from(curUser.amici);
+          currentAmici.removeWhere((a) => a.toLowerCase() == cleanTarget.toLowerCase());
+          _currentUser = curUser.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
+          await _saveSession(_currentUser!);
+
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            [cleanTarget],
+            titolo: '🚫 Sei stato bloccato',
+            messaggio: '$curNick ti ha bloccato. Momentaneamente non siete più amici fino a quando $curNick non ti sbloccherà.',
+            data: {'tipo': 'blocco_utente'},
+          ));
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback trasparente su MongoDB Atlas
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final uDocs = await db.collection('Utenti').find().toList();
+        final cleanCurUser = resolveNickname(curNick);
+        final cleanTargetUser = resolveNickname(cleanTarget);
+
+        for (var uDoc in uDocs) {
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+          if (isSamePerson(uNick, cleanCurUser)) {
+            final uId = uDoc['_id'] as ObjectId;
+            final currentBloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+            if (!currentBloccati.any((b) => isSamePerson(b, cleanTargetUser))) {
+              currentBloccati.add(cleanTargetUser);
+            }
+            final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+            currentAmici.removeWhere((a) => isSamePerson(a, cleanTargetUser));
+
+            await db.collection('Utenti').update(
+              where.id(uId),
+              modify.set('utentiBloccati', currentBloccati).set('amici', currentAmici),
+            );
+            break;
+          }
+        }
+
+        for (var uDoc in uDocs) {
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+          if (isSamePerson(uNick, cleanTargetUser)) {
+            final uId = uDoc['_id'] as ObjectId;
+            final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+            currentAmici.removeWhere((a) => isSamePerson(a, cleanCurUser));
+
+            await db.collection('Utenti').update(
+              where.id(uId),
+              modify.set('amici', currentAmici),
+            );
+            break;
+          }
+        }
+
+        try {
+          final nots = await db.collection('Notifiche').find(where.eq('tipo', 'richiesta_amicizia')).toList();
+          for (var n in nots) {
+            final m = (n['mittente'] ?? '').toString().trim();
+            final d = (n['destinatario'] ?? '').toString().trim();
+            if ((isSamePerson(m, cleanCurUser) && isSamePerson(d, cleanTargetUser)) ||
+                (isSamePerson(m, cleanTargetUser) && isSamePerson(d, cleanCurUser))) {
+              await db.collection('Notifiche').remove(where.id(n['_id'] as ObjectId));
+            }
+          }
+        } catch (_) {}
+
+        await db.collection('Notifiche').insertOne({
+          'tipo': 'blocco_utente',
+          'titolo': '🚫 Sei stato bloccato',
+          'messaggio': '$cleanCurUser ti ha bloccato. Momentaneamente non siete più amici fino a quando $cleanCurUser non ti sbloccherà.',
+          'mittente': cleanCurUser,
+          'destinatario': cleanTargetUser,
+          'timestamp': DateTime.now().toIso8601String(),
+          'letto': false,
+        });
+
+        final currentBloccati = List<String>.from(curUser.utentiBloccati);
+        if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
+          currentBloccati.add(cleanTarget);
+        }
+        final currentAmici = List<String>.from(curUser.amici);
+        currentAmici.removeWhere((a) => a.toLowerCase() == cleanTarget.toLowerCase());
+        _currentUser = curUser.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
+        await _saveSession(_currentUser!);
+
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '🚫 Sei stato bloccato',
+          messaggio: '$cleanCurUser ti ha bloccato. Momentaneamente non siete più amici fino a quando $cleanCurUser non ti sbloccherà.',
+          data: {'tipo': 'blocco_utente'},
+        ));
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  Future<bool> sbloccaUtente(String targetNick) async {
+    final curUser = _currentUser;
+    if (curUser == null) return false;
+    final curNick = curUser.nickname.isNotEmpty ? curUser.nickname : curUser.nome;
+    final cleanTarget = targetNick.trim();
+
+    // 1. Chiamata primaria su Backend REST Render Starter
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/utenti/sblocca'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'utente': curNick,
+            'target': cleanTarget,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+        if (res.statusCode == 200) {
+          final currentBloccati = List<String>.from(curUser.utentiBloccati);
+          currentBloccati.removeWhere((b) => b.toLowerCase() == cleanTarget.toLowerCase());
+          _currentUser = curUser.copyWith(utentiBloccati: currentBloccati);
+          await _saveSession(_currentUser!);
+
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            [cleanTarget],
+            titolo: '🤝 Sei stato sbloccato',
+            messaggio: '$curNick ti ha sbloccato.',
+            data: {'tipo': 'sblocco_utente'},
+          ));
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback trasparente su MongoDB Atlas
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final uDocs = await db.collection('Utenti').find().toList();
+        final cleanCurUser = resolveNickname(curNick);
+        final cleanTargetUser = resolveNickname(cleanTarget);
+
+        for (var uDoc in uDocs) {
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+          if (isSamePerson(uNick, cleanCurUser)) {
+            final uId = uDoc['_id'] as ObjectId;
+            final currentBloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+            currentBloccati.removeWhere((b) => isSamePerson(b, cleanTargetUser));
+
+            await db.collection('Utenti').update(
+              where.id(uId),
+              modify.set('utentiBloccati', currentBloccati),
+            );
+            break;
+          }
+        }
+
+        await db.collection('Notifiche').insertOne({
+          'tipo': 'sblocco_utente',
+          'titolo': '🤝 Sei stato sbloccato',
+          'messaggio': '$cleanCurUser ti ha sbloccato.',
+          'mittente': cleanCurUser,
+          'destinatario': cleanTargetUser,
+          'timestamp': DateTime.now().toIso8601String(),
+          'letto': false,
+        });
+
+        final currentBloccati = List<String>.from(curUser.utentiBloccati);
+        currentBloccati.removeWhere((b) => b.toLowerCase() == cleanTarget.toLowerCase());
+        _currentUser = curUser.copyWith(utentiBloccati: currentBloccati);
+        await _saveSession(_currentUser!);
+
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '🤝 Sei stato sbloccato',
+          messaggio: '$cleanCurUser ti ha sbloccato.',
+          data: {'tipo': 'sblocco_utente'},
+        ));
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  Future<List<String>> getUtentiBloccati() async {
+    final curUser = _currentUser;
+    if (curUser == null) return [];
+    return List<String>.from(curUser.utentiBloccati);
+  }
+
+  // ==========================================
+  // SEGNALAZIONI & MODERAZIONE (Apple UGC 1.2)
+  // ==========================================
+
+  Future<bool> inviaSegnalazione({
+    required String segnalato,
+    required String motivo,
+    String dettagli = '',
+  }) async {
+    final curUser = _currentUser;
+    final curNick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/segnalazioni/crea'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'segnalatore': curNick,
+            'segnalato': segnalato,
+            'motivo': motivo,
+            'dettagli': dettagli,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+        if (res.statusCode == 200) return true;
+      } catch (_) {}
+    }
+
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        await db.collection('Segnalazioni').insertOne({
+          'segnalatore': curNick,
+          'segnalato': segnalato,
+          'motivo': motivo,
+          'dettagli': dettagli,
+          'timestamp': DateTime.now().toIso8601String(),
+          'stato': 'in_attesa',
+        });
+        return true;
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
+  Future<List<Map<String, dynamic>>> getSegnalazioni() async {
+    final curUser = _currentUser;
+    final curNick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/segnalazioni?utente=$curNick'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(milliseconds: 3500));
+        if (res.statusCode == 200) {
+          final List<dynamic> listJson = jsonDecode(res.body);
+          return listJson.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        final docs = await db.collection('Segnalazioni').find(where.sortBy('timestamp', descending: true)).toList();
+        return docs.map((d) {
+          final idStr = d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : d['_id']?.toString() ?? '';
+          return {
+            'id': idStr,
+            'segnalatore': d['segnalatore'] ?? '',
+            'segnalato': d['segnalato'] ?? '',
+            'motivo': d['motivo'] ?? '',
+            'dettagli': d['dettagli'] ?? '',
+            'timestamp': d['timestamp'] ?? '',
+            'stato': d['stato'] ?? 'in_attesa',
+          };
+        }).toList();
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
+  Future<bool> gestisciSegnalazione({
+    required String segnalazioneId,
+    required String azione, // 'ammonisci' | 'banna' | 'archivia'
+    required String segnalato,
+  }) async {
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/segnalazioni/gestisci'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'segnalazioneId': segnalazioneId,
+            'azione': azione,
+            'segnalato': segnalato,
+          }),
+        ).timeout(const Duration(milliseconds: 3500));
+        if (res.statusCode == 200) {
+          if (azione == 'ammonisci') {
+            unawaited(PushNotificationService.instance.inviaPushAUtenti(
+              [segnalato],
+              titolo: '⚠️ Richiamo di Moderazione',
+              messaggio: 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+              data: {'tipo': 'ammonizione_utente'},
+            ));
+          }
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final db = await _getSafeMongoDb();
+      if (db != null && db.isConnected) {
+        ObjectId? sObjId;
+        try { sObjId = ObjectId.fromHexString(segnalazioneId); } catch (_) {}
+        final sSelector = sObjId != null ? where.id(sObjId) : where.eq('_id', segnalazioneId);
+
+        if (azione == 'ammonisci') {
+          await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'ammonito'));
+          await db.collection('Notifiche').insertOne({
+            'tipo': 'ammonizione_utente',
+            'titolo': '⚠️ Richiamo di Moderazione',
+            'messaggio': 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+            'destinatario': segnalato,
+            'timestamp': DateTime.now().toIso8601String(),
+            'letto': false,
+          });
+          unawaited(PushNotificationService.instance.inviaPushAUtenti(
+            [segnalato],
+            titolo: '⚠️ Richiamo di Moderazione',
+            messaggio: 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+            data: {'tipo': 'ammonizione_utente'},
+          ));
+          return true;
+        } else if (azione == 'banna') {
+          await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'bannato'));
+          final uDocs = await db.collection('Utenti').find().toList();
+          for (var uDoc in uDocs) {
+            final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+            if (isSamePerson(uNick, segnalato)) {
+              final uId = uDoc['_id'] as ObjectId;
+              await db.collection('Utenti').update(where.id(uId), modify.set('isBanned', true));
+              break;
+            }
+          }
+          return true;
+        } else if (azione == 'archivia') {
+          await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'archiviata'));
+          return true;
+        }
+      }
+    } catch (_) {}
+
+    return false;
   }
 
   // ==========================================

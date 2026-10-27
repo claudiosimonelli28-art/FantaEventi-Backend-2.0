@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 import '../services/push_notification_service.dart';
 import '../widgets/avatar_helper.dart';
@@ -566,6 +567,49 @@ class _ProfileViewState extends State<ProfileView> {
                                           ),
                                         ],
                                       ),
+                                    ),
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF94A3B8), size: 20),
+                                      color: const Color(0xFF1E293B),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        side: const BorderSide(color: Color(0xFF334155)),
+                                      ),
+                                      onSelected: (val) {
+                                        if (val == 'segnala') {
+                                          _mostraDialogSegnalaUtente(resolvedNick);
+                                        } else if (val == 'blocca') {
+                                          _confermaBloccoUtente(resolvedNick);
+                                        }
+                                      },
+                                      itemBuilder: (ctx) => [
+                                        PopupMenuItem(
+                                          value: 'segnala',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.flag_rounded, color: Color(0xFFF59E0B), size: 18),
+                                              const SizedBox(width: 10),
+                                              Text(
+                                                'Segnala Utente',
+                                                style: GoogleFonts.poppins(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'blocca',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.block_rounded, color: Color(0xFFEF4444), size: 18),
+                                              const SizedBox(width: 10),
+                                              Text(
+                                                'Blocca Utente',
+                                                style: GoogleFonts.poppins(color: const Color(0xFFEF4444), fontSize: 13, fontWeight: FontWeight.bold),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -2061,6 +2105,72 @@ class _ProfileViewState extends State<ProfileView> {
                   ),
                   const SizedBox(height: 24),
 
+                  if (_viewModel.isCloudAdmin) ...[
+                    // AMMINISTRAZIONE COMMUNITY (ESCLUSIVO PER CLOUD)
+                    Text(
+                      '👑 AMMINISTRAZIONE COMMUNITY',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                        color: const Color(0xFFF59E0B),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                            const Color(0xFF1E293B),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4), width: 1.5),
+                      ),
+                      child: ListTile(
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.shield_rounded, color: Color(0xFFF59E0B), size: 22),
+                        ),
+                        title: Row(
+                          children: [
+                            Text(
+                              'Centro Moderazione & Segnalazioni',
+                              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'ADMIN',
+                                style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFFFDE68A)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        subtitle: Text(
+                          'Esamina i report degli utenti: ammonisci o banna account molesti',
+                          style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFCBD5E1)),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFFF59E0B), size: 14),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          _mostraModalCentroModerazione();
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
                   // NOTIFICHE & SUONI PERSONALIZZATI
                   Text(
                     'NOTIFICHE & SUONI PERSONALIZZATI',
@@ -2117,6 +2227,95 @@ class _ProfileViewState extends State<ProfileView> {
                         Navigator.of(ctx).pop();
                         _mostraModalPersonalizzazioneSuoni();
                       },
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // TUTELA DELLA COMMUNITY & PRIVACY
+                  Text(
+                    'TUTELA DELLA COMMUNITY & PRIVACY',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: const Color(0xFF10B981),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFF334155)),
+                    ),
+                    child: Column(
+                      children: [
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.block_rounded, color: Color(0xFFF87171), size: 20),
+                          ),
+                          title: Row(
+                            children: [
+                              Text(
+                                'Utenti Bloccati',
+                                style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '${utente.utentiBloccati.length}',
+                                  style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.w700, color: const Color(0xFFFCA5A5)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Text(
+                            'Gestisci e sblocca gli utenti che hai bloccato',
+                            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                          ),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            _mostraModalUtentiBloccati();
+                          },
+                        ),
+                        const Divider(color: Color(0xFF334155), height: 1),
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.privacy_tip_outlined, color: Color(0xFF34D399), size: 20),
+                          ),
+                          title: Text(
+                            'Privacy Policy & Termini',
+                            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            'Consulta l\'informativa GDPR e i Termini di Servizio',
+                            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                          ),
+                          trailing: const Icon(Icons.open_in_new_rounded, color: Color(0xFF64748B), size: 14),
+                          onTap: () async {
+                            final uri = Uri.parse('https://fantaeventi-backend-2-0.onrender.com/privacy');
+                            try {
+                              await launchUrl(uri, mode: LaunchMode.externalApplication);
+                            } catch (_) {}
+                          },
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 24),
@@ -2295,7 +2494,7 @@ class _ProfileViewState extends State<ProfileView> {
             ],
           ),
         ),
-        if (trailing != null) trailing,
+        ?trailing,
       ],
     );
   }
@@ -2988,6 +3187,552 @@ class _ProfileViewState extends State<ProfileView> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  void _confermaBloccoUtente(String targetNick) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.block_rounded, color: Color(0xFFEF4444), size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Bloccare @$targetNick?',
+                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Sei sicuro di voler bloccare @$targetNick?',
+              style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '• Verrà rimosso permanentemente dalla tua lista amici.\n'
+              '• Non potrete più invitarvi a vicenda ad eventi né interagire nel gioco.\n'
+              '• Riceverà una notifica che lo informa del blocco.',
+              style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12, height: 1.5),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline_rounded, color: Color(0xFF10B981), size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Potrai sbloccarlo in qualsiasi momento dalla tua Area Riservata nella sezione "Utenti Bloccati".',
+                      style: GoogleFonts.inter(color: const Color(0xFF6EE7B7), fontSize: 11, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('ANNULLA', style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              final ok = await _viewModel.bloccaUtente(targetNick);
+              if (mounted) {
+                if (ok) {
+                  AppToast.showSuccess(context, 'Utente Bloccato', '@$targetNick è stato bloccato e rimosso dagli amici.');
+                  setState(() {});
+                } else {
+                  AppToast.showError(context, 'Errore', 'Impossibile bloccare l\'utente. Riprova.');
+                }
+              }
+            },
+            child: Text('SÌ, BLOCCA', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostraDialogSegnalaUtente(String targetNick) {
+    String motivoSelezionato = 'Profilo o foto offensiva';
+    final dettagliCtrl = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDlgState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.flag_rounded, color: Color(0xFFF59E0B), size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Segnala @$targetNick',
+                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Seleziona il motivo della segnalazione:',
+                  style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                ),
+                const SizedBox(height: 10),
+                ...['Profilo o foto offensiva', 'Comportamento scorretto nel gioco', 'Spam o messaggi indesiderati', 'Altro'].map((m) {
+                  final isSelected = motivoSelezionato == m;
+                  return InkWell(
+                    onTap: () => setDlgState(() => motivoSelezionato = m),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                            color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFF64748B),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              m,
+                              style: GoogleFonts.inter(
+                                color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                                fontSize: 13,
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: dettagliCtrl,
+                  maxLines: 3,
+                  style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Dettagli aggiuntivi (facoltativo)...',
+                    hintStyle: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 12),
+                    filled: true,
+                    fillColor: const Color(0xFF0F172A),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('ANNULLA', style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                final ok = await _viewModel.inviaSegnalazione(
+                  segnalato: targetNick,
+                  motivo: motivoSelezionato,
+                  dettagli: dettagliCtrl.text.trim(),
+                );
+                if (mounted) {
+                  if (ok) {
+                    AppToast.showSuccess(context, 'Segnalazione Inviata', 'Grazie per il tuo contributo a mantenere FantaEventi sicura.');
+                  } else {
+                    AppToast.showError(context, 'Errore', 'Impossibile inviare la segnalazione. Riprova.');
+                  }
+                }
+              },
+              child: Text('INVIA', style: GoogleFonts.poppins(color: const Color(0xFF0F172A), fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _mostraModalUtentiBloccati() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final bloccati = _viewModel.utente.utentiBloccati;
+          return DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            minChildSize: 0.4,
+            maxChildSize: 0.85,
+            expand: false,
+            builder: (_, scrollController) => Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.block_rounded, color: Color(0xFFEF4444), size: 24),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Utenti Bloccati',
+                        style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Gli utenti in questa lista non possono interagire con te. Puoi sbloccarli in qualsiasi momento.',
+                    style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: bloccati.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF10B981), size: 48),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Nessun utente bloccato',
+                                  style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Non hai bloccato alcun giocatore.',
+                                  style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: bloccati.length,
+                            itemBuilder: (context, index) {
+                              final nick = bloccati[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: const Color(0xFF334155)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 20,
+                                      backgroundColor: const Color(0xFF334155),
+                                      child: Text(
+                                        nick.isNotEmpty ? nick[0].toUpperCase() : '?',
+                                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        '@$nick',
+                                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 14),
+                                      ),
+                                    ),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.lock_open_rounded, size: 14, color: Colors.white),
+                                      label: Text('Sblocca', style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF10B981),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      onPressed: () async {
+                                        final ok = await _viewModel.sbloccaUtente(nick);
+                                        if (ok) {
+                                          setModalState(() {});
+                                          if (mounted) {
+                                            AppToast.showSuccess(context, 'Utente Sbloccato', '@$nick è stato sbloccato.');
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _mostraModalCentroModerazione() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => FutureBuilder<List<Map<String, dynamic>>>(
+        future: _viewModel.getSegnalazioni(),
+        builder: (context, snapshot) {
+          final isLoading = snapshot.connectionState == ConnectionState.waiting;
+          final segnalazioni = snapshot.data ?? [];
+
+          return DraggableScrollableSheet(
+            initialChildSize: 0.75,
+            minChildSize: 0.5,
+            maxChildSize: 0.92,
+            expand: false,
+            builder: (_, scrollController) => StatefulBuilder(
+              builder: (context, setSheetState) => Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.shield_rounded, color: Color(0xFFF59E0B), size: 22),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Centro Moderazione',
+                                style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              Text(
+                                'Gestione segnalazioni community (Apple Guideline 1.2)',
+                                style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                          onPressed: () => Navigator.of(ctx).pop(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    if (isLoading)
+                      const Expanded(child: Center(child: CircularProgressIndicator(color: Color(0xFFF59E0B))))
+                    else if (segnalazioni.isEmpty)
+                      Expanded(
+                        child: Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.verified_user_rounded, color: Color(0xFF10B981), size: 48),
+                              const SizedBox(height: 12),
+                              Text('Nessuna segnalazione', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 4),
+                              Text('Tutti gli utenti stanno rispettando le regole!', style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollController,
+                          itemCount: segnalazioni.length,
+                          itemBuilder: (context, index) {
+                            final s = segnalazioni[index];
+                            final id = s['id'] ?? '';
+                            final segnalatore = s['segnalatore'] ?? '';
+                            final segnalato = s['segnalato'] ?? '';
+                            final motivo = s['motivo'] ?? '';
+                            final dettagli = s['dettagli'] ?? '';
+                            final stato = s['stato'] ?? 'in_attesa';
+
+                            Color statoColor = const Color(0xFFF59E0B);
+                            if (stato == 'ammonito') statoColor = const Color(0xFF38BDF8);
+                            if (stato == 'bannato') statoColor = const Color(0xFFEF4444);
+                            if (stato == 'archiviata') statoColor = const Color(0xFF10B981);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFF334155)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        '@$segnalato',
+                                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: const Color(0xFFFCA5A5), fontSize: 15),
+                                      ),
+                                      const Spacer(),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: statoColor.withValues(alpha: 0.15),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: statoColor.withValues(alpha: 0.4)),
+                                        ),
+                                        child: Text(
+                                          stato.toUpperCase(),
+                                          style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: statoColor),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Segnalato da: @$segnalatore • $motivo',
+                                    style: GoogleFonts.inter(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w500),
+                                  ),
+                                  if (dettagli.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '"$dettagli"',
+                                      style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                                    ),
+                                  ],
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          icon: const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFF38BDF8)),
+                                          label: Text('Ammonisci', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF38BDF8))),
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(color: Color(0xFF38BDF8)),
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          onPressed: () async {
+                                            final ok = await _viewModel.gestisciSegnalazione(segnalazioneId: id, azione: 'ammonisci', segnalato: segnalato);
+                                            if (ok && mounted) {
+                                              AppToast.showSuccess(context, 'Ammonizione Inviata', 'Richiamo ufficiale inviato a @$segnalato.');
+                                              setSheetState(() => s['stato'] = 'ammonito');
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          icon: const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFFEF4444)),
+                                          label: Text('Banna', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444))),
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(color: Color(0xFFEF4444)),
+                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                          ),
+                                          onPressed: () async {
+                                            final ok = await _viewModel.gestisciSegnalazione(segnalazioneId: id, azione: 'banna', segnalato: segnalato);
+                                            if (ok && mounted) {
+                                              AppToast.showSuccess(context, 'Account Sospeso', '@$segnalato è stato bannato.');
+                                              setSheetState(() => s['stato'] = 'bannato');
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        icon: const Icon(Icons.archive_outlined, color: Color(0xFF94A3B8), size: 20),
+                                        tooltip: 'Archivia',
+                                        onPressed: () async {
+                                          final ok = await _viewModel.gestisciSegnalazione(segnalazioneId: id, azione: 'archivia', segnalato: segnalato);
+                                          if (ok && mounted) {
+                                            AppToast.showSuccess(context, 'Archiviata', 'Segnalazione archiviata.');
+                                            setSheetState(() => s['stato'] = 'archiviata');
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

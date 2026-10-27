@@ -26,6 +26,7 @@ class DbService {
   DbCollection get passwordResetCollection => db.collection('PasswordResetTokens');
   DbCollection get richiesteVarCollection => db.collection('RichiesteVar');
   DbCollection get notificheCollection => db.collection('Notifiche');
+  DbCollection get segnalazioniCollection => db.collection('Segnalazioni');
 
   static String get brevoApiKey {
     final key = Platform.environment['BREVO_API_KEY'];

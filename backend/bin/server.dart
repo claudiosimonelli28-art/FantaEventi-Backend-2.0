@@ -10,6 +10,7 @@ import 'package:backend/controllers/votazione_controller.dart';
 import 'package:backend/controllers/notifica_controller.dart';
 import 'package:backend/controllers/var_controller.dart';
 import 'package:backend/controllers/privacy_controller.dart';
+import 'package:backend/controllers/segnalazione_controller.dart';
 
 Middleware _corsMiddleware() {
   return (Handler innerHandler) {
@@ -54,6 +55,7 @@ void main() async {
   final votazioneCtrl = VotazioneController();
   final notificaCtrl = NotificaController();
   final varCtrl = VarController();
+  final segnalazioneCtrl = SegnalazioneController();
 
   // Rotte Utenti
   app.post('/api/login', utenteCtrl.login);
@@ -65,6 +67,14 @@ void main() async {
   app.post('/api/utenti/avatar', utenteCtrl.aggiornaAvatar);
   app.post('/api/utenti/elimina-account', utenteCtrl.eliminaAccount);
   app.get('/api/utenti', utenteCtrl.getUtenti);
+  app.post('/api/utenti/blocca', utenteCtrl.bloccaUtente);
+  app.post('/api/utenti/sblocca', utenteCtrl.sbloccaUtente);
+  app.get('/api/utenti/bloccati', utenteCtrl.getUtentiBloccati);
+
+  // Rotte Segnalazioni & Moderazione (Apple UGC 1.2)
+  app.post('/api/segnalazioni/crea', segnalazioneCtrl.creaSegnalazione);
+  app.get('/api/segnalazioni', segnalazioneCtrl.getSegnalazioni);
+  app.post('/api/segnalazioni/gestisci', segnalazioneCtrl.gestisciSegnalazione);
 
   // Rotte Eventi
   app.get('/api/eventi', eventoCtrl.getEventi);

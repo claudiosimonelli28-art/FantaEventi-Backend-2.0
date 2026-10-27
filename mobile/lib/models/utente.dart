@@ -104,6 +104,8 @@ class Utente {
   final bool haVistoGuida;
   final List<String> fcmTokens;
   final String dataRegistrazione;
+  final List<String> utentiBloccati;
+  final bool isBanned;
 
   Utente({
     required this.id,
@@ -131,6 +133,8 @@ class Utente {
     this.haVistoGuida = false,
     this.fcmTokens = const [],
     this.dataRegistrazione = '',
+    this.utentiBloccati = const [],
+    this.isBanned = false,
   }) : nickname = (nickname != null && nickname.isNotEmpty) ? nickname : (nome.isNotEmpty ? nome : 'Utente');
 
   String get username => nickname;
@@ -237,6 +241,8 @@ class Utente {
       haVistoGuida: json['haVistoGuida'] == true,
       fcmTokens: (json['fcmTokens'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       dataRegistrazione: parsedDataReg,
+      utentiBloccati: (json['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      isBanned: json['isBanned'] == true,
     );
   }
 
@@ -268,6 +274,8 @@ class Utente {
       'haVistoGuida': haVistoGuida,
       'fcmTokens': fcmTokens,
       'dataRegistrazione': dataRegistrazione,
+      'utentiBloccati': utentiBloccati,
+      'isBanned': isBanned,
     };
   }
 
@@ -297,6 +305,8 @@ class Utente {
     bool? haVistoGuida,
     List<String>? fcmTokens,
     String? dataRegistrazione,
+    List<String>? utentiBloccati,
+    bool? isBanned,
   }) {
     return Utente(
       id: id ?? this.id,
@@ -324,6 +334,8 @@ class Utente {
       haVistoGuida: haVistoGuida ?? this.haVistoGuida,
       fcmTokens: fcmTokens ?? this.fcmTokens,
       dataRegistrazione: dataRegistrazione ?? this.dataRegistrazione,
+      utentiBloccati: utentiBloccati ?? this.utentiBloccati,
+      isBanned: isBanned ?? this.isBanned,
     );
   }
 }

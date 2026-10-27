@@ -252,4 +252,68 @@ class ProfileViewModel extends BaseViewModel {
       setLoading(false);
     }
   }
+
+  // --- BLOCCO & SBLOCCO UTENTI (Apple UGC 1.2) ---
+  bool get isCloudAdmin =>
+      _utente.nickname.trim().toLowerCase() == 'cloud' ||
+      _utente.nome.trim().toLowerCase() == 'cloud';
+
+  Future<bool> bloccaUtente(String targetNick) async {
+    setLoading(true);
+    try {
+      final ok = await _apiService.bloccaUtente(targetNick);
+      if (ok) {
+        await caricaProfiloAggiornato();
+      }
+      return ok;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  Future<bool> sbloccaUtente(String targetNick) async {
+    setLoading(true);
+    try {
+      final ok = await _apiService.sbloccaUtente(targetNick);
+      if (ok) {
+        await caricaProfiloAggiornato();
+      }
+      return ok;
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  Future<List<String>> getUtentiBloccati() async {
+    return await _apiService.getUtentiBloccati();
+  }
+
+  // --- SEGNALAZIONI & MODERAZIONE ---
+  Future<bool> inviaSegnalazione({
+    required String segnalato,
+    required String motivo,
+    String dettagli = '',
+  }) async {
+    return await _apiService.inviaSegnalazione(
+      segnalato: segnalato,
+      motivo: motivo,
+      dettagli: dettagli,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getSegnalazioni() async {
+    return await _apiService.getSegnalazioni();
+  }
+
+  Future<bool> gestisciSegnalazione({
+    required String segnalazioneId,
+    required String azione,
+    required String segnalato,
+  }) async {
+    return await _apiService.gestisciSegnalazione(
+      segnalazioneId: segnalazioneId,
+      azione: azione,
+      segnalato: segnalato,
+    );
+  }
 }

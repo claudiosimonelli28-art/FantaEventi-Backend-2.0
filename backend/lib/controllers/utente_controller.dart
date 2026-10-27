@@ -6,6 +6,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/utente.dart';
+import '../utils/nickname_helper.dart';
 
 
 String hashPassword(String password) {
@@ -189,6 +190,16 @@ class UtenteController {
       }
 
       final utente = Utente.fromMap(doc);
+      if (utente.isBanned) {
+        print('⛔ Utente "${utente.username}" è sospeso/bannato.');
+        return Response.forbidden(
+          jsonEncode({
+            'error': 'Account sospeso. Questo profilo è stato bloccato per violazione delle linee guida della community.',
+            'isBanned': true,
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
       print('✅ Login riuscito con password per utente: ${utente.username}');
       return Response.ok(
         jsonEncode({
@@ -802,6 +813,194 @@ class UtenteController {
 
       return Response.ok(
         jsonEncode({'message': 'Account eliminato con successo'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Blocca un utente, rimuovendolo dagli amici e inviando la notifica
+  Future<Response> bloccaUtente(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+
+      final utente = (data['utente'] ?? '').toString().trim();
+      final target = (data['target'] ?? '').toString().trim();
+
+      if (utente.isEmpty || target.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'utente e target obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final cleanUtente = NicknameHelper.resolve(utente, uDocs);
+      final cleanTarget = NicknameHelper.resolve(target, uDocs);
+
+      // 1. Aggiorna l'utente bloccante: aggiungi a utentiBloccati e rimuovi dagli amici
+      for (var uDoc in uDocs) {
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanUtente, uDocs)) {
+          final uId = uDoc['_id'] as ObjectId;
+          final currentBloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          if (!currentBloccati.any((b) => NicknameHelper.isSame(b, cleanTarget, uDocs))) {
+            currentBloccati.add(cleanTarget);
+          }
+          final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          currentAmici.removeWhere((a) => NicknameHelper.isSame(a, cleanTarget, uDocs));
+
+          await DbService.instance.utentiCollection.update(
+            where.id(uId),
+            modify.set('utentiBloccati', currentBloccati).set('amici', currentAmici),
+          );
+          break;
+        }
+      }
+
+      // 2. Rimuovi l'utente bloccante dalla lista amici del target
+      for (var uDoc in uDocs) {
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanTarget, uDocs)) {
+          final uId = uDoc['_id'] as ObjectId;
+          final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          currentAmici.removeWhere((a) => NicknameHelper.isSame(a, cleanUtente, uDocs));
+
+          await DbService.instance.utentiCollection.update(
+            where.id(uId),
+            modify.set('amici', currentAmici),
+          );
+          break;
+        }
+      }
+
+      // 3. Rimuovi eventuali richieste amicizia pendenti
+      try {
+        final nots = await DbService.instance.notificheCollection.find(
+          where.eq('tipo', 'richiesta_amicizia'),
+        ).toList();
+        for (var n in nots) {
+          final m = (n['mittente'] ?? '').toString().trim();
+          final d = (n['destinatario'] ?? '').toString().trim();
+          if ((NicknameHelper.isSame(m, cleanUtente, uDocs) && NicknameHelper.isSame(d, cleanTarget, uDocs)) ||
+              (NicknameHelper.isSame(m, cleanTarget, uDocs) && NicknameHelper.isSame(d, cleanUtente, uDocs))) {
+            await DbService.instance.notificheCollection.remove(where.id(n['_id'] as ObjectId));
+          }
+        }
+      } catch (_) {}
+
+      // 4. Invia notifica di blocco al target
+      await DbService.instance.notificheCollection.insertOne({
+        'tipo': 'blocco_utente',
+        'titolo': '🚫 Sei stato bloccato',
+        'messaggio': '$cleanUtente ti ha bloccato. Momentaneamente non siete più amici fino a quando $cleanUtente non ti sbloccherà.',
+        'mittente': cleanUtente,
+        'destinatario': cleanTarget,
+        'timestamp': DateTime.now().toIso8601String(),
+        'letto': false,
+      });
+
+      return Response.ok(
+        jsonEncode({'success': true, 'message': 'Utente bloccato con successo'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Sblocca un utente precedentemente bloccato e invia la notifica
+  Future<Response> sbloccaUtente(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+
+      final utente = (data['utente'] ?? '').toString().trim();
+      final target = (data['target'] ?? '').toString().trim();
+
+      if (utente.isEmpty || target.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'utente e target obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final cleanUtente = NicknameHelper.resolve(utente, uDocs);
+      final cleanTarget = NicknameHelper.resolve(target, uDocs);
+
+      // Rimuovi da utentiBloccati
+      for (var uDoc in uDocs) {
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanUtente, uDocs)) {
+          final uId = uDoc['_id'] as ObjectId;
+          final currentBloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          currentBloccati.removeWhere((b) => NicknameHelper.isSame(b, cleanTarget, uDocs));
+
+          await DbService.instance.utentiCollection.update(
+            where.id(uId),
+            modify.set('utentiBloccati', currentBloccati),
+          );
+          break;
+        }
+      }
+
+      // Invia notifica di sblocco al target
+      await DbService.instance.notificheCollection.insertOne({
+        'tipo': 'sblocco_utente',
+        'titolo': '🤝 Sei stato sbloccato',
+        'messaggio': '$cleanUtente ti ha sbloccato.',
+        'mittente': cleanUtente,
+        'destinatario': cleanTarget,
+        'timestamp': DateTime.now().toIso8601String(),
+        'letto': false,
+      });
+
+      return Response.ok(
+        jsonEncode({'success': true, 'message': 'Utente sbloccato con successo'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Restituisce la lista degli utenti bloccati da un utente
+  Future<Response> getUtentiBloccati(Request request) async {
+    try {
+      final utente = (request.url.queryParameters['utente'] ?? '').toString().trim();
+      if (utente.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Parametro utente obbligatorio'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await DbService.instance.utentiCollection.find().toList();
+      final cleanUtente = NicknameHelper.resolve(utente, uDocs);
+
+      List<String> bloccati = [];
+      for (var uDoc in uDocs) {
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanUtente, uDocs)) {
+          bloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          break;
+        }
+      }
+
+      return Response.ok(
+        jsonEncode({'bloccati': bloccati}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

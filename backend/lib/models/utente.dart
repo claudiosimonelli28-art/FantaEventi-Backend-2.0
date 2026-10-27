@@ -109,6 +109,8 @@ class Utente {
   final bool haVistoGuida;
   final List<String> fcmTokens;
   final String dataRegistrazione;
+  final List<String> utentiBloccati;
+  final bool isBanned;
 
   Utente({
     this.mongoId,
@@ -139,6 +141,8 @@ class Utente {
     this.haVistoGuida = false,
     this.fcmTokens = const [],
     this.dataRegistrazione = '',
+    this.utentiBloccati = const [],
+    this.isBanned = false,
   }) : nickname = (nickname != null && nickname.isNotEmpty) ? nickname : (nome.isNotEmpty ? nome : 'Utente');
 
   String get username => nickname;
@@ -250,6 +254,8 @@ class Utente {
       haVistoGuida: map['haVistoGuida'] == true,
       fcmTokens: (map['fcmTokens'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       dataRegistrazione: parsedDataReg,
+      utentiBloccati: (map['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      isBanned: map['isBanned'] == true,
     );
   }
 
@@ -286,6 +292,8 @@ class Utente {
       'haVistoGuida': haVistoGuida,
       'fcmTokens': fcmTokens,
       'dataRegistrazione': dataRegistrazione,
+      'utentiBloccati': utentiBloccati,
+      'isBanned': isBanned,
     };
     if (mongoId != null) {
       map['_id'] = mongoId;
@@ -314,6 +322,8 @@ class Utente {
       'amici': amici,
       'richiesteAmicizia': richiesteAmicizia,
       'badgeVincitore': badgeVincitore,
+      'utentiBloccati': utentiBloccati,
+      'isBanned': isBanned,
       'countGiudice': countGiudice,
       'countAvvocato': countGiudice,
       'countReMalus': countReMalus,
