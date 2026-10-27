@@ -206,17 +206,24 @@ class EventoController {
 
       // Notifiche di invito ai partecipanti invitati
       for (var inv in invitatiFinali) {
-        await DbService.instance.notificheCollection.insertOne({
-          'mittente': propostoDa,
-          'destinatario': inv,
-          'titolo': 'Invito ad Evento: $titolo',
-          'messaggio': '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
-          'eventoId': insertedId,
-          'tipo': 'invito',
-          'stato': 'in_attesa',
-          'letto': false,
-          'data': now.toIso8601String(),
-        });
+        final existingNotif = await DbService.instance.notificheCollection.findOne(
+          where.eq('eventoId', insertedId).and(where.eq('destinatario', inv)).and(where.eq('tipo', 'invito')),
+        );
+        if (existingNotif == null) {
+          try {
+            await DbService.instance.notificheCollection.insertOne({
+              'mittente': propostoDa,
+              'destinatario': inv,
+              'titolo': 'Invito ad Evento: $titolo',
+              'messaggio': '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
+              'eventoId': insertedId,
+              'tipo': 'invito',
+              'stato': 'in_attesa',
+              'letto': false,
+              'data': now.toIso8601String(),
+            });
+          } catch (_) {}
+        }
       }
 
       return Response.ok(

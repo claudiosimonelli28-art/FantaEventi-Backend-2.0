@@ -2417,7 +2417,7 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 4));
+        final docs = await db.collection('Evento').find().toList().timeout(const Duration(seconds: 10));
 
         final now = DateTime.now();
         final List<Evento> list = [];
@@ -3189,23 +3189,6 @@ class ApiService {
           // 3. Rimuovi tutte le Notifiche associate a questo evento
           await db.collection('Notifiche').remove(where.eq('eventoId', eventoId));
 
-          // 4. Auto-pulizia dello storico voti attività per l'evento eliminato (I badge sbloccati rimangono intatti!)
-          final uDocs = await db.collection('Utenti').find().toList();
-          for (var uDoc in uDocs) {
-            final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
-            final newStorico = oldStorico.where((st) {
-              final s = st.toString().toLowerCase();
-              if (evTitolo.isNotEmpty && s.contains('"$evTitolo"')) return false;
-              if (s.contains(eventoId.toLowerCase())) return false;
-              return true;
-            }).toList();
-
-            await db.collection('Utenti').update(
-              where.id(uDoc['_id'] as ObjectId),
-              modify.set('storicoVoti', newStorico),
-            );
-          }
-
           if (_currentUser != null) {
             final newStorico = _currentUser!.storicoVoti.where((st) {
               final s = st.toLowerCase();
@@ -3254,7 +3237,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/notifiche?utente=$cleanNick'),
           headers: defaultHeaders,
-        ).timeout(const Duration(seconds: 3));
+        ).timeout(const Duration(seconds: 5));
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
           final List<Map<String, dynamic>> resList = [];
@@ -3275,11 +3258,26 @@ class ApiService {
         db = await _getSafeMongoDb();
       }
       if (db != null && db.isConnected) {
-        // Recupera eventi, votazioni e bonus/malus per pulizia intelligente e controllo stato voto
-        final eventiDocs = await db.collection('Evento').find().toList();
-        final votazioniDocs = await db.collection('Votazioni').find().toList();
-        final bmDocs = await db.collection('BonusMalus').find().toList();
-        final varDocs = await db.collection('RichiesteVar').find().toList();
+        // Recupero concorrente in parallelo (zero latenza: se già in cache evita chiamate inutili)
+        final docsFuture = db.collection('Notifiche').find().toList();
+        final eventiFuture = _eventi.isEmpty ? db.collection('Evento').find().toList() : Future.value(<Map<String, dynamic>>[]);
+        final votazioniFuture = _votazioniList.isEmpty ? db.collection('Votazioni').find().toList() : Future.value(<Map<String, dynamic>>[]);
+        final bmFuture = _bonusMalusList.isEmpty ? db.collection('BonusMalus').find().toList() : Future.value(<Map<String, dynamic>>[]);
+        final varFuture = db.collection('RichiesteVar').find().toList();
+
+        final results = await Future.wait([
+          docsFuture,
+          eventiFuture,
+          votazioniFuture,
+          bmFuture,
+          varFuture,
+        ]).timeout(const Duration(seconds: 4), onTimeout: () => [[], [], [], [], []]);
+
+        final docs = results[0];
+        final eventiDocs = results[1].isNotEmpty ? results[1] : _eventi.map((e) => e.toJson()).toList();
+        final votazioniDocs = results[2].isNotEmpty ? results[2] : _votazioniList.map((v) => v.toJson()).toList();
+        final bmDocs = results[3].isNotEmpty ? results[3] : _bonusMalusList.map((b) => b.toJson()).toList();
+        final varDocs = results[4];
 
         // Mappa delle RichiesteVar per ID hex / String
         final Map<String, Map<String, dynamic>> varMap = {};
@@ -3326,8 +3324,6 @@ class ApiService {
           final vTitolo = (vot['titolo'] ?? vot['bonusMalus']?['titolo'] ?? '').toString().trim().toLowerCase();
           if (vTitolo.isNotEmpty) votazioniMap[vTitolo] = vot;
         }
-
-        final docs = await db.collection('Notifiche').find().toList();
 
         final matchDocs = docs.where((d) {
           final dDest = (d['destinatario'] ?? '').toString().trim();
@@ -3770,20 +3766,27 @@ class ApiService {
           }
         }
 
-        for (var invUser in invitati) {
-          try {
-            await db.collection('Notifiche').insertOne({
-              'mittente': creatore,
-              'destinatario': invUser,
-              'titolo': 'Invito ad Evento: ${nuovoEvento.titolo}',
-              'messaggio': '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
-              'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
-              'tipo': 'invito',
-              'stato': 'in_attesa',
-              'letto': false,
-              'data': DateTime.now().toIso8601String(),
-            }).timeout(const Duration(seconds: 4));
-          } catch (_) {}
+        if (existingEv == null) {
+          for (var invUser in invitati) {
+            try {
+              final notifExists = await db.collection('Notifiche').findOne(
+                where.eq('eventoId', insertedEvId.isNotEmpty ? insertedEvId : realEvId).and(where.eq('destinatario', invUser)),
+              );
+              if (notifExists == null) {
+                await db.collection('Notifiche').insertOne({
+                  'mittente': creatore,
+                  'destinatario': invUser,
+                  'titolo': 'Invito ad Evento: ${nuovoEvento.titolo}',
+                  'messaggio': '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
+                  'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
+                  'tipo': 'invito',
+                  'stato': 'in_attesa',
+                  'letto': false,
+                  'data': DateTime.now().toIso8601String(),
+                }).timeout(const Duration(seconds: 4));
+              }
+            } catch (_) {}
+          }
         }
 
         // Invia notifica push reale per la tendina di sistema a tutti gli invitati
