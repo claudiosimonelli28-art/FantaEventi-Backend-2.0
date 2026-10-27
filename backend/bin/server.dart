@@ -63,7 +63,7 @@ void main() async {
   final segnalazioneCtrl = SegnalazioneController();
 
   // Health Check
-  app.get('/api/health', (Request req) => Response.ok('OK 288193c'));
+  app.get('/api/health', (Request req) => Response.ok('OK dfc379a'));
 
   // Rotte Utenti
   app.post('/api/login', utenteCtrl.login);
