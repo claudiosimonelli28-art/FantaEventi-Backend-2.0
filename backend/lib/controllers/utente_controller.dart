@@ -966,7 +966,7 @@ class UtenteController {
       final cleanUtente = NicknameHelper.resolve(utente, uDocs);
       final cleanTarget = NicknameHelper.resolve(target, uDocs);
 
-      // Rimuovi da utentiBloccati
+      // 1. Rimuovi da utentiBloccati di cleanUtente e ripristina cleanTarget tra gli amici
       for (var uDoc in uDocs) {
         final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
         if (NicknameHelper.isSame(uNick, cleanUtente, uDocs)) {
@@ -974,19 +974,42 @@ class UtenteController {
           final currentBloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
           currentBloccati.removeWhere((b) => NicknameHelper.isSame(b, cleanTarget, uDocs));
 
+          final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          if (!currentAmici.any((a) => NicknameHelper.isSame(a, cleanTarget, uDocs))) {
+            currentAmici.add(cleanTarget);
+          }
+
           await DbService.instance.utentiCollection.update(
             where.id(uId),
-            modify.set('utentiBloccati', currentBloccati),
+            modify.set('utentiBloccati', currentBloccati).set('amici', currentAmici),
           );
           break;
         }
       }
 
-      // Invia notifica di sblocco al target
+      // 2. Ripristina cleanUtente tra gli amici di cleanTarget
+      for (var uDoc in uDocs) {
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanTarget, uDocs)) {
+          final uId = uDoc['_id'] as ObjectId;
+          final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+          if (!currentAmici.any((a) => NicknameHelper.isSame(a, cleanUtente, uDocs))) {
+            currentAmici.add(cleanUtente);
+          }
+
+          await DbService.instance.utentiCollection.update(
+            where.id(uId),
+            modify.set('amici', currentAmici),
+          );
+          break;
+        }
+      }
+
+      // 3. Invia notifica di sblocco al target
       await DbService.instance.notificheCollection.insertOne({
         'tipo': 'sblocco_utente',
         'titolo': '🤝 Sei stato sbloccato',
-        'messaggio': '$cleanUtente ti ha sbloccato.',
+        'messaggio': '$cleanUtente ti ha sbloccato. Siete di nuovo amici!',
         'mittente': cleanUtente,
         'destinatario': cleanTarget,
         'timestamp': DateTime.now().toIso8601String(),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -98,21 +99,23 @@ class ProfileViewModel extends BaseViewModel {
 
   Future<void> caricaProfiloAggiornato() async {
     try {
-      await _apiService.sanificaERiconciliaEventiETitoli();
+      // 1. Sincronizzazione prioritaria istantanea dell'utente corrente (<350ms)
       final updatedUser = await _apiService.syncCurrentUserFromDb();
-      final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
       if (isDisposed) return;
 
       if (updatedUser != null) {
         _utente = updatedUser;
         _aggiornaConteggiTitoli(_utente);
+        notifyListeners();
       }
+
+      final bool giaRiscattato = await _apiService.haGiaRiscattatoPremioTutorial();
+      if (isDisposed) return;
       _haGiaRiscattatoPremio = giaRiscattato || _apiService.hasRedeemedTutorialLocally;
       notifyListeners();
 
-      await _apiService.getUtenti();
-      if (isDisposed) return;
-      notifyListeners();
+      // 2. Riconciliazione in background non bloccante
+      unawaited(_apiService.sanificaERiconciliaEventiETitoli());
     } catch (_) {}
   }
 
@@ -259,28 +262,48 @@ class ProfileViewModel extends BaseViewModel {
       _utente.nome.trim().toLowerCase() == 'cloud';
 
   Future<bool> bloccaUtente(String targetNick) async {
-    setLoading(true);
+    final cleanTarget = targetNick.trim();
+    // Aggiornamento ISTANTANEO in-memory (zero latenza UI)
+    final currentBloccati = List<String>.from(_utente.utentiBloccati);
+    if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
+      currentBloccati.add(cleanTarget);
+    }
+    final currentAmici = List<String>.from(_utente.amici);
+    currentAmici.removeWhere((a) => a.toLowerCase() == cleanTarget.toLowerCase());
+    _utente = _utente.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
+    notifyListeners();
+
     try {
       final ok = await _apiService.bloccaUtente(targetNick);
       if (ok) {
         await caricaProfiloAggiornato();
       }
       return ok;
-    } finally {
-      setLoading(false);
+    } catch (_) {
+      return false;
     }
   }
 
   Future<bool> sbloccaUtente(String targetNick) async {
-    setLoading(true);
+    final cleanTarget = targetNick.trim();
+    // Aggiornamento ISTANTANEO in-memory (zero latenza UI)
+    final currentBloccati = List<String>.from(_utente.utentiBloccati);
+    currentBloccati.removeWhere((b) => b.toLowerCase() == cleanTarget.toLowerCase());
+    final currentAmici = List<String>.from(_utente.amici);
+    if (!currentAmici.any((a) => a.toLowerCase() == cleanTarget.toLowerCase())) {
+      currentAmici.add(cleanTarget);
+    }
+    _utente = _utente.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
+    notifyListeners();
+
     try {
       final ok = await _apiService.sbloccaUtente(targetNick);
       if (ok) {
         await caricaProfiloAggiornato();
       }
       return ok;
-    } finally {
-      setLoading(false);
+    } catch (_) {
+      return false;
     }
   }
 

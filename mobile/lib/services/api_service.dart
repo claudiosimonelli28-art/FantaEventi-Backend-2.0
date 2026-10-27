@@ -498,7 +498,7 @@ class ApiService {
 
   Future<void> logout() async {
     try {
-      await PushNotificationService.instance.unregisterCurrentDeviceToken();
+      unawaited(PushNotificationService.instance.unregisterCurrentDeviceToken());
     } catch (_) {}
     _currentUser = null;
     _rememberMeSession = false;
@@ -1785,56 +1785,6 @@ class ApiService {
     final curUser = _currentUser;
     if (curUser == null) return null;
     try {
-      final db = await _getMongoDb();
-      if (db != null && db.isConnected) {
-        // Self-healing automatico: Sincronizza ed allinea le amicizie da tutte le notifiche accettate
-        final cleanNick = curUser.nickname.trim().toLowerCase();
-        final nots = await db.collection('Notifiche').find(where.eq('tipo', 'richiesta_amicizia').eq('stato', 'accettato')).toList();
-        final Set<String> amiciDaNotifiche = {};
-        for (var n in nots) {
-          final m = (n['mittente'] ?? '').toString().trim();
-          final d = (n['destinatario'] ?? '').toString().trim();
-          if (m.toLowerCase() == cleanNick && d.isNotEmpty) {
-            amiciDaNotifiche.add(d);
-          } else if (d.toLowerCase() == cleanNick && m.isNotEmpty) {
-            amiciDaNotifiche.add(m);
-          }
-        }
-
-        if (amiciDaNotifiche.isNotEmpty) {
-          final uDocs = await db.collection('Utenti').find().toList();
-          for (var uDoc in uDocs) {
-            if (matchesUserDoc(uDoc, cleanNick)) {
-              final List<dynamic> currentAmici = List.from(uDoc['amici'] ?? []);
-              final List<dynamic> currentBloccati = List.from(uDoc['utentiBloccati'] ?? []);
-              bool changed = false;
-              for (var a in amiciDaNotifiche) {
-                if (currentBloccati.any((b) => b.toString().trim().toLowerCase() == a.toLowerCase())) {
-                  continue; // Non ri-aggiungere un utente bloccato!
-                }
-                if (!currentAmici.any((existing) => existing.toString().trim().toLowerCase() == a.toLowerCase())) {
-                  currentAmici.add(a);
-                  changed = true;
-                }
-              }
-              final initialAmiciLen = currentAmici.length;
-              currentAmici.removeWhere((a) => currentBloccati.any((b) => b.toString().trim().toLowerCase() == a.toString().trim().toLowerCase()));
-              if (currentAmici.length != initialAmiciLen) {
-                changed = true;
-              }
-              if (changed) {
-                ObjectId? uObjId;
-                try {
-                  uObjId = uDoc['_id'] is ObjectId ? uDoc['_id'] as ObjectId : ObjectId.fromHexString(uDoc['_id'].toString());
-                } catch (_) {}
-                final uSelector = uObjId != null ? where.id(uObjId) : where.eq('_id', uDoc['_id']);
-                await db.collection('Utenti').update(uSelector, modify.set('amici', currentAmici));
-              }
-            }
-          }
-        }
-      }
-
       final utenti = await getUtenti();
       final match = utenti.firstWhere(
         (u) => (curUser.id.isNotEmpty && u.id == curUser.id) ||
@@ -3037,6 +2987,28 @@ class ApiService {
     invalidateCache();
     final cleanUser = utente.trim().toLowerCase();
 
+    // Aggiornamento ISTANTANEO in-memory (zero latenza UI)
+    _eventi.removeWhere((e) => e.id == eventoId);
+    _bonusMalusList.removeWhere((b) => b.eventoId == eventoId || b.id == eventoId);
+    _votazioniList.removeWhere((v) => v.bonusMalus?.eventoId == eventoId || v.id == eventoId);
+
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <300ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/eventi/elimina'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'eventoId': eventoId,
+            'utente': utente,
+          }),
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          return;
+        }
+      } catch (_) {}
+    }
+
     bool directSuccess = false;
 
     try {
@@ -3128,7 +3100,26 @@ class ApiService {
     final cleanNick = resolveNickname(nickname).trim().toLowerCase();
     final List<Map<String, dynamic>> notificheList = [];
 
-    // Connessione DIRETTA e ROBUSTA a MongoDB Atlas (Singola Fonte di Verità)
+    // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <300ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/notifiche?utente=$cleanNick'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final List<dynamic> listJson = jsonDecode(res.body);
+          final List<Map<String, dynamic>> resList = [];
+          for (var item in listJson) {
+            final m = Map<String, dynamic>.from(item as Map);
+            resList.add(m);
+          }
+          return resList;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Connessione DIRETTA di fallback a MongoDB Atlas
     try {
       Db? db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) {
@@ -5539,13 +5530,17 @@ class ApiService {
         if (res.statusCode == 200) {
           final currentBloccati = List<String>.from(curUser.utentiBloccati);
           currentBloccati.removeWhere((b) => b.toLowerCase() == cleanTarget.toLowerCase());
-          _currentUser = curUser.copyWith(utentiBloccati: currentBloccati);
+          final currentAmici = List<String>.from(curUser.amici);
+          if (!currentAmici.any((a) => a.toLowerCase() == cleanTarget.toLowerCase())) {
+            currentAmici.add(cleanTarget);
+          }
+          _currentUser = curUser.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
           await _saveSession(_currentUser!);
 
           unawaited(PushNotificationService.instance.inviaPushAUtenti(
             [cleanTarget],
             titolo: '🤝 Sei stato sbloccato',
-            messaggio: '$curNick ti ha sbloccato.',
+            messaggio: '$curNick ti ha sbloccato. Siete di nuovo amici!',
             data: {'tipo': 'sblocco_utente'},
           ));
           return true;
@@ -5568,9 +5563,31 @@ class ApiService {
             final currentBloccati = List<String>.from((uDoc['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
             currentBloccati.removeWhere((b) => isSamePerson(b, cleanTargetUser));
 
+            final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+            if (!currentAmici.any((a) => isSamePerson(a, cleanTargetUser))) {
+              currentAmici.add(cleanTargetUser);
+            }
+
             await db.collection('Utenti').update(
               where.id(uId),
-              modify.set('utentiBloccati', currentBloccati),
+              modify.set('utentiBloccati', currentBloccati).set('amici', currentAmici),
+            );
+            break;
+          }
+        }
+
+        for (var uDoc in uDocs) {
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+          if (isSamePerson(uNick, cleanTargetUser)) {
+            final uId = uDoc['_id'] as ObjectId;
+            final currentAmici = List<String>.from((uDoc['amici'] as List<dynamic>?)?.map((e) => e.toString()) ?? []);
+            if (!currentAmici.any((a) => isSamePerson(a, cleanCurUser))) {
+              currentAmici.add(cleanCurUser);
+            }
+
+            await db.collection('Utenti').update(
+              where.id(uId),
+              modify.set('amici', currentAmici),
             );
             break;
           }
@@ -5579,7 +5596,7 @@ class ApiService {
         await db.collection('Notifiche').insertOne({
           'tipo': 'sblocco_utente',
           'titolo': '🤝 Sei stato sbloccato',
-          'messaggio': '$cleanCurUser ti ha sbloccato.',
+          'messaggio': '$cleanCurUser ti ha sbloccato. Siete di nuovo amici!',
           'mittente': cleanCurUser,
           'destinatario': cleanTargetUser,
           'timestamp': DateTime.now().toIso8601String(),
@@ -5588,13 +5605,17 @@ class ApiService {
 
         final currentBloccati = List<String>.from(curUser.utentiBloccati);
         currentBloccati.removeWhere((b) => b.toLowerCase() == cleanTarget.toLowerCase());
-        _currentUser = curUser.copyWith(utentiBloccati: currentBloccati);
+        final currentAmici = List<String>.from(curUser.amici);
+        if (!currentAmici.any((a) => a.toLowerCase() == cleanTarget.toLowerCase())) {
+          currentAmici.add(cleanTarget);
+        }
+        _currentUser = curUser.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
         await _saveSession(_currentUser!);
 
         unawaited(PushNotificationService.instance.inviaPushAUtenti(
           [cleanTarget],
           titolo: '🤝 Sei stato sbloccato',
-          messaggio: '$cleanCurUser ti ha sbloccato.',
+          messaggio: '$cleanCurUser ti ha sbloccato. Siete di nuovo amici!',
           data: {'tipo': 'sblocco_utente'},
         ));
         return true;

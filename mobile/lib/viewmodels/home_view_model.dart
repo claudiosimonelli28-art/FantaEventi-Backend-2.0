@@ -129,14 +129,20 @@ class HomeViewModel extends BaseViewModel {
         notifyListeners();
       }
 
-      // 3. Caricamento sequenziale protetto per socket MongoDB delle risorse di supporto
-      await _apiService.getUtenti();
-      final meVoti = await _apiService.getVotazioni();
-      final meBonus = _apiService.bonusMalusList;
-
+      // 3. Caricamento concorrente rapido delle risorse di supporto (in parallelo, zero blocchi)
       final curUser = _apiService.currentUser;
       final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
-      final nots = await _apiService.getNotifiche(nick);
+      final results = await Future.wait([
+        _apiService.getUtenti(),
+        _apiService.getVotazioni(),
+        _apiService.getNotifiche(nick),
+      ]).timeout(const Duration(seconds: 4), onTimeout: () => [[], <Votazione>[], <Map<String, dynamic>>[]]);
+
+      if (isDisposed) return;
+
+      final meVoti = results[1] is List<Votazione> ? results[1] as List<Votazione> : <Votazione>[];
+      final meBonus = _apiService.bonusMalusList;
+      final nots = results[2] is List<Map<String, dynamic>> ? results[2] as List<Map<String, dynamic>> : <Map<String, dynamic>>[];
       final unreadNots = nots.where((n) {
         final nId = (n['id'] ?? '').toString();
         if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
@@ -282,11 +288,13 @@ class HomeViewModel extends BaseViewModel {
 
   // --- AZIONI SUI DATI ---
   Future<void> eliminaEvento(String eventoId, String nick) async {
-    await _apiService.eliminaEvento(eventoId, nick);
+    // Aggiornamento ISTANTANEO in-memory (zero latenza UI)
     _eventi = _eventi.where((e) => e.id != eventoId).toList();
     _bonusMalusList = _bonusMalusList.where((b) => b.eventoId != eventoId && b.id != eventoId).toList();
     _votazioniList = _votazioniList.where((v) => v.bonusMalus?.eventoId != eventoId && v.id != eventoId).toList();
     notifyListeners();
+
+    await _apiService.eliminaEvento(eventoId, nick);
   }
 
   Future<void> partecipaAdEvento(String eventoId, String nick) async {
