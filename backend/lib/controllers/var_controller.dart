@@ -266,7 +266,10 @@ class VarController {
       final data = jsonDecode(body) as Map<String, dynamic>;
       final varId = data['varId']?.toString() ?? '';
       final giudice = data['giudice']?.toString() ?? data['giudiceNick']?.toString() ?? '';
-      final approva = data['approva'] == true || data['approva']?.toString() == 'true';
+      final approva = data['approva'] == true ||
+          data['approva']?.toString() == 'true' ||
+          data['decisione']?.toString().toLowerCase() == 'accolta' ||
+          data['decisione']?.toString().toLowerCase() == 'approvata';
       final sanzionaFalsaTestimonianza = data['sanzionaFalsaTestimonianza'] == true ||
           data['sanzionaFalsaTestimonianza']?.toString() == 'true';
 

@@ -475,7 +475,7 @@ class UtenteController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final utenteName = (data['utente'] ?? data['username'])?.toString().trim() ?? '';
+      final utenteName = (data['utente'] ?? data['username'] ?? data['nickname'])?.toString().trim() ?? '';
       final avatarUrl = data['avatarUrl']?.toString().trim() ?? '';
 
       print('📥 [HTTP POST /api/utenti/avatar] Aggiornamento foto profilo per "$utenteName"');
@@ -977,8 +977,8 @@ class UtenteController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final utente = (data['utente'] ?? '').toString().trim();
-      final target = (data['target'] ?? '').toString().trim();
+      final utente = (data['utente'] ?? data['bloccante'] ?? data['sbloccante'] ?? '').toString().trim();
+      final target = (data['target'] ?? data['bloccato'] ?? data['sbloccato'] ?? '').toString().trim();
 
       if (utente.isEmpty || target.isEmpty) {
         return Response.badRequest(
@@ -1072,8 +1072,8 @@ class UtenteController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final utente = (data['utente'] ?? '').toString().trim();
-      final target = (data['target'] ?? '').toString().trim();
+      final utente = (data['utente'] ?? data['bloccante'] ?? data['sbloccante'] ?? '').toString().trim();
+      final target = (data['target'] ?? data['bloccato'] ?? data['sbloccato'] ?? '').toString().trim();
 
       if (utente.isEmpty || target.isEmpty) {
         return Response.badRequest(

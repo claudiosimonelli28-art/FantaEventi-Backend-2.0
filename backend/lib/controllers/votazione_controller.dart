@@ -194,6 +194,41 @@ class VotazioneController {
         });
       }
 
+      // 2b. Valuta Quorum e aggiorna BonusMalus se target raggiunto
+      try {
+        final allVotes = await DbService.instance.votazioniCollection.find(
+          where.eq('votazioneId', idOrEventoId).or(where.eq('bonusId', idOrEventoId)),
+        ).toList();
+        final proCount = allVotes.where((v) => v['voto'] == 'pro' || v['voto'] == 'favorevole' || v['voto'] == 'si' || v['aFavore'] == true).length;
+        final controCount = allVotes.where((v) => v['voto'] == 'contro' || v['voto'] == 'no' || v['aFavore'] == false).length;
+
+        ObjectId? bmObjId;
+        try { bmObjId = ObjectId.fromHexString(idOrEventoId); } catch (_) {}
+        final bmSel = bmObjId != null ? where.id(bmObjId) : where.eq('_id', idOrEventoId).or(where.eq('nome', idOrEventoId));
+        final bmDoc = await DbService.instance.bonusMalusCollection.findOne(bmSel);
+        if (bmDoc != null) {
+          final evId = (bmDoc['eventoId'] ?? '').toString();
+          ObjectId? evObjId;
+          try { evObjId = ObjectId.fromHexString(evId); } catch (_) {}
+          final evDoc = await DbService.instance.eventiCollection.findOne(evObjId != null ? where.id(evObjId) : where.eq('_id', evId));
+          final partecipanti = (evDoc?['partecipanti'] as List<dynamic>?) ?? [];
+          final numPart = partecipanti.isNotEmpty ? partecipanti.length : 2;
+          final quorum = (numPart / 2).ceil();
+
+          if (proCount >= quorum) {
+            await DbService.instance.bonusMalusCollection.update(
+              where.id(bmDoc['_id'] as ObjectId),
+              modify.set('stato', 'approvato').set('approvato', true),
+            );
+          } else if (controCount >= quorum) {
+            await DbService.instance.bonusMalusCollection.update(
+              where.id(bmDoc['_id'] as ObjectId),
+              modify.set('stato', 'respinto').set('approvato', false),
+            );
+          }
+        }
+      } catch (_) {}
+
       // 3. Sincronizza stato notifica dell'utente
       final notDocs = await DbService.instance.notificheCollection.find().toList();
       for (var notDoc in notDocs) {

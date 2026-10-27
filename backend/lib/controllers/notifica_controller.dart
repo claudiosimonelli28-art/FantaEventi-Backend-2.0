@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
+import 'utente_controller.dart';
 
 class NotificaController {
   // GET /api/notifiche?utente=NICKNAME
@@ -115,6 +116,23 @@ class NotificaController {
                 .addToSet('partecipanti', utente)
                 .pullAll('invitati', pullList),
             );
+          }
+        }
+
+        // Accettazione richiesta di amicizia
+        if (azione == 'accetta' && doc['tipo'] == 'richiesta_amicizia') {
+          final mittente = (doc['mittente'] ?? '').toString().trim();
+          final destinatario = (doc['destinatario'] ?? utente).toString().trim();
+          if (mittente.isNotEmpty && destinatario.isNotEmpty) {
+            await DbService.instance.utentiCollection.update(
+              where.eq('nickname', mittente).or(where.eq('nome', mittente)),
+              modify.addToSet('amici', destinatario),
+            );
+            await DbService.instance.utentiCollection.update(
+              where.eq('nickname', destinatario).or(where.eq('nome', destinatario)),
+              modify.addToSet('amici', mittente),
+            );
+            UtenteController.invalidateCache();
           }
         }
       }
