@@ -94,10 +94,6 @@ class DbService {
       throw StateError('MONGODB_URI non configurato nell\'ambiente o nel file .env');
     }
 
-    if (!mongoUri.contains('safeAtlas=true')) {
-      mongoUri = mongoUri.contains('?') ? '$mongoUri&safeAtlas=true' : '$mongoUri?safeAtlas=true';
-    }
-
     print('🔌 Connessione al tuo database MongoDB Atlas in corso...');
     _db = await Db.create(mongoUri);
     await _db!.open();

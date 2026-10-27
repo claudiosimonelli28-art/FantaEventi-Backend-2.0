@@ -172,14 +172,14 @@ class ApiService {
   static String get _mongoUri {
     const envUri = String.fromEnvironment('MONGODB_URI');
     if (envUri.isNotEmpty && envUri.startsWith('mongodb') && envUri.contains('appName=Cluster0') && !envUri.contains('^')) {
-      return envUri.contains('safeAtlas=true') ? envUri : (envUri.contains('?') ? '$envUri&safeAtlas=true' : '$envUri?safeAtlas=true');
+      return envUri;
     }
     return utf8.decode(base64.decode(
-        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOlQzUlVINEdKRGZhWGVlZUBjbHVzdGVyMC56YmJxZmNyLm1vbmdvZGIubmV0L0ZhbnRhRXZlbnRpP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eSZhcHBOYW1lPUNsdXN0ZXIwJnNhZmVBdGxhcz10cnVl'));
+        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOlQzUlVINEdKRGZhWGVlZUBjbHVzdGVyMC56YmJxZmNyLm1vbmdvZGIubmV0L0ZhbnRhRXZlbnRpP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eSZhcHBOYW1lPUNsdXN0ZXIw'));
   }
 
   static String get _directMongoSeedlist => utf8.decode(base64.decode(
-      'bW9uZ29kYjovL0xvcmVuem86VDNSVUg0R0pEZmFYZWVlQGFjLXphbDQ3M3ctc2hhcmQtMDAtMDAuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNyxhYy16YWw0NzN3LXNoYXJkLTAwLTAxLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMi56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3L0ZhbnRhRXZlbnRpP3NzbD10cnVlJnJlcGxpY2FTZXQ9YXRsYXMtemFsNDczdy1zaGFyZC0wJmF1dGhTb3VyY2U9YWRtaW4mcmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5JnNhZmVBdGxhcz10cnVl'));
+      'bW9uZ29kYjovL0xvcmVuem86VDNSVUg0R0pEZmFYZWVlQGFjLXphbDQ3M3ctc2hhcmQtMDAtMDAuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNyxhYy16YWw0NzN3LXNoYXJkLTAwLTAxLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMi56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3L0ZhbnRhRXZlbnRpP3NzbD10cnVlJnJlcGxpY2FTZXQ9YXRsYXMtemFsNDczdy1zaGFyZC0wJmF1dGhTb3VyY2U9YWRtaW4mcmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5'));
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
@@ -210,14 +210,14 @@ class ApiService {
 
     try {
       final newDb = await Db.create(_mongoUri);
-      await newDb.open().timeout(const Duration(seconds: 5));
+      await newDb.open().timeout(const Duration(seconds: 7));
       _db = newDb;
       completer.complete(_db);
       return _db;
     } catch (_) {
       try {
         final directDb = await Db.create(_directMongoSeedlist);
-        await directDb.open().timeout(const Duration(seconds: 6));
+        await directDb.open().timeout(const Duration(seconds: 8));
         _db = directDb;
         completer.complete(_db);
         return _db;
@@ -239,12 +239,11 @@ class ApiService {
   }
 
   Future<Db?> _getSafeMongoDb() async {
-    Db? db = await _getMongoDb();
-    if (db == null || !db.isConnected) {
-      markMongoDbDisconnected();
-      db = await _getMongoDb();
+    if (_db != null && _db!.isConnected) {
+      return _db;
     }
-    return db;
+    markMongoDbDisconnected();
+    return await _getMongoDb();
   }
 
   final List<String> baseUrls = [
@@ -1072,65 +1071,21 @@ class ApiService {
               : 'Nessun utente trovato con il nickname "$rawIdentifier". Registrati prima di accedere!',
         );
       }
+      throw Exception('Impossibile connettersi al database MongoDB.');
     } catch (e) {
       markMongoDbDisconnected();
       if (e is NeedsPasswordSetupException) rethrow;
-      if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password') || e.toString().contains('Attenzione alle maiuscole/minuscole') || e.toString().contains('sospeso') || e.toString().contains('bloccato'))) {
+      if (e is Exception && (
+          e.toString().contains('Nessun utente trovato') ||
+          e.toString().contains('Password non corretta') ||
+          e.toString().contains('Inserisci la password') ||
+          e.toString().contains('Attenzione alle maiuscole/minuscole') ||
+          e.toString().contains('sospeso') ||
+          e.toString().contains('bloccato'))) {
         rethrow;
       }
+      throw Exception('Impossibile connettersi al server. Verifica la tua connessione internet e riprova.');
     }
-
-    String? lastError;
-
-    // 2. Fallback HTTP su backend Render
-    for (String url in baseUrls) {
-      try {
-        final response = await http.post(
-          Uri.parse('$url/login'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'username': cleanIdentifier,
-            'email': cleanIdentifier,
-            'nickname': cleanIdentifier,
-            'password': cleanPassword,
-          }),
-        ).timeout(const Duration(seconds: 4));
-
-        if (response.body.contains('<html>') || response.body.contains('Welcome to localhost.run')) {
-          continue;
-        }
-
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-
-        if (data['needsPasswordSetup'] == true) {
-          throw NeedsPasswordSetupException(
-            username: data['username']?.toString() ?? cleanIdentifier,
-            email: data['email']?.toString() ?? '',
-          );
-        }
-
-        if (response.statusCode == 200 && data.containsKey('utente')) {
-          _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
-          clearUserSessionCache();
-          await _saveSession(_currentUser!, rememberMe: rememberMe);
-          return _currentUser!;
-        } else if (response.statusCode == 403 || response.statusCode == 401) {
-          throw Exception(data['error']?.toString() ?? 'Password non corretta. Riprova!');
-        } else if (response.statusCode == 404 || data['notFound'] == true) {
-          throw Exception('Nessun utente trovato nel database per "$cleanIdentifier". Registrati prima di accedere!');
-        } else if (data.containsKey('error')) {
-          lastError = data['error'].toString();
-        }
-      } catch (e) {
-        if (e is NeedsPasswordSetupException) rethrow;
-        if (e is Exception && (e.toString().contains('Nessun utente trovato') || e.toString().contains('Password non corretta') || e.toString().contains('Inserisci la password'))) {
-          rethrow;
-        }
-        lastError = 'Connessione al server non disponibile o server in riavvio. Riprova tra pochi istanti! 🔄';
-      }
-    }
-
-    throw Exception(lastError ?? 'Nessun utente trovato con questo Nickname o Email nel database.');
   }
 
   // --- IMPOSTAZIONE PASSWORD AL PRIMO ACCESSO (PER UTENTI ESISTENTI) ---
