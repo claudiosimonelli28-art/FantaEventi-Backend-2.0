@@ -4,3 +4,7 @@
 app_config.json
 *.key
 *.pem
+backend/bin/test_*.dart
+backend/bin/check_*.dart
+backend/bin/inspect_*.dart
+backend/server.exe

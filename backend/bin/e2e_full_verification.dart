@@ -1,9 +1,29 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:mongo_dart/mongo_dart.dart';
 
 const String baseUrl = 'http://localhost:8088/api';
-const String mongoUri = 'mongodb+srv://Lorenzo:T3RUH4GJDfaXeee@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0';
+
+String getMongoUri() {
+  final env = Platform.environment['MONGODB_URI'];
+  if (env != null && env.trim().isNotEmpty) return env.trim();
+  final candidates = [
+    File('.env'),
+    File('../.env'),
+    File('backend/.env'),
+  ];
+  for (var f in candidates) {
+    if (f.existsSync()) {
+      for (var l in f.readAsLinesSync()) {
+        if (l.startsWith('MONGODB_URI=')) {
+          return l.substring('MONGODB_URI='.length).trim();
+        }
+      }
+    }
+  }
+  return '';
+}
 
 void main() async {
   print('=====================================================');
@@ -272,7 +292,8 @@ void main() async {
   // 13. Verifica Stato Finale Database MongoDB Atlas
   print('\n--- 13. STATO FINALE MONGODB ATLAS ---');
   try {
-    final db = await Db.create(mongoUri);
+    final uri = getMongoUri();
+    final db = await Db.create(uri);
     await db.open(secure: true);
     final usersCol = db.collection('Utenti');
     final finalCloud = await usersCol.findOne(where.eq('nickname', 'Cloud'));
