@@ -1398,17 +1398,17 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
       return true;
     }).toList();
 
-    return RefreshIndicator(
-      onRefresh: () => _loadData(forceRefresh: true),
-      color: const Color(0xFFFACC15),
-      backgroundColor: const Color(0xFF1E293B),
-      child: Column(
-        children: [
-          // Barra dei filtri feed eventi
-          _buildFeedEventiFilterBar(tuttiEventi),
+    return Column(
+      children: [
+        // Barra dei filtri feed eventi
+        _buildFeedEventiFilterBar(tuttiEventi),
 
-          // Lista eventi filtrati o messaggio vuoto
-          Expanded(
+        // Lista eventi filtrati o messaggio vuoto con RefreshIndicator diretto sul contenuto scrollabile
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => _loadData(forceRefresh: true),
+            color: const Color(0xFFFACC15),
+            backgroundColor: const Color(0xFF1E293B),
             child: filteredEventi.isEmpty
                 ? SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -1506,8 +1506,8 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
                     },
                   ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 

@@ -102,10 +102,13 @@ class HomeViewModel extends BaseViewModel {
 
   // --- CARICAMENTO DATI ---
   Future<void> loadData({bool silent = false, bool forceRefresh = false}) async {
-    if (_isFetchingData) return;
+    if (_isFetchingData && !forceRefresh) return;
     _isFetchingData = true;
 
     try {
+      if (forceRefresh) {
+        _apiService.invalidateCache();
+      }
       // 1. Il self-healing dell'utente e delle amicizie viene eseguito in background
       //    SENZA bloccare l'interfaccia o far attendere l'utente davanti allo spinner!
       unawaited(_apiService.syncCurrentUserFromDb());

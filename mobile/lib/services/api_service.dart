@@ -957,11 +957,11 @@ class ApiService {
       }
     }
 
-    // 2. Rete di salvataggio: fallback silenzioso su MongoDB Atlas
+    // 2. Rete di salvataggio: fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getMongoDb().timeout(const Duration(seconds: 4), onTimeout: () => null);
+      final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 4));
+        final docs = await db.collection('Utenti').find().toList().timeout(const Duration(seconds: 8));
 
         for (var d in docs) {
           final actualNick = (d['nickname'] ?? d['username'] ?? '').toString().trim();
