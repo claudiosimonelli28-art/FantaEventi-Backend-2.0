@@ -65,11 +65,21 @@ class _NotificationsModalState extends State<NotificationsModal> {
     }
   }
 
-  List<Map<String, dynamic>> get _unreadNotifications =>
-      _notifiche.where((n) => n['letto'] != true).toList();
+  List<Map<String, dynamic>> get _unreadNotifications => _notifiche.where((n) {
+        final stato = (n['stato'] ?? '').toString().toLowerCase().trim();
+        final tipo = (n['tipo'] ?? '').toString().toLowerCase().trim();
+        final bool isActionPending = stato == 'in_attesa' &&
+            (tipo.contains('var') || tipo.contains('invito') || tipo.contains('amicizia'));
+        return n['letto'] != true || isActionPending;
+      }).toList();
 
-  List<Map<String, dynamic>> get _readNotifications =>
-      _notifiche.where((n) => n['letto'] == true).toList();
+  List<Map<String, dynamic>> get _readNotifications => _notifiche.where((n) {
+        final stato = (n['stato'] ?? '').toString().toLowerCase().trim();
+        final tipo = (n['tipo'] ?? '').toString().toLowerCase().trim();
+        final bool isActionPending = stato == 'in_attesa' &&
+            (tipo.contains('var') || tipo.contains('invito') || tipo.contains('amicizia'));
+        return n['letto'] == true && !isActionPending;
+      }).toList();
 
   List<Map<String, dynamic>> get _currentTabNotifications =>
       _selectedTabIndex == 0 ? _unreadNotifications : _readNotifications;
@@ -673,10 +683,13 @@ class _NotificationsModalState extends State<NotificationsModal> {
                             final bool isSelected = _selectedNotificationIds.contains(notId);
 
                             // Notifiche del VAR
-                            final String varId = (not['varId'] ?? '').toString();
-                            final bool isVarGiudice = tipo == 'var_richiesta_giudice' && varId.isNotEmpty;
-                            final bool isVarTestimone = tipo == 'var_testimone' && varId.isNotEmpty;
-                            final bool isVarEsito = tipo == 'var_esito';
+                            final String varId = (not['varId'] ?? not['idRichiestaVar'] ?? not['richiestaVarId'] ?? (not['data'] is Map ? not['data']['varId'] : null) ?? '').toString().trim();
+                            final bool isVarGiudice = (tipo == 'var_richiesta_giudice' ||
+                                tipo == 'var_giudice' ||
+                                tipo == 'richiesta_var' ||
+                                tipo.contains('giudice')) && varId.isNotEmpty;
+                            final bool isVarTestimone = (tipo == 'var_testimone' || tipo.contains('testimone')) && varId.isNotEmpty;
+                            final bool isVarEsito = tipo == 'var_esito' || tipo.contains('var_esito');
                             final bool isVarRelated = isVarGiudice || isVarTestimone || isVarEsito;
 
                             // 1. Notifica di amicizia
@@ -768,8 +781,8 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                     if (_isSelectionMode) {
                                       _toggleSelection(notId);
                                     } else {
-                                      // Se siamo in Da Leggere, tocca per segnare come letta e trasferire in Già Lette
-                                      if (!isLetto) {
+                                      // Se siamo in Da Leggere, tocca per segnare come letta e trasferire in Già Lette (tranne se richiede azione)
+                                      if (!isLetto && !isPending && !(isVarGiudice && stato == 'in_attesa') && !(isVarTestimone && stato == 'in_attesa')) {
                                         _segnaComeLetta(notId);
                                       }
                                     }
@@ -970,7 +983,6 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                             width: double.infinity,
                                             child: ElevatedButton.icon(
                                               onPressed: () {
-                                                _segnaComeLetta(notId);
                                                 showModalBottomSheet(
                                                   context: context,
                                                   isScrollControlled: true,
@@ -1003,7 +1015,6 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                             width: double.infinity,
                                             child: ElevatedButton.icon(
                                               onPressed: () {
-                                                _segnaComeLetta(notId);
                                                 showModalBottomSheet(
                                                   context: context,
                                                   isScrollControlled: true,

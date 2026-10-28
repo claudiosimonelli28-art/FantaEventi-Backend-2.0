@@ -16,19 +16,23 @@ class NotificaController {
         return dDest == cleanDest || cleanDest.isEmpty;
       }).toList();
 
-      final list = docs.map((d) => {
-        'id': d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : (d['_id']?.toString() ?? ''),
-        'mittente': d['mittente'] ?? 'FantaEventi',
-        'destinatario': d['destinatario'] ?? '',
-        'titolo': d['titolo'] ?? 'Nuova Notifica',
-        'messaggio': d['messaggio'] ?? '',
-        'eventoId': d['eventoId'] ?? '',
-        'bonusId': d['bonusId'] ?? '',
-        'bonusTitolo': d['bonusTitolo'] ?? '',
-        'tipo': d['tipo'] ?? 'invito',
-        'stato': d['stato'] ?? 'in_attesa',
-        'letto': d['letto'] == true,
-        'data': d['data']?.toString() ?? DateTime.now().toIso8601String(),
+      final list = docs.map((d) {
+        final map = Map<String, dynamic>.from(d);
+        map['id'] = d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : (d['_id']?.toString() ?? '');
+        map.remove('_id');
+        map['mittente'] ??= 'FantaEventi';
+        map['destinatario'] ??= '';
+        map['titolo'] ??= 'Nuova Notifica';
+        map['messaggio'] ??= '';
+        map['eventoId'] ??= '';
+        map['bonusId'] ??= '';
+        map['bonusTitolo'] ??= '';
+        map['varId'] ??= '';
+        map['tipo'] ??= 'invito';
+        map['stato'] ??= 'in_attesa';
+        map['letto'] = map['letto'] == true;
+        map['data'] = map['data']?.toString() ?? DateTime.now().toIso8601String();
+        return map;
       }).toList();
 
       return Response.ok(

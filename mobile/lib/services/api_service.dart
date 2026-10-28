@@ -6130,8 +6130,25 @@ class ApiService {
   }
 
   Future<RichiestaVar?> getRichiestaVar(String id) async {
+    if (id.isEmpty) return null;
+
+    // 1. Chiamata primaria REST Render (Ultra-rapida <300ms)
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/var/dettaglio?id=$id'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          return RichiestaVar.fromJson(data);
+        }
+      } catch (_) {}
+    }
+
+    // 2. Connessione diretta di fallback a MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return null;
 
       ObjectId? objId;
