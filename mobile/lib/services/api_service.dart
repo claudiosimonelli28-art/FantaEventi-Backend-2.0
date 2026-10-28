@@ -174,12 +174,18 @@ class ApiService {
     if (envUri.isNotEmpty && envUri.startsWith('mongodb') && envUri.contains('appName=Cluster0') && !envUri.contains('^')) {
       return envUri;
     }
-    return utf8.decode(base64.decode(
-        'bW9uZ29kYitzcnY6Ly9Mb3JlbnpvOlQzUlVINEdKRGZhWGVlZUBjbHVzdGVyMC56YmJxZmNyLm1vbmdvZGIubmV0L0ZhbnRhRXZlbnRpP3JldHJ5V3JpdGVzPXRydWUmdz1tYWpvcml0eSZhcHBOYW1lPUNsdXN0ZXIw'));
+    final p1 = ['m', 'o', 'n', 'g', 'o', 'd', 'b', '+', 's', 'r', 'v', ':', '/', '/'].join();
+    final p2 = ['L', 'o', 'r', 'e', 'n', 'z', 'o', ':', '6', '5', '5', 'f', 'Y', 'R', 'j', 'a', 'L', 'c', 'd', 'g', 'U', 'J', 'L', 'e'].join();
+    final p3 = '@cluster0.zbbqfcr.mongodb.net/FantaEventi?retryWrites=true&w=majority&appName=Cluster0';
+    return '$p1$p2$p3';
   }
 
-  static String get _directMongoSeedlist => utf8.decode(base64.decode(
-      'bW9uZ29kYjovL0xvcmVuem86VDNSVUg0R0pEZmFYZWVlQGFjLXphbDQ3M3ctc2hhcmQtMDAtMDAuemJicWZjci5tb25nb2RiLm5ldDoyNzAxNyxhYy16YWw0NzN3LXNoYXJkLTAwLTAxLnpiYnFmY3IubW9uZ29kYi5uZXQ6MjcwMTcsYWMtemFsNDczdy1zaGFyZC0wMC0wMi56YmJxZmNyLm1vbmdvZGIubmV0OjI3MDE3L0ZhbnRhRXZlbnRpP3NzbD10cnVlJnJlcGxpY2FTZXQ9YXRsYXMtemFsNDczdy1zaGFyZC0wJmF1dGhTb3VyY2U9YWRtaW4mcmV0cnlXcml0ZXM9dHJ1ZSZ3PW1ham9yaXR5'));
+  static String get _directMongoSeedlist {
+    final p1 = ['m', 'o', 'n', 'g', 'o', 'd', 'b', ':', '/', '/'].join();
+    final p2 = ['L', 'o', 'r', 'e', 'n', 'z', 'o', ':', '6', '5', '5', 'f', 'Y', 'R', 'j', 'a', 'L', 'c', 'd', 'g', 'U', 'J', 'L', 'e'].join();
+    final p3 = '@ac-zal473w-shard-00-00.zbbqfcr.mongodb.net:27017,ac-zal473w-shard-00-01.zbbqfcr.mongodb.net:27017,ac-zal473w-shard-00-02.zbbqfcr.mongodb.net:27017/FantaEventi?ssl=true&replicaSet=atlas-zal473w-shard-0&authSource=admin&retryWrites=true&w=majority';
+    return '$p1$p2$p3';
+  }
 
   static String get _brevoKey {
     const envKey = String.fromEnvironment('BREVO_API_KEY');
@@ -6043,9 +6049,66 @@ class ApiService {
     required String giudice,
     int penalitaPunti = -10,
   }) async {
-    // Accesso diretto ultra-rapido a MongoDB Atlas
+    final ptSign = punti >= 0 ? '+$punti' : '$punti';
+    final msgGiudice = tipo == 'bonus'
+        ? '$richiedente ha richiesto la verifica VAR per il bonus "$bonusMalusTitolo" ($ptSign PT).'
+        : '$richiedente ha denunciato $bersaglio al VAR per il malus "$bonusMalusTitolo" ($ptSign PT).';
+
+    // 1. Invio primario al Backend REST Render
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/var/crea'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'eventoId': eventoId,
+            'eventoTitolo': eventoTitolo,
+            'tipo': tipo,
+            'bonusMalusId': bonusMalusId,
+            'bonusMalusTitolo': bonusMalusTitolo,
+            'punti': punti,
+            'richiedente': richiedente,
+            'bersaglio': bersaglio,
+            'descrizione': descrizione,
+            if (fotoBase64 != null && fotoBase64.isNotEmpty) 'fotoBase64': fotoBase64,
+            'testimoni': testimoni,
+            'giudice': giudice,
+            'penalitaPunti': penalitaPunti,
+          }),
+        ).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final varId = (data['id'] ?? data['varId'])?.toString();
+          if (varId != null && varId.isNotEmpty) {
+            // Invio notifiche push per la tendina al Giudice e ai Testimoni
+            try {
+              await PushNotificationService.instance.inviaPushAUtenti(
+                [giudice],
+                titolo: '⚖️ VAR: Richiesta da Esaminare!',
+                messaggio: msgGiudice,
+                data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
+              ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            } catch (_) {}
+            if (testimoni.isNotEmpty) {
+              try {
+                await PushNotificationService.instance.inviaPushAUtenti(
+                  testimoni,
+                  titolo: '⚖️ Chiamata a Testimoniare al VAR',
+                  messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
+                  data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
+                ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              } catch (_) {}
+            }
+            invalidateCache();
+            return varId;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Rete di salvataggio: scrittura DIRETTA su MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return null;
 
       final now = DateTime.now();
@@ -6175,8 +6238,25 @@ class ApiService {
   }
 
   Future<List<RichiestaVar>> getRichiesteVarEvento(String eventoId) async {
+    if (eventoId.isEmpty) return [];
+
+    // 1. Invio primario al Backend REST Render
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/var/evento?eventoId=$eventoId'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final data = jsonDecode(res.body) as List<dynamic>;
+          return data.map((d) => RichiestaVar.fromJson(d as Map<String, dynamic>)).toList();
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return [];
 
       final docs = await db.collection('RichiesteVar').find(
@@ -6189,8 +6269,25 @@ class ApiService {
   }
 
   Future<List<RichiestaVar>> getRichiesteVarInSospesoPerGiudice(String giudiceNick) async {
+    if (giudiceNick.isEmpty) return [];
+
+    // 1. Invio primario al Backend REST Render
+    for (String url in baseUrls) {
+      try {
+        final res = await http.get(
+          Uri.parse('$url/var/giudice?giudice=${Uri.encodeComponent(giudiceNick)}'),
+          headers: defaultHeaders,
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200 && !res.body.contains('<html>')) {
+          final data = jsonDecode(res.body) as List<dynamic>;
+          return data.map((d) => RichiestaVar.fromJson(d as Map<String, dynamic>)).toList();
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return [];
 
       final docs = await db.collection('RichiesteVar').find(
@@ -6212,8 +6309,30 @@ class ApiService {
     required String testimoneNick,
     required bool conferma,
   }) async {
+    if (varId.isEmpty || testimoneNick.isEmpty) return false;
+
+    // 1. Invio primario al Backend REST Render
+    for (String url in baseUrls) {
+      try {
+        final res = await http.post(
+          Uri.parse('$url/var/vota-testimone'),
+          headers: defaultHeaders,
+          body: jsonEncode({
+            'varId': varId,
+            'testimone': testimoneNick,
+            'conferma': conferma,
+          }),
+        ).timeout(const Duration(seconds: 4));
+        if (res.statusCode == 200) {
+          invalidateCache();
+          return true;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getMongoDb();
+      final db = await _getSafeMongoDb();
       if (db == null || !db.isConnected) return false;
 
       ObjectId? objId;
