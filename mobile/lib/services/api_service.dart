@@ -6049,66 +6049,9 @@ class ApiService {
     required String giudice,
     int penalitaPunti = -10,
   }) async {
-    final ptSign = punti >= 0 ? '+$punti' : '$punti';
-    final msgGiudice = tipo == 'bonus'
-        ? '$richiedente ha richiesto la verifica VAR per il bonus "$bonusMalusTitolo" ($ptSign PT).'
-        : '$richiedente ha denunciato $bersaglio al VAR per il malus "$bonusMalusTitolo" ($ptSign PT).';
-
-    // 1. Invio primario al Backend REST Render
-    for (String url in baseUrls) {
-      try {
-        final res = await http.post(
-          Uri.parse('$url/var/crea'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'eventoId': eventoId,
-            'eventoTitolo': eventoTitolo,
-            'tipo': tipo,
-            'bonusMalusId': bonusMalusId,
-            'bonusMalusTitolo': bonusMalusTitolo,
-            'punti': punti,
-            'richiedente': richiedente,
-            'bersaglio': bersaglio,
-            'descrizione': descrizione,
-            if (fotoBase64 != null && fotoBase64.isNotEmpty) 'fotoBase64': fotoBase64,
-            'testimoni': testimoni,
-            'giudice': giudice,
-            'penalitaPunti': penalitaPunti,
-          }),
-        ).timeout(const Duration(seconds: 5));
-        if (res.statusCode == 200 && !res.body.contains('<html>')) {
-          final data = jsonDecode(res.body) as Map<String, dynamic>;
-          final varId = (data['id'] ?? data['varId'])?.toString();
-          if (varId != null && varId.isNotEmpty) {
-            // Invio notifiche push per la tendina al Giudice e ai Testimoni
-            try {
-              await PushNotificationService.instance.inviaPushAUtenti(
-                [giudice],
-                titolo: '⚖️ VAR: Richiesta da Esaminare!',
-                messaggio: msgGiudice,
-                data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
-              ).timeout(const Duration(seconds: 4), onTimeout: () {});
-            } catch (_) {}
-            if (testimoni.isNotEmpty) {
-              try {
-                await PushNotificationService.instance.inviaPushAUtenti(
-                  testimoni,
-                  titolo: '⚖️ Chiamata a Testimoniare al VAR',
-                  messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
-                  data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
-                ).timeout(const Duration(seconds: 4), onTimeout: () {});
-              } catch (_) {}
-            }
-            invalidateCache();
-            return varId;
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 2. Rete di salvataggio: scrittura DIRETTA su MongoDB Atlas
+    // Accesso diretto ultra-rapido a MongoDB Atlas
     try {
-      final db = await _getSafeMongoDb();
+      final db = await _getMongoDb();
       if (db == null || !db.isConnected) return null;
 
       final now = DateTime.now();
@@ -6238,25 +6181,8 @@ class ApiService {
   }
 
   Future<List<RichiestaVar>> getRichiesteVarEvento(String eventoId) async {
-    if (eventoId.isEmpty) return [];
-
-    // 1. Invio primario al Backend REST Render
-    for (String url in baseUrls) {
-      try {
-        final res = await http.get(
-          Uri.parse('$url/var/evento?eventoId=$eventoId'),
-          headers: defaultHeaders,
-        ).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200 && !res.body.contains('<html>')) {
-          final data = jsonDecode(res.body) as List<dynamic>;
-          return data.map((d) => RichiestaVar.fromJson(d as Map<String, dynamic>)).toList();
-        }
-      } catch (_) {}
-    }
-
-    // 2. Fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getSafeMongoDb();
+      final db = await _getMongoDb();
       if (db == null || !db.isConnected) return [];
 
       final docs = await db.collection('RichiesteVar').find(
@@ -6269,25 +6195,8 @@ class ApiService {
   }
 
   Future<List<RichiestaVar>> getRichiesteVarInSospesoPerGiudice(String giudiceNick) async {
-    if (giudiceNick.isEmpty) return [];
-
-    // 1. Invio primario al Backend REST Render
-    for (String url in baseUrls) {
-      try {
-        final res = await http.get(
-          Uri.parse('$url/var/giudice?giudice=${Uri.encodeComponent(giudiceNick)}'),
-          headers: defaultHeaders,
-        ).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200 && !res.body.contains('<html>')) {
-          final data = jsonDecode(res.body) as List<dynamic>;
-          return data.map((d) => RichiestaVar.fromJson(d as Map<String, dynamic>)).toList();
-        }
-      } catch (_) {}
-    }
-
-    // 2. Fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getSafeMongoDb();
+      final db = await _getMongoDb();
       if (db == null || !db.isConnected) return [];
 
       final docs = await db.collection('RichiesteVar').find(
@@ -6309,30 +6218,8 @@ class ApiService {
     required String testimoneNick,
     required bool conferma,
   }) async {
-    if (varId.isEmpty || testimoneNick.isEmpty) return false;
-
-    // 1. Invio primario al Backend REST Render
-    for (String url in baseUrls) {
-      try {
-        final res = await http.post(
-          Uri.parse('$url/var/vota-testimone'),
-          headers: defaultHeaders,
-          body: jsonEncode({
-            'varId': varId,
-            'testimone': testimoneNick,
-            'conferma': conferma,
-          }),
-        ).timeout(const Duration(seconds: 4));
-        if (res.statusCode == 200) {
-          invalidateCache();
-          return true;
-        }
-      } catch (_) {}
-    }
-
-    // 2. Fallback trasparente su MongoDB Atlas
     try {
-      final db = await _getSafeMongoDb();
+      final db = await _getMongoDb();
       if (db == null || !db.isConnected) return false;
 
       ObjectId? objId;
