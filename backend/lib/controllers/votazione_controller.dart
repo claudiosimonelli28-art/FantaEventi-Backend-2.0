@@ -33,15 +33,22 @@ class VotazioneController {
           if (effectivePropDa.isNotEmpty) effectivePropDa.toLowerCase(): 'pro',
         };
 
+        final cleanEvId = evId.trim().toLowerCase();
         for (var vDoc in votiDocs) {
+          final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
+          // Rigoroso match dell'evento: un voto espresso per un altro evento non può mai contare qui!
+          if (vEvId.isNotEmpty && cleanEvId.isNotEmpty && vEvId != cleanEvId) {
+            continue;
+          }
+
           final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
           final bTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
           final rawU = (vDoc['utente'] ?? '').toString().trim();
           final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
 
           final isMatch = (vId == bmId.toLowerCase()) ||
-                          (bTit.isNotEmpty && bTit == nomeBM.toLowerCase()) ||
-                          (vId.isNotEmpty && vId == nomeBM.toLowerCase());
+                          (vId.isNotEmpty && vId == bm['_id']?.toString().toLowerCase()) ||
+                          (bTit.isNotEmpty && bTit == nomeBM.toLowerCase() && vEvId.isNotEmpty && vEvId == cleanEvId);
 
           if (isMatch && rawU.isNotEmpty) {
             final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
@@ -74,8 +81,9 @@ class VotazioneController {
           }
         });
 
-        final bool giaApprovatoDaDb = bm['approvato'] == true || bm['stato'] == 'approvato';
-        final bool giaRespintoDaDb = bm['stato'] == 'respinto';
+        final bool isPropostaUtente = effectivePropDa.isNotEmpty;
+        final bool giaApprovatoDaDb = !isPropostaUtente && (bm['approvato'] == true || bm['stato'] == 'approvato');
+        final bool giaRespintoDaDb = !isPropostaUtente && (bm['stato'] == 'respinto');
 
         final totalVotiEspressi = fav + cont;
         bool isApprovato = giaApprovatoDaDb || (fav >= quorumCalcolato);

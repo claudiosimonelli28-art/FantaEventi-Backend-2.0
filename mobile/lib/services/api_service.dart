@@ -3411,7 +3411,7 @@ class ApiService {
               final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
 
               final bool idMatch = bonusId.isNotEmpty && (vId == bonusId);
-              final bool titleMatch = bonusTitolo.isNotEmpty && vTit == bonusTitolo && (evIdLower.isEmpty || vEvId.isEmpty || vEvId == evIdLower);
+              final bool titleMatch = bonusTitolo.isNotEmpty && vTit == bonusTitolo && evIdLower.isNotEmpty && vEvId.isNotEmpty && vEvId == evIdLower;
 
               if (idMatch || titleMatch) {
                 haGiaVotato = true;
@@ -4883,14 +4883,19 @@ class ApiService {
             final idx = descBM.toLowerCase().indexOf('proposto da ');
             effectivePropDa = descBM.substring(idx + 'proposto da '.length).split(RegExp(r'[:\(\n,]'))[0].trim();
           }
+          final cleanEvId = evId.trim().toLowerCase();
           if (effectivePropDa.isEmpty) {
             for (var vDoc in votiDocs) {
+              final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
+              if (vEvId.isNotEmpty && cleanEvId.isNotEmpty && vEvId != cleanEvId) {
+                continue;
+              }
               final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
               final bTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
               final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
               final isMatch = (vId == bmId.toLowerCase()) ||
-                              (bTit.isNotEmpty && bTit == nomeBM.toLowerCase()) ||
-                              (vId.isNotEmpty && vId == nomeBM.toLowerCase());
+                              (vId.isNotEmpty && vId == bm['_id']?.toString().toLowerCase()) ||
+                              (bTit.isNotEmpty && bTit == nomeBM.toLowerCase() && vEvId.isNotEmpty && vEvId == cleanEvId);
               if (isMatch && (val == 'pro' || val == 'accetta' || val == 'favorevole')) {
                 final u = (vDoc['utente'] ?? '').toString().trim();
                 if (u.isNotEmpty) {
@@ -4915,14 +4920,19 @@ class ApiService {
           };
 
           for (var vDoc in votiDocs) {
+            final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
+            if (vEvId.isNotEmpty && cleanEvId.isNotEmpty && vEvId != cleanEvId) {
+              continue;
+            }
+
             final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
             final bTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
             final rawU = (vDoc['utente'] ?? '').toString().trim();
             final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
 
             final isMatch = (vId == bmId.toLowerCase()) ||
-                            (bTit.isNotEmpty && bTit == nomeBM.toLowerCase()) ||
-                            (vId.isNotEmpty && vId == nomeBM.toLowerCase());
+                            (vId.isNotEmpty && vId == bm['_id']?.toString().toLowerCase()) ||
+                            (bTit.isNotEmpty && bTit == nomeBM.toLowerCase() && vEvId.isNotEmpty && vEvId == cleanEvId);
 
             if (isMatch && rawU.isNotEmpty) {
               final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole') ? 'pro' : 'contro';
