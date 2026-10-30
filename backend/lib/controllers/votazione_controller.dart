@@ -254,16 +254,134 @@ class VotazioneController {
           final numPart = partecipanti.isNotEmpty ? partecipanti.length : 2;
           final quorum = (numPart / 2).ceil();
 
-          if (controCount >= quorum && controCount > proCount) {
+          final nomeBM = (bmDoc['nome'] ?? bmDoc['titolo'] ?? 'Regola').toString();
+          final evTitolo = (evDoc?['titolo'] ?? 'Evento').toString();
+          final propDa = (bmDoc['propostoDa'] ?? '').toString();
+          final now = DateTime.now();
+          final ts = now.millisecondsSinceEpoch;
+
+          final allParticipants = <String>{};
+          allParticipants.addAll(partecipanti.map((e) => e.toString()));
+          final invitati = (evDoc?['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+          allParticipants.addAll(invitati);
+          if (propDa.isNotEmpty) allParticipants.add(propDa);
+
+          // Tie breaker dell'organizzatore in caso di parità a voto completo
+          bool isApprovato = proCount >= quorum && proCount > controCount;
+          bool isRespinto = controCount >= quorum && controCount > proCount;
+
+          final totalVoti = proCount + controCount;
+          if (!isApprovato && !isRespinto && (numPart % 2 == 0) && (totalVoti >= numPart) && (proCount == controCount)) {
+            final rawOrg = (evDoc?['creatore'] ?? evDoc?['propostoDa'] ?? '').toString().trim();
+            final orgNick = NicknameHelper.resolve(rawOrg, uDocs);
+            final orgVoteDoc = allVotes.firstWhere((v) {
+              final vU = NicknameHelper.resolve((v['utente'] ?? '').toString(), uDocs);
+              return NicknameHelper.isSame(vU, orgNick, uDocs);
+            }, orElse: () => {});
+            final orgVal = (orgVoteDoc['voto'] ?? '').toString().toLowerCase();
+            if (orgVal == 'pro' || orgVal == 'favorevole' || orgVal == 'si') {
+              isApprovato = true;
+            } else if (orgVal == 'contro' || orgVal == 'no') {
+              isRespinto = true;
+            }
+          }
+
+          if (isRespinto) {
             await DbService.instance.bonusMalusCollection.update(
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'respinto').set('approvato', false),
             );
-          } else if (proCount >= quorum && proCount >= controCount) {
+
+            for (var p in allParticipants) {
+              final cleanP = NicknameHelper.resolve(p, uDocs);
+              if (cleanP.isEmpty) continue;
+              final existing = await DbService.instance.notificheCollection.findOne(
+                where.eq('destinatario', cleanP)
+                     .and(where.eq('eventoId', evId))
+                     .and(where.eq('bonusId', realBmHex))
+                     .and(where.eq('tipo', 'bonus_respinto')),
+              );
+              if (existing == null) {
+                final bool isProposer = NicknameHelper.isSame(cleanP, propDa, uDocs);
+                final msg = isProposer
+                    ? 'La tua proposta "$nomeBM" per l\'evento "$evTitolo" non ha raggiunto il quorum ed è stata respinta.'
+                    : 'La proposta "$nomeBM" per l\'evento "$evTitolo" non ha raggiunto il quorum ed è stata respinta.';
+                await DbService.instance.notificheCollection.insertOne({
+                  'notificaId': 'bm_resp_${ts}_${cleanP.toLowerCase()}',
+                  'mittente': 'FantaEventi',
+                  'destinatario': cleanP,
+                  'titolo': '❌ Proposta Respinta: $nomeBM',
+                  'messaggio': msg,
+                  'eventoId': evId,
+                  'bonusId': realBmHex,
+                  'bonusTitolo': nomeBM,
+                  'tipo': 'bonus_respinto',
+                  'stato': 'respinto',
+                  'letto': false,
+                  'data': now.toIso8601String(),
+                });
+              }
+            }
+
+            // Sincronizza esitoVotazione su tutte le notifiche di proposta correlate
+            final relNots = await DbService.instance.notificheCollection.find().toList();
+            for (var rn in relNots) {
+              final bId = (rn['bonusId'] ?? '').toString().trim().toLowerCase();
+              final bTit = (rn['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+              if ((bId.isNotEmpty && (bId == realBmHex.toLowerCase() || bId == idOrEventoId.toLowerCase())) ||
+                  (bTit.isNotEmpty && bTit == nomeBM.toLowerCase())) {
+                await DbService.instance.notificheCollection.update(
+                  where.id(rn['_id'] as ObjectId),
+                  modify.set('esitoVotazione', 'respinto'),
+                );
+              }
+            }
+          } else if (isApprovato) {
             await DbService.instance.bonusMalusCollection.update(
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'approvato').set('approvato', true),
             );
+
+            for (var p in allParticipants) {
+              final cleanP = NicknameHelper.resolve(p, uDocs);
+              if (cleanP.isEmpty) continue;
+              final existing = await DbService.instance.notificheCollection.findOne(
+                where.eq('destinatario', cleanP)
+                     .and(where.eq('eventoId', evId))
+                     .and(where.eq('bonusId', realBmHex))
+                     .and(where.eq('tipo', 'bonus_approvato')),
+              );
+              if (existing == null) {
+                await DbService.instance.notificheCollection.insertOne({
+                  'notificaId': 'bm_app_${ts}_${cleanP.toLowerCase()}',
+                  'mittente': 'FantaEventi',
+                  'destinatario': cleanP,
+                  'titolo': '🎉 Nuova Regola Approvata: $nomeBM',
+                  'messaggio': 'La regola "$nomeBM" per l\'evento "$evTitolo" ha raggiunto il quorum ed è ora attiva nel catalogo!',
+                  'eventoId': evId,
+                  'bonusId': realBmHex,
+                  'bonusTitolo': nomeBM,
+                  'tipo': 'bonus_approvato',
+                  'stato': 'approvato',
+                  'letto': false,
+                  'data': now.toIso8601String(),
+                });
+              }
+            }
+
+            // Sincronizza esitoVotazione su tutte le notifiche di proposta correlate
+            final relNots = await DbService.instance.notificheCollection.find().toList();
+            for (var rn in relNots) {
+              final bId = (rn['bonusId'] ?? '').toString().trim().toLowerCase();
+              final bTit = (rn['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+              if ((bId.isNotEmpty && (bId == realBmHex.toLowerCase() || bId == idOrEventoId.toLowerCase())) ||
+                  (bTit.isNotEmpty && bTit == nomeBM.toLowerCase())) {
+                await DbService.instance.notificheCollection.update(
+                  where.id(rn['_id'] as ObjectId),
+                  modify.set('esitoVotazione', 'approvato'),
+                );
+              }
+            }
           }
         }
       } catch (_) {}
