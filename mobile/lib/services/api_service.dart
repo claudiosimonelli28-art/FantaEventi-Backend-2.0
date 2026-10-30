@@ -262,15 +262,6 @@ class ApiService {
     'User-Agent': 'FantaEventiApp',
   };
 
-  final Set<String> _locallyReadNotificaIds = {};
-  Set<String> get locallyReadNotificaIds => _locallyReadNotificaIds;
-
-  void markNotificaReadLocally(String notificaId) {
-    if (notificaId.isNotEmpty) {
-      _locallyReadNotificaIds.add(notificaId.trim().toLowerCase());
-    }
-  }
-
   Utente? _currentUser;
   final List<Utente> _utenti = [];
   final List<Evento> _eventi = [];
@@ -1973,7 +1964,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/utenti'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
@@ -2407,7 +2398,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/eventi'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
@@ -3252,7 +3243,7 @@ class ApiService {
         final res = await http.get(
           Uri.parse('$url/notifiche?utente=$cleanNick'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 5));
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
           final List<Map<String, dynamic>> resList = [];
@@ -3567,7 +3558,7 @@ class ApiService {
             'azione': azione,
             'utente': utente,
           }),
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200) {
           return;
@@ -4735,7 +4726,7 @@ class ApiService {
           Uri.parse('$url/notifiche/segna-letta'),
           headers: defaultHeaders,
           body: jsonEncode({'notificaId': notificaId}),
-        ).timeout(const Duration(milliseconds: 3000));
+        ).timeout(const Duration(seconds: 8));
 
         if (res.statusCode == 200) {
           return;
@@ -4842,12 +4833,12 @@ class ApiService {
         final resBm = await http.get(
           Uri.parse('$url/bonusmalus'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         final resVot = await http.get(
           Uri.parse('$url/votazioni'),
           headers: defaultHeaders,
-        ).timeout(const Duration(milliseconds: 3500));
+        ).timeout(const Duration(seconds: 8));
 
         if (resBm.statusCode == 200 && resVot.statusCode == 200 &&
             !resBm.body.contains('<html>') && !resVot.body.contains('<html>')) {
@@ -5276,7 +5267,7 @@ class ApiService {
             );
           }
 
-          // Raccogli tutti i partecipanti ed invitati dell'evento
+          // Invia notifica push broadcast per regola approvata
           final Set<String> allParticipants = {};
           final evMatchApprovaIdx = _eventi.indexWhere(
             (e) => e.id == targetEvId || e.titolo.toLowerCase() == targetEvId.toLowerCase(),
@@ -5286,60 +5277,6 @@ class ApiService {
             allParticipants.addAll(evMatchApprova.partecipanti);
             allParticipants.addAll(evMatchApprova.invitati);
           }
-          if (allParticipants.isEmpty) {
-            ObjectId? evObjId;
-            try { evObjId = ObjectId.fromHexString(targetEvId); } catch (_) {}
-            final evDoc = await db.collection('Evento').findOne(evObjId != null ? where.id(evObjId) : where.eq('titolo', targetEvId));
-            if (evDoc != null) {
-              final parts = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-              final invs = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-              allParticipants.addAll(parts);
-              allParticipants.addAll(invs);
-            }
-          }
-          String propDa = v.bonusMalus?.propostoDa ?? '';
-          if (propDa.isEmpty && bmDoc != null) {
-            propDa = (bmDoc['propostoDa'] ?? '').toString();
-          }
-          if (propDa.isNotEmpty) {
-            allParticipants.add(propDa);
-          }
-
-          final now = DateTime.now();
-          final ts = now.millisecondsSinceEpoch;
-          final evTitle = evMatch.titolo.isNotEmpty ? evMatch.titolo : targetEvId;
-
-          // 1. Inserimento Notifiche in-app per tutti i partecipanti
-          for (var p in allParticipants) {
-            final cleanP = resolveNickname(p);
-            if (cleanP.isEmpty) continue;
-            try {
-              final existing = await db.collection('Notifiche').findOne(
-                where.eq('destinatario', cleanP)
-                     .and(where.eq('eventoId', targetEvId))
-                     .and(where.eq('bonusId', targetBmId))
-                     .and(where.eq('tipo', 'bonus_approvato')),
-              );
-              if (existing == null) {
-                await db.collection('Notifiche').insertOne({
-                  'notificaId': 'bm_app_${ts}_${cleanP.toLowerCase()}',
-                  'mittente': 'FantaEventi',
-                  'destinatario': cleanP,
-                  'titolo': '🎉 Nuova Regola Approvata: $targetBmTitle',
-                  'messaggio': 'La regola "$targetBmTitle" per l\'evento "$evTitle" ha raggiunto il quorum ed è ora attiva nel catalogo!',
-                  'eventoId': targetEvId,
-                  'bonusId': targetBmId,
-                  'bonusTitolo': targetBmTitle,
-                  'tipo': 'bonus_approvato',
-                  'stato': 'approvato',
-                  'letto': false,
-                  'data': now.toIso8601String(),
-                });
-              }
-            } catch (_) {}
-          }
-
-          // 2. Notifica push broadcast per tutti i partecipanti
           if (allParticipants.isNotEmpty) {
             try {
               await PushNotificationService.instance.inviaPushAUtenti(
@@ -5354,21 +5291,6 @@ class ApiService {
               ).timeout(const Duration(seconds: 4), onTimeout: () {});
             } catch (_) {}
           }
-
-          // Sincronizza lo stato sulle vecchie notifiche di proposta
-          for (var notDoc in notDocs) {
-            final bId = (notDoc['bonusId'] ?? '').toString().trim().toLowerCase();
-            final bool isBonusMatch = (bId.isNotEmpty && (bId == targetBmId.toLowerCase() || bId == idOrEventoId.toLowerCase())) ||
-                (targetBmTitle.isNotEmpty && notDoc['bonusTitolo']?.toString().trim().toLowerCase() == targetBmTitle.toLowerCase());
-            if (isBonusMatch) {
-              try {
-                await db.collection('Notifiche').update(
-                  where.id(notDoc['_id'] as ObjectId),
-                  modify.set('esitoVotazione', 'approvato'),
-                );
-              } catch (_) {}
-            }
-          }
         } else if (nuovoStato == 'respinto') {
           ObjectId? bmObjId;
           try { bmObjId = ObjectId.fromHexString(targetBmId); } catch (_) {}
@@ -5382,104 +5304,6 @@ class ApiService {
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'respinto').set('approvato', false),
             );
-          }
-
-          // Raccogli tutti i partecipanti ed invitati dell'evento
-          final Set<String> allParticipants = {};
-          final evMatchRespIdx = _eventi.indexWhere(
-            (e) => e.id == targetEvId || e.titolo.toLowerCase() == targetEvId.toLowerCase(),
-          );
-          if (evMatchRespIdx != -1) {
-            final evMatchResp = _eventi[evMatchRespIdx];
-            allParticipants.addAll(evMatchResp.partecipanti);
-            allParticipants.addAll(evMatchResp.invitati);
-          }
-          if (allParticipants.isEmpty) {
-            ObjectId? evObjId;
-            try { evObjId = ObjectId.fromHexString(targetEvId); } catch (_) {}
-            final evDoc = await db.collection('Evento').findOne(evObjId != null ? where.id(evObjId) : where.eq('titolo', targetEvId));
-            if (evDoc != null) {
-              final parts = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-              final invs = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
-              allParticipants.addAll(parts);
-              allParticipants.addAll(invs);
-            }
-          }
-          String propDa = v.bonusMalus?.propostoDa ?? '';
-          if (propDa.isEmpty && bmDoc != null) {
-            propDa = (bmDoc['propostoDa'] ?? '').toString();
-          }
-          if (propDa.isNotEmpty) {
-            allParticipants.add(propDa);
-          }
-
-          final now = DateTime.now();
-          final ts = now.millisecondsSinceEpoch;
-          final evTitle = evMatch.titolo.isNotEmpty ? evMatch.titolo : targetEvId;
-
-          // 1. Inserimento Notifiche in-app per il proponente e tutti i partecipanti
-          for (var p in allParticipants) {
-            final cleanP = resolveNickname(p);
-            if (cleanP.isEmpty) continue;
-            try {
-              final existing = await db.collection('Notifiche').findOne(
-                where.eq('destinatario', cleanP)
-                     .and(where.eq('eventoId', targetEvId))
-                     .and(where.eq('bonusId', targetBmId))
-                     .and(where.eq('tipo', 'bonus_respinto')),
-              );
-              if (existing == null) {
-                final bool isProposer = isSamePerson(cleanP, propDa);
-                final msg = isProposer
-                    ? 'La tua proposta "$targetBmTitle" per l\'evento "$evTitle" non ha raggiunto il quorum ed è stata respinta.'
-                    : 'La proposta "$targetBmTitle" per l\'evento "$evTitle" non ha raggiunto il quorum ed è stata respinta.';
-                await db.collection('Notifiche').insertOne({
-                  'notificaId': 'bm_resp_${ts}_${cleanP.toLowerCase()}',
-                  'mittente': 'FantaEventi',
-                  'destinatario': cleanP,
-                  'titolo': '❌ Proposta Respinta: $targetBmTitle',
-                  'messaggio': msg,
-                  'eventoId': targetEvId,
-                  'bonusId': targetBmId,
-                  'bonusTitolo': targetBmTitle,
-                  'tipo': 'bonus_respinto',
-                  'stato': 'respinto',
-                  'letto': false,
-                  'data': now.toIso8601String(),
-                });
-              }
-            } catch (_) {}
-          }
-
-          // 2. Notifica push broadcast a tutti i partecipanti e al proponente
-          if (allParticipants.isNotEmpty) {
-            try {
-              await PushNotificationService.instance.inviaPushAUtenti(
-                allParticipants.toList(),
-                titolo: '❌ Proposta Respinta: $targetBmTitle',
-                messaggio: 'La proposta "$targetBmTitle" per l\'evento "$evTitle" non ha raggiunto il quorum ed è stata respinta.',
-                data: {
-                  'tipo': 'bonus_respinto',
-                  'eventoId': targetEvId,
-                  'bonusId': targetBmId,
-                },
-              ).timeout(const Duration(seconds: 4), onTimeout: () {});
-            } catch (_) {}
-          }
-
-          // Sincronizza lo stato sulle vecchie notifiche di proposta
-          for (var notDoc in notDocs) {
-            final bId = (notDoc['bonusId'] ?? '').toString().trim().toLowerCase();
-            final bool isBonusMatch = (bId.isNotEmpty && (bId == targetBmId.toLowerCase() || bId == idOrEventoId.toLowerCase())) ||
-                (targetBmTitle.isNotEmpty && notDoc['bonusTitolo']?.toString().trim().toLowerCase() == targetBmTitle.toLowerCase());
-            if (isBonusMatch) {
-              try {
-                await db.collection('Notifiche').update(
-                  where.id(notDoc['_id'] as ObjectId),
-                  modify.set('esitoVotazione', 'respinto'),
-                );
-              } catch (_) {}
-            }
           }
         }
       }

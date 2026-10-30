@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
@@ -146,12 +145,8 @@ class _NotificationsModalState extends State<NotificationsModal> {
       setState(() {
         _notifiche[idx]['letto'] = true;
       });
-      // Aggiornamento ISTANTANEO in locale (0 ms di latenza per il campanellino!)
-      _apiService.markNotificaReadLocally(notificaId);
+      await _apiService.segnaSingolaNotificaComeLetta(notificaId);
       widget.onRefreshHome();
-
-      // Persistenza su database in background
-      unawaited(_apiService.segnaSingolaNotificaComeLetta(notificaId));
       if (mounted) {
         AppToast.showInfo(
           context,
@@ -168,17 +163,12 @@ class _NotificationsModalState extends State<NotificationsModal> {
     setState(() {
       for (var n in _notifiche) {
         n['letto'] = true;
-        final nId = (n['id'] ?? n['notificaId'] ?? '').toString();
-        if (nId.isNotEmpty) {
-          _apiService.markNotificaReadLocally(nId);
-        }
       }
       _selectedNotificationIds.clear();
       _isSelectionMode = false;
       _selectedTabIndex = 1; // Sposta visivamente alla tab "Già Lette"
     });
-    widget.onRefreshHome();
-    unawaited(_apiService.segnaNotificheComeLette(nick));
+    await _apiService.segnaNotificheComeLette(nick);
     widget.onRefreshHome();
     if (mounted) {
       AppToast.showSuccess(
@@ -715,18 +705,10 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                 messaggio.contains('invitato') ||
                                 messaggio.contains('partecipare all\'evento');
 
-                            // 2b. Notifica di esito votazione (approvata / respinta)
-                            final bool isEsitoVotazione = tipo == 'bonus_approvato' ||
-                                tipo == 'bonus_respinto' ||
-                                tipo == 'votazione_esito' ||
-                                titolo.contains('Regola Approvata') ||
-                                titolo.contains('Proposta Respinta');
-
                             // 3. Proposta attiva per Votazioni Live (bonus/malus proposto da votare)
                             final bool isProposal = !isVarRelated &&
                                 !isAmicizia &&
                                 !isInvito &&
-                                !isEsitoVotazione &&
                                 (tipo == 'proposta_bonus_malus' ||
                                     tipo == 'proposta_votazione' ||
                                     tipo == 'proposta' ||
@@ -743,7 +725,6 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                 !isVarRelated &&
                                 !isAmicizia &&
                                 !isInvito &&
-                                !isEsitoVotazione &&
                                 (tipo == 'assegnazione_bonus' ||
                                     tipo == 'assegnazione_malus' ||
                                     tipo == 'bonus_assegnato' ||
@@ -759,17 +740,15 @@ class _NotificationsModalState extends State<NotificationsModal> {
                             final bool isPending = !isVarRelated &&
                                 !isAssegnazioneBonusMalus &&
                                 !isProposal &&
-                                !isEsitoVotazione &&
                                 (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
                                 stato == 'in_attesa';
 
                             // 6. Etichetta di stato
-                            final bool showStatusTag = isEsitoVotazione ||
-                                (!isProposal &&
+                            final bool showStatusTag = (!isProposal &&
                                     !isAssegnazioneBonusMalus &&
                                     !titolo.contains('accettat') &&
-                                    (tipo == 'invito' || tipo == 'richiesta_amicizia' || tipo == 'bonus_approvato' || tipo == 'bonus_respinto') &&
-                                    (stato == 'accettato' || stato == 'rifiutato' || stato == 'approvato' || stato == 'respinto')) ||
+                                    (tipo == 'invito' || tipo == 'richiesta_amicizia') &&
+                                    (stato == 'accettato' || stato == 'rifiutato')) ||
                                 (isVarRelated && stato != 'in_attesa');
 
                             return Container(
@@ -872,16 +851,15 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                                           stato == 'confermato' ||
                                                           stato == 'confermata' ||
                                                           stato == 'convalidato' ||
-                                                          stato == 'convalidata' ||
-                                                          tipo == 'bonus_approvato')
+                                                          stato == 'convalidata')
                                                       ? const Color(0xFF10B981)
                                                       : const Color(0xFFEF4444),
                                                   borderRadius: BorderRadius.circular(8),
                                                 ),
                                                 child: Text(
-                                                  (stato == 'approvata' || stato == 'approvato' || stato == 'convalidata' || stato == 'convalidato' || tipo == 'bonus_approvato')
-                                                      ? 'APPROVATA'
-                                                      : (stato == 'rifiutata' || stato == 'rifiutato' || stato == 'respinta' || stato == 'respinto' || stato == 'negato' || tipo == 'bonus_respinto')
+                                                  (stato == 'approvata' || stato == 'approvato' || stato == 'convalidata' || stato == 'convalidato')
+                                                      ? 'CONVALIDATA'
+                                                      : (stato == 'rifiutata' || stato == 'rifiutato' || stato == 'respinta' || stato == 'negato')
                                                           ? 'RESPINTA'
                                                           : stato.toUpperCase(),
                                                   style: GoogleFonts.poppins(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.bold),

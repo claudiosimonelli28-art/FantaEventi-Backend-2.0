@@ -124,9 +124,9 @@ class HomeViewModel extends BaseViewModel {
       _eventi = List<Evento>.from(meEventi);
 
       // Sblocca SUBITO la schermata: gli eventi appaiono all'istante!
-      notifyListeners();
       if (!silent && !hasExistingData) {
         setLoading(false);
+        notifyListeners();
       }
 
       // 3. Caricamento concorrente rapido delle risorse di supporto (in parallelo, zero blocchi)
@@ -136,7 +136,7 @@ class HomeViewModel extends BaseViewModel {
         _apiService.getUtenti(),
         _apiService.getVotazioni(),
         _apiService.getNotifiche(nick),
-      ]).timeout(const Duration(seconds: 4), onTimeout: () => [[], _votazioniList, <Map<String, dynamic>>[]]);
+      ]).timeout(const Duration(seconds: 10), onTimeout: () => [[], _votazioniList, <Map<String, dynamic>>[]]);
 
       if (isDisposed) return;
 
@@ -144,8 +144,8 @@ class HomeViewModel extends BaseViewModel {
       final meBonus = _apiService.bonusMalusList;
       final nots = results[2] is List<Map<String, dynamic>> ? results[2] as List<Map<String, dynamic>> : <Map<String, dynamic>>[];
       final unreadNots = nots.where((n) {
-        final nId = (n['id'] ?? n['notificaId'] ?? '').toString();
-        if (nId.isNotEmpty && (_readNotificaIds.contains(nId) || _apiService.locallyReadNotificaIds.contains(nId.toLowerCase()))) return false;
+        final nId = (n['id'] ?? '').toString();
+        if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
         if (n['letto'] == true || n['stato'] == 'letto') return false;
         return true;
       }).toList();
@@ -172,70 +172,6 @@ class HomeViewModel extends BaseViewModel {
     }
   }
 
-  /// Aggiornamento rapido per pull-to-refresh: rilascia subito la rotellina appena il feed eventi è pronto (<1s)!
-  Future<void> refreshFeedFast() async {
-    try {
-      _apiService.invalidateCache();
-      final meEventi = await _apiService.getEventi(forceRefresh: true).timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => _eventi,
-      );
-      if (!isDisposed) {
-        _eventi = List<Evento>.from(meEventi);
-        notifyListeners();
-      }
-    } catch (_) {}
-
-    // In background, aggiorna le altre schede e le notifiche senza bloccare la rotellina dello swipe
-    unawaited(() async {
-      try {
-        final curUser = _apiService.currentUser;
-        final nick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
-        final results = await Future.wait([
-          _apiService.getVotazioni(),
-          _apiService.getNotifiche(nick),
-        ]).timeout(const Duration(seconds: 4), onTimeout: () => [_votazioniList, <Map<String, dynamic>>[]]);
-
-        if (isDisposed) return;
-        final meVoti = results[0] is List<Votazione> ? results[0] as List<Votazione> : <Votazione>[];
-        final nots = results[1] is List<Map<String, dynamic>> ? results[1] as List<Map<String, dynamic>> : <Map<String, dynamic>>[];
-        final unreadNots = nots.where((n) {
-          final nId = (n['id'] ?? n['notificaId'] ?? '').toString();
-          if (nId.isNotEmpty && (_readNotificaIds.contains(nId) || _apiService.locallyReadNotificaIds.contains(nId.toLowerCase()))) return false;
-          if (n['letto'] == true || n['stato'] == 'letto') return false;
-          return true;
-        }).toList();
-
-        _votazioniList = List<Votazione>.from(meVoti);
-        _bonusMalusList = List<BonusMalus>.from(_apiService.bonusMalusList);
-        _numeroNotifiche = unreadNots.length;
-        notifyListeners();
-      } catch (_) {}
-    }());
-  }
-
-  /// Decrementa e azzera istantaneamente il badge delle notifiche (0 ms di latenza)
-  void decrementNotificationBadge(String notificaId) {
-    if (notificaId.isNotEmpty) {
-      _readNotificaIds.add(notificaId);
-      _readNotificaIds.add(notificaId.toLowerCase());
-      _apiService.markNotificaReadLocally(notificaId);
-      if (_numeroNotifiche > 0) {
-        _numeroNotifiche--;
-      }
-      notifyListeners();
-    }
-  }
-
-  /// Sincronizza istantaneamente un nuovo evento appena creato per mostrarlo a zero latenza
-  void syncCreatedEvent(Evento ev) {
-    final exists = _eventi.any((e) => e.id == ev.id || (e.titolo == ev.titolo && e.propostoDa == ev.propostoDa));
-    if (!exists) {
-      _eventi.insert(0, ev);
-      notifyListeners();
-    }
-  }
-
   /// Aggiorna istantaneamente il contatore notifiche non lette per la campanellina
   Future<void> refreshNotifications() async {
     final curUser = _apiService.currentUser;
@@ -243,8 +179,8 @@ class HomeViewModel extends BaseViewModel {
     final nick = curUser.nickname.isNotEmpty ? curUser.nickname : curUser.nome;
     final nots = await _apiService.getNotifiche(nick);
     final unreadNots = nots.where((n) {
-      final nId = (n['id'] ?? n['notificaId'] ?? '').toString();
-      if (nId.isNotEmpty && (_readNotificaIds.contains(nId) || _apiService.locallyReadNotificaIds.contains(nId.toLowerCase()))) return false;
+      final nId = (n['id'] ?? '').toString();
+      if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
       if (n['letto'] == true || n['stato'] == 'letto') return false;
       return true;
     }).toList();

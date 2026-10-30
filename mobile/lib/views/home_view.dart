@@ -411,7 +411,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: NotificationsModal(
-          onRefreshHome: () => _viewModel.refreshNotifications(),
+          onRefreshHome: () => _loadData(silent: true, forceRefresh: true),
           onNavigateTab: (tabIndex) {
             if (tabIndex >= 0 && tabIndex < _tabController.length) {
               _tabController.animateTo(tabIndex);
@@ -1338,7 +1338,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
 
     if (tuttiEventi.isEmpty) {
       return RefreshIndicator(
-        onRefresh: () => _viewModel.refreshFeedFast(),
+        onRefresh: () => _loadData(forceRefresh: true),
         color: const Color(0xFFFACC15),
         backgroundColor: const Color(0xFF1E293B),
         child: SingleChildScrollView(
@@ -1406,7 +1406,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
         // Lista eventi filtrati o messaggio vuoto con RefreshIndicator diretto sul contenuto scrollabile
         Expanded(
           child: RefreshIndicator(
-            onRefresh: () => _viewModel.refreshFeedFast(),
+            onRefresh: () => _loadData(forceRefresh: true),
             color: const Color(0xFFFACC15),
             backgroundColor: const Color(0xFF1E293B),
             child: filteredEventi.isEmpty
@@ -1890,7 +1890,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
     }
 
     return RefreshIndicator(
-      onRefresh: () => _viewModel.refreshFeedFast(),
+      onRefresh: () => _loadData(forceRefresh: true),
       color: const Color(0xFFFACC15),
       backgroundColor: const Color(0xFF1E293B),
       child: child,
@@ -2214,7 +2214,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
     }
 
     return RefreshIndicator(
-      onRefresh: () => _viewModel.refreshFeedFast(),
+      onRefresh: () => _loadData(forceRefresh: true),
       color: const Color(0xFFFACC15),
       backgroundColor: const Color(0xFF1E293B),
       child: child,
