@@ -356,12 +356,13 @@ class PushNotificationService {
       if (cur == null) return;
 
       final prefs = await SharedPreferences.getInstance();
-      const String currentTokenBuildKey = 'fcm_token_build_v2_3';
+      const String currentTokenBuildKey = 'fcm_token_build_v2_4';
       final isNewBuild = prefs.getString('fcm_token_build') != currentTokenBuildKey;
 
       if (forceRefresh || isNewBuild) {
         try {
           await _messaging!.deleteToken();
+          await Future.delayed(const Duration(milliseconds: 500));
           await prefs.setString('fcm_token_build', currentTokenBuildKey);
           debugPrint('FCM Token resettato per garantire emissione token valida');
         } catch (e) {
@@ -369,7 +370,10 @@ class PushNotificationService {
         }
       }
 
-      final token = overrideToken ?? await _messaging!.getToken();
+      String? token = overrideToken;
+      if (token == null || token.isEmpty) {
+        token = await _messaging!.getToken();
+      }
       if (token != null && token.isNotEmpty) {
         // Registra SEMPRE il token su Render e MongoDB Atlas (operazione addToSet idempotente e sicura)
         await ApiService().salvaFcmToken(token);

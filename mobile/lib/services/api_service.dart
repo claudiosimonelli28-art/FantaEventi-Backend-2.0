@@ -3695,7 +3695,7 @@ class ApiService {
           // Invia notifica push reale per la tendina di sistema a tutti gli invitati
           if (invitati.isNotEmpty) {
             try {
-              await PushNotificationService.instance.inviaPushAUtenti(
+              unawaited(PushNotificationService.instance.inviaPushAUtenti(
                 invitati,
                 titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
                 messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
@@ -3703,7 +3703,7 @@ class ApiService {
                   'tipo': 'invito',
                   'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
                 },
-              ).timeout(const Duration(seconds: 4), onTimeout: () {});
+              ));
             } catch (_) {}
           }
 
@@ -3798,7 +3798,7 @@ class ApiService {
         // Invia notifica push reale per la tendina di sistema a tutti gli invitati
         if (invitati.isNotEmpty) {
           try {
-            await PushNotificationService.instance.inviaPushAUtenti(
+            unawaited(PushNotificationService.instance.inviaPushAUtenti(
               invitati,
               titolo: '🎉 Invito ad Evento: ${nuovoEvento.titolo}',
               messaggio: '$creatore ti ha invitato a partecipare all\'evento "${nuovoEvento.titolo}"!',
@@ -3806,7 +3806,7 @@ class ApiService {
                 'tipo': 'invito',
                 'eventoId': insertedEvId.isNotEmpty ? insertedEvId : realEvId,
               },
-            ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            ));
           } catch (_) {}
         }
 
@@ -4205,7 +4205,7 @@ class ApiService {
         // Invia notifica push reale per la tendina di sistema a tutti i partecipanti
         if (uniqueDestMap.isNotEmpty) {
           try {
-            await PushNotificationService.instance.inviaPushAUtenti(
+            unawaited(PushNotificationService.instance.inviaPushAUtenti(
               uniqueDestMap.values.toList(),
               titolo: '⚡ Nuova Regola Proposta: ${nuovoBonus.titolo}',
               messaggio: '$curUserNick ha proposto "${nuovoBonus.titolo}" (${nuovoBonus.punti >= 0 ? "+${nuovoBonus.punti}" : nuovoBonus.punti} PT) in "${evMatch.titolo}". Entra a votare!',
@@ -4214,7 +4214,7 @@ class ApiService {
                 'eventoId': eventoId,
                 'bonusId': bmHexId,
               },
-            ).timeout(const Duration(seconds: 4), onTimeout: () {});
+            ));
           } catch (_) {}
         }
 
