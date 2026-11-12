@@ -6091,8 +6091,20 @@ class ApiService {
               'dettagli': d['dettagli'] ?? '',
               'timestamp': d['timestamp'] ?? '',
               'stato': d['stato'] ?? 'in_attesa',
+              'ammonizioneScontata': d['ammonizioneScontata'] == true,
             };
           }).toList();
+        } else {
+          // Arricchisce con il flag ammonizioneScontata da MongoDB
+          final docs = await db.collection('Segnalazioni').find(
+            where.eq('ammonizioneScontata', true)
+          ).toList();
+          final scontateIds = docs.map((d) => d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : d['_id']?.toString() ?? '').toSet();
+          for (var s in resultList) {
+            if (scontateIds.contains(s['id'])) {
+              s['ammonizioneScontata'] = true;
+            }
+          }
         }
 
         final uDocs = await db.collection('Utenti').find(
@@ -6108,24 +6120,57 @@ class ApiService {
       }
     } catch (_) {}
 
-    // Anche se una pratica passata presente in lista ha stato 'ammonito', l'utente è già ammonito
+    // Analisi cronologica (dalla pratica più recente alla più vecchia):
+    // Se l'evento disciplinare più recente di un utente è 'bannato' o 'riabilitato',
+    // tutte le ammonizioni precedenti sono già state scontate/resettate!
+    final Set<String> utentiValutatiDaStorico = {};
     for (var s in resultList) {
-      if ((s['stato'] ?? '').toString() == 'ammonito') {
-        final nick = resolveNickname((s['segnalato'] ?? '').toString()).toLowerCase();
-        if (nick.isNotEmpty) {
+      final st = (s['stato'] ?? '').toString().toLowerCase();
+      final nick = resolveNickname((s['segnalato'] ?? '').toString()).toLowerCase();
+      if (nick.isEmpty || utentiValutatiDaStorico.contains(nick)) continue;
+
+      if (st == 'bannato' || st == 'riabilitato') {
+        utentiGiaAmmoniti.remove(nick);
+        utentiValutatiDaStorico.add(nick);
+      } else if (st == 'ammonito') {
+        if (s['ammonizioneScontata'] == true) {
+          utentiGiaAmmoniti.remove(nick);
+        } else {
           utentiGiaAmmoniti.add(nick);
         }
+        utentiValutatiDaStorico.add(nick);
       }
     }
 
     for (var s in resultList) {
       final nick = resolveNickname((s['segnalato'] ?? '').toString()).toLowerCase();
-      if (utentiGiaAmmoniti.contains(nick)) {
-        s['giaAmmonito'] = true;
-      }
+      s['giaAmmonito'] = utentiGiaAmmoniti.contains(nick);
     }
 
     return resultList;
+  }
+
+  /// Verifica se l'utente ha un'ammonizione attiva (1/2) NON ancora scontata da un successivo ban o riabilitazione.
+  bool haAmmonizioneAttiva(String targetNick, List<Map<String, dynamic>> segnalazioni, {String? excludeId}) {
+    for (var item in segnalazioni) {
+      if (excludeId != null && item['id'] == excludeId) continue;
+      final itemTarget = (item['segnalato'] ?? '').toString();
+      if (!isSamePerson(itemTarget, targetNick)) continue;
+      final st = (item['stato'] ?? '').toString().toLowerCase();
+      if (st == 'bannato' || st == 'riabilitato') {
+        return false;
+      }
+      if (st == 'ammonito') {
+        if (item['ammonizioneScontata'] == true) return false;
+        return true;
+      }
+    }
+    for (var item in segnalazioni) {
+      if (isSamePerson((item['segnalato'] ?? '').toString(), targetNick)) {
+        return item['giaAmmonito'] == true;
+      }
+    }
+    return false;
   }
 
   Future<bool> gestisciSegnalazione({
@@ -6226,6 +6271,12 @@ class ApiService {
                 break;
               }
             }
+            // Contrassegna tutte le ammonizioni pregresse come già scontate dal ban
+            await db.collection('Segnalazioni').update(
+              where.eq('segnalato', cleanTarget).and(where.eq('stato', 'ammonito')),
+              modify.set('ammonizioneScontata', true),
+              multiUpdate: true,
+            );
             if (!serverHandled) {
               await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'bannato'));
               serverHandled = true;
@@ -6258,6 +6309,12 @@ class ApiService {
                 break;
               }
             }
+            // Contrassegna tutte le ammonizioni pregresse come già scontate dalla riabilitazione
+            await db.collection('Segnalazioni').update(
+              where.eq('segnalato', cleanTarget).and(where.eq('stato', 'ammonito')),
+              modify.set('ammonizioneScontata', true),
+              multiUpdate: true,
+            );
             if (!serverHandled) {
               await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'riabilitato'));
               serverHandled = true;

@@ -3666,14 +3666,19 @@ class _ProfileViewState extends State<ProfileView> {
                             if (stato == 'bannato') statoColor = const Color(0xFFEF4444);
                             if (stato == 'archiviata' || stato == 'riabilitato') statoColor = const Color(0xFF10B981);
 
-                            final bool isGiaAmmonito = s['giaAmmonito'] == true ||
-                                segnalazioni.any((other) =>
-                                    other['id'] != id &&
-                                    ApiService().isSamePerson((other['segnalato'] ?? '').toString(), segnalato) &&
-                                    other['stato'] == 'ammonito');
+                            final bool isGiaAmmonito = ApiService().haAmmonizioneAttiva(
+                              segnalato,
+                              segnalazioni,
+                              excludeId: id,
+                            );
 
                             Future<void> eseguiConConferma(String rawAzione) async {
-                              final String azione = (rawAzione == 'ammonisci' && isGiaAmmonito)
+                              final bool giaAmmonitoOra = ApiService().haAmmonizioneAttiva(
+                                segnalato,
+                                segnalazioni,
+                                excludeId: id,
+                              );
+                              final String azione = (rawAzione == 'ammonisci' && giaAmmonitoOra)
                                   ? 'banna_seconda_ammonizione'
                                   : rawAzione;
 
@@ -3695,6 +3700,7 @@ class _ProfileViewState extends State<ProfileView> {
                                 AppToast.showSuccess(context, '1ª Ammonizione Inviata', 'Richiamo ufficiale inviato a @$segnalato.');
                                 setSheetState(() {
                                   s['stato'] = 'ammonito';
+                                  s['ammonizioneScontata'] = false;
                                   for (var item in segnalazioni) {
                                     if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
                                       item['giaAmmonito'] = true;
@@ -3708,6 +3714,9 @@ class _ProfileViewState extends State<ProfileView> {
                                   for (var item in segnalazioni) {
                                     if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
                                       item['giaAmmonito'] = false;
+                                      if (item['stato'] == 'ammonito') {
+                                        item['ammonizioneScontata'] = true;
+                                      }
                                     }
                                   }
                                 });
@@ -3718,6 +3727,9 @@ class _ProfileViewState extends State<ProfileView> {
                                   for (var item in segnalazioni) {
                                     if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
                                       item['giaAmmonito'] = false;
+                                      if (item['stato'] == 'ammonito') {
+                                        item['ammonizioneScontata'] = true;
+                                      }
                                     }
                                   }
                                 });
@@ -3729,7 +3741,7 @@ class _ProfileViewState extends State<ProfileView> {
                                     if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
                                       item['giaAmmonito'] = false;
                                       if (item['stato'] == 'ammonito') {
-                                        item['stato'] = 'archiviata';
+                                        item['ammonizioneScontata'] = true;
                                       }
                                     }
                                   }
