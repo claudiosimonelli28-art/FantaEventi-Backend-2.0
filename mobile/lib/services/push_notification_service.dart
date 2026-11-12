@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:googleapis_auth/auth_io.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
@@ -14,6 +15,7 @@ import '../views/event_detail_view.dart';
 import '../views/vote_view.dart';
 import '../views/notifications_modal.dart';
 import '../views/profile_view.dart';
+import '../views/login_view.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -34,6 +36,98 @@ class PushNotificationService {
 
   /// Callback invocato alla ricezione di una notifica push in primo piano
   VoidCallback? onNotificationReceived;
+
+  static bool _isShowingBanModal = false;
+
+  /// Espelle immediatamente l'utente bannato dalla sessione attiva e mostra un avviso bloccante
+  static Future<void> enforceAccountSuspension() async {
+    if (_isShowingBanModal) return;
+    if (ApiService().currentUser == null) return;
+    _isShowingBanModal = true;
+
+    try {
+      await ApiService().logout();
+    } catch (_) {}
+
+    final navState = navigatorKey.currentState;
+    if (navState != null) {
+      navState.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginView()),
+        (route) => false,
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = navigatorKey.currentContext;
+      if (ctx == null) {
+        _isShowingBanModal = false;
+        return;
+      }
+      showDialog(
+        context: ctx,
+        barrierDismissible: false,
+        builder: (dialogCtx) => AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.gavel_rounded, color: Color(0xFFEF4444), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Account Sospeso',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Il tuo account è stato sospeso dall\'Amministrazione per violazione delle linee guida della community di FantaEventi.\n\nLa sessione attiva è stata terminata. Per maggiori informazioni o chiarimenti contatta l\'Amministratore.',
+            style: GoogleFonts.inter(
+              color: const Color(0xFFCBD5E1),
+              fontSize: 13.5,
+              height: 1.45,
+            ),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  _isShowingBanModal = false;
+                  Navigator.of(dialogCtx).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEF4444),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(
+                  'HO CAPITO',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ).then((_) => _isShowingBanModal = false);
+    });
+  }
 
   FirebaseMessaging? _messaging;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
@@ -199,9 +293,18 @@ class PushNotificationService {
       await requestPermissions();
 
       // 1. Notifiche in PRIMO PIANO (App aperta e attiva)
+      ApiService.onCurrentUserBanned = () {
+        enforceAccountSuspension();
+      };
+
       try {
         FirebaseMessaging.onMessage.listen((RemoteMessage message) {
           _showForegroundNotification(message);
+          final tipoMsg = (message.data['tipo'] ?? '').toString().toLowerCase().trim();
+          if (tipoMsg == 'ban_utente') {
+            enforceAccountSuspension();
+            return;
+          }
           onNotificationReceived?.call();
         });
 
@@ -500,7 +603,10 @@ class PushNotificationService {
           _apriCentroNotifiche(context);
           return;
         }
-      } else if (tipo.contains('amicizia')) {
+      } else if (tipo == 'ban_utente') {
+        enforceAccountSuspension();
+        return;
+      } else if (tipo.contains('amicizia') || tipo == 'segnalazione_utente') {
         if (context.mounted) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const ProfileView()),

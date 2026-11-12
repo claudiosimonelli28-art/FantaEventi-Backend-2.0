@@ -24,19 +24,37 @@ class SegnalazioneController {
         );
       }
 
+      final nowIso = DateTime.now().toIso8601String();
       final doc = {
         'segnalatore': segnalatore,
         'segnalato': segnalato,
         'motivo': motivo,
         'dettagli': dettagli,
-        'timestamp': DateTime.now().toIso8601String(),
-        'stato': 'in_attesa', // in_attesa | ammonito | bannato | archiviata
+        'timestamp': nowIso,
+        'stato': 'in_attesa', // in_attesa | ammonito | bannato | riabilitato | archiviata
       };
 
       await DbService.instance.segnalazioniCollection.insertOne(doc);
 
+      // Notifica in-app per Cloud (Amministratore)
+      await DbService.instance.notificheCollection.insertOne({
+        'mittente': segnalatore,
+        'destinatario': 'Cloud',
+        'tipo': 'segnalazione_utente',
+        'titolo': '🛡️ Nuova Segnalazione Community',
+        'messaggio': '@$segnalatore ha segnalato @$segnalato per "$motivo"${dettagli.isNotEmpty ? ' ("$dettagli")' : ''}. Apri il Centro Moderazione nel tuo Profilo per gestirla.',
+        'stato': 'in_attesa',
+        'letto': false,
+        'data': nowIso,
+        'timestamp': nowIso,
+      });
+
       return Response.ok(
-        jsonEncode({'success': true, 'message': 'Segnalazione registrata con successo'}),
+        jsonEncode({
+          'success': true,
+          'notificaCreata': true,
+          'message': 'Segnalazione registrata con successo',
+        }),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
@@ -114,6 +132,7 @@ class SegnalazioneController {
 
       final uDocs = await UtenteController.getCachedUtentiDocs();
       final cleanSegnalato = NicknameHelper.resolve(segnalato, uDocs);
+      final nowIso = DateTime.now().toIso8601String();
 
       if (azione == 'ammonisci') {
         await DbService.instance.segnalazioniCollection.update(
@@ -123,16 +142,19 @@ class SegnalazioneController {
 
         // Notifica ufficiale di ammonimento al segnalato
         await DbService.instance.notificheCollection.insertOne({
-          'tipo': 'ammonizione_utente',
-          'titolo': '⚠️ Richiamo di Moderazione',
-          'messaggio': 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+          'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
-          'timestamp': DateTime.now().toIso8601String(),
+          'tipo': 'ammonizione_utente',
+          'titolo': '⚠️ Richiamo Ufficiale di Moderazione',
+          'messaggio': 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+          'stato': 'in_attesa',
           'letto': false,
+          'data': nowIso,
+          'timestamp': nowIso,
         });
 
         return Response.ok(
-          jsonEncode({'success': true, 'azione': 'ammonito'}),
+          jsonEncode({'success': true, 'azione': 'ammonito', 'notificaCreata': true}),
           headers: {'content-type': 'application/json'},
         );
       } else if (azione == 'banna') {
@@ -153,9 +175,58 @@ class SegnalazioneController {
             break;
           }
         }
+        UtenteController.invalidateCache();
+
+        await DbService.instance.notificheCollection.insertOne({
+          'mittente': 'Amministrazione',
+          'destinatario': cleanSegnalato,
+          'tipo': 'ban_utente',
+          'titolo': '⛔ Account Sospeso',
+          'messaggio': 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
+          'stato': 'in_attesa',
+          'letto': false,
+          'data': nowIso,
+          'timestamp': nowIso,
+        });
 
         return Response.ok(
-          jsonEncode({'success': true, 'azione': 'bannato'}),
+          jsonEncode({'success': true, 'azione': 'bannato', 'notificaCreata': true}),
+          headers: {'content-type': 'application/json'},
+        );
+      } else if (azione == 'sbanna' || azione == 'riabilita') {
+        await DbService.instance.segnalazioniCollection.update(
+          sSelector,
+          modify.set('stato', 'riabilitato'),
+        );
+
+        // Riabilita account su Utenti
+        for (var uDoc in uDocs) {
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+          if (NicknameHelper.isSame(uNick, cleanSegnalato, uDocs)) {
+            final uId = uDoc['_id'] as ObjectId;
+            await DbService.instance.utentiCollection.update(
+              where.id(uId),
+              modify.set('isBanned', false),
+            );
+            break;
+          }
+        }
+        UtenteController.invalidateCache();
+
+        await DbService.instance.notificheCollection.insertOne({
+          'mittente': 'Amministrazione',
+          'destinatario': cleanSegnalato,
+          'tipo': 'riabilita_utente',
+          'titolo': '✅ Account Riabilitato',
+          'messaggio': 'La sospensione del tuo account è stata revocata dall\'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
+          'stato': 'in_attesa',
+          'letto': false,
+          'data': nowIso,
+          'timestamp': nowIso,
+        });
+
+        return Response.ok(
+          jsonEncode({'success': true, 'azione': 'riabilitato', 'notificaCreata': true}),
           headers: {'content-type': 'application/json'},
         );
       } else if (azione == 'archivia') {
@@ -165,13 +236,20 @@ class SegnalazioneController {
         );
 
         return Response.ok(
-          jsonEncode({'success': true, 'azione': 'archiviata'}),
+          jsonEncode({'success': true, 'azione': 'archiviata', 'notificaCreata': true}),
+          headers: {'content-type': 'application/json'},
+        );
+      } else if (azione == 'elimina') {
+        await DbService.instance.segnalazioniCollection.remove(sSelector);
+
+        return Response.ok(
+          jsonEncode({'success': true, 'azione': 'eliminata', 'notificaCreata': true}),
           headers: {'content-type': 'application/json'},
         );
       }
 
       return Response.badRequest(
-        body: jsonEncode({'error': 'Azione non riconosciuta (ammonisci, banna, archivia)'}),
+        body: jsonEncode({'error': 'Azione non riconosciuta (ammonisci, banna, sbanna, archivia, elimina)'}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

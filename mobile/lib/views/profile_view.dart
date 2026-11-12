@@ -3650,12 +3650,45 @@ class _ProfileViewState extends State<ProfileView> {
                             final segnalato = s['segnalato'] ?? '';
                             final motivo = s['motivo'] ?? '';
                             final dettagli = s['dettagli'] ?? '';
-                            final stato = s['stato'] ?? 'in_attesa';
+                            final stato = (s['stato'] ?? 'in_attesa').toString();
 
                             Color statoColor = const Color(0xFFF59E0B);
                             if (stato == 'ammonito') statoColor = const Color(0xFF38BDF8);
                             if (stato == 'bannato') statoColor = const Color(0xFFEF4444);
-                            if (stato == 'archiviata') statoColor = const Color(0xFF10B981);
+                            if (stato == 'archiviata' || stato == 'riabilitato') statoColor = const Color(0xFF10B981);
+
+                            Future<void> eseguiConConferma(String azione) async {
+                              final confermato = await _confermaAzioneModerazione(
+                                context: context,
+                                azione: azione,
+                                segnalato: segnalato,
+                              );
+                              if (confermato != true) return;
+
+                              final ok = await _viewModel.gestisciSegnalazione(
+                                segnalazioneId: id,
+                                azione: azione,
+                                segnalato: segnalato,
+                              );
+                              if (!ok || !context.mounted) return;
+
+                              if (azione == 'ammonisci') {
+                                AppToast.showSuccess(context, 'Ammonizione Inviata', 'Richiamo ufficiale inviato a @$segnalato.');
+                                setSheetState(() => s['stato'] = 'ammonito');
+                              } else if (azione == 'banna') {
+                                AppToast.showSuccess(context, 'Account Sospeso', '@$segnalato è stato bannato ed espulso dall\'app.');
+                                setSheetState(() => s['stato'] = 'bannato');
+                              } else if (azione == 'sbanna') {
+                                AppToast.showSuccess(context, 'Account Riabilitato', 'Il ban di @$segnalato è stato rimosso.');
+                                setSheetState(() => s['stato'] = 'riabilitato');
+                              } else if (azione == 'archivia') {
+                                AppToast.showSuccess(context, 'Pratica Archiviata', 'La segnalazione è stata archiviata.');
+                                setSheetState(() => s['stato'] = 'archiviata');
+                              } else if (azione == 'elimina') {
+                                AppToast.showInfo(context, 'Segnalazione Rimossa', 'Pratica rimossa dall\'elenco.');
+                                setSheetState(() => segnalazioni.removeAt(index));
+                              }
+                            }
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -3687,6 +3720,73 @@ class _ProfileViewState extends State<ProfileView> {
                                           style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: statoColor),
                                         ),
                                       ),
+                                      const SizedBox(width: 4),
+                                      PopupMenuButton<String>(
+                                        tooltip: 'Opzioni Account & Pratica',
+                                        color: const Color(0xFF1E293B),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          side: const BorderSide(color: Color(0xFF334155)),
+                                        ),
+                                        icon: const Icon(Icons.more_vert_rounded, color: Color(0xFFCBD5E1), size: 20),
+                                        onSelected: (val) => eseguiConConferma(val),
+                                        itemBuilder: (_) => [
+                                          if (stato != 'ammonito')
+                                            PopupMenuItem(
+                                              value: 'ammonisci',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.warning_amber_rounded, color: Color(0xFF38BDF8), size: 18),
+                                                  const SizedBox(width: 10),
+                                                  Text('Ammonisci @$segnalato', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                                                ],
+                                              ),
+                                            ),
+                                          if (stato != 'bannato')
+                                            PopupMenuItem(
+                                              value: 'banna',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.gavel_rounded, color: Color(0xFFEF4444), size: 18),
+                                                  const SizedBox(width: 10),
+                                                  Text('Banna account @$segnalato', style: GoogleFonts.inter(color: const Color(0xFFFCA5A5), fontSize: 13, fontWeight: FontWeight.w600)),
+                                                ],
+                                              ),
+                                            ),
+                                          if (stato == 'bannato')
+                                            PopupMenuItem(
+                                              value: 'sbanna',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.lock_open_rounded, color: Color(0xFF10B981), size: 18),
+                                                  const SizedBox(width: 10),
+                                                  Text('Riabilita account @$segnalato', style: GoogleFonts.inter(color: const Color(0xFF6EE7B7), fontSize: 13, fontWeight: FontWeight.w600)),
+                                                ],
+                                              ),
+                                            ),
+                                          if (stato != 'archiviata')
+                                            PopupMenuItem(
+                                              value: 'archivia',
+                                              child: Row(
+                                                children: [
+                                                  const Icon(Icons.archive_outlined, color: Color(0xFF94A3B8), size: 18),
+                                                  const SizedBox(width: 10),
+                                                  Text('Archivia pratica', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
+                                                ],
+                                              ),
+                                            ),
+                                          PopupMenuItem(
+                                            value: 'elimina',
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.delete_outline_rounded, color: Color(0xFFF87171), size: 18),
+                                                const SizedBox(width: 10),
+                                                Text('Rimuovi segnalazione', style: GoogleFonts.inter(color: const Color(0xFFF87171), fontSize: 13)),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 6),
@@ -3702,59 +3802,86 @@ class _ProfileViewState extends State<ProfileView> {
                                     ),
                                   ],
                                   const SizedBox(height: 12),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          icon: const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFF38BDF8)),
-                                          label: Text('Ammonisci', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF38BDF8))),
+                                  if (stato == 'in_attesa')
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            icon: const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFF38BDF8)),
+                                            label: Text('Ammonisci', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF38BDF8))),
+                                            style: OutlinedButton.styleFrom(
+                                              side: const BorderSide(color: Color(0xFF38BDF8)),
+                                              padding: const EdgeInsets.symmetric(vertical: 8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            onPressed: () => eseguiConConferma('ammonisci'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            icon: const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFFEF4444)),
+                                            label: Text('Banna', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444))),
+                                            style: OutlinedButton.styleFrom(
+                                              side: const BorderSide(color: Color(0xFFEF4444)),
+                                              padding: const EdgeInsets.symmetric(vertical: 8),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                            ),
+                                            onPressed: () => eseguiConConferma('banna'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        OutlinedButton.icon(
+                                          icon: const Icon(Icons.archive_outlined, color: Color(0xFF94A3B8), size: 15),
+                                          label: Text('Archivia', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFCBD5E1))),
                                           style: OutlinedButton.styleFrom(
-                                            side: const BorderSide(color: Color(0xFF38BDF8)),
-                                            padding: const EdgeInsets.symmetric(vertical: 8),
+                                            side: const BorderSide(color: Color(0xFF475569)),
+                                            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
                                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                           ),
-                                          onPressed: () async {
-                                            final ok = await _viewModel.gestisciSegnalazione(segnalazioneId: id, azione: 'ammonisci', segnalato: segnalato);
-                                            if (ok && mounted) {
-                                              AppToast.showSuccess(context, 'Ammonizione Inviata', 'Richiamo ufficiale inviato a @$segnalato.');
-                                              setSheetState(() => s['stato'] = 'ammonito');
-                                            }
-                                          },
+                                          onPressed: () => eseguiConConferma('archivia'),
                                         ),
+                                      ],
+                                    )
+                                  else if (stato == 'bannato')
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton.icon(
+                                        icon: const Icon(Icons.lock_open_rounded, size: 15, color: Color(0xFF10B981)),
+                                        label: Text(
+                                          'Rimuovi Ban / Riabilita @$segnalato',
+                                          style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.bold, color: const Color(0xFF10B981)),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(color: Color(0xFF10B981)),
+                                          padding: const EdgeInsets.symmetric(vertical: 9),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        onPressed: () => eseguiConConferma('sbanna'),
                                       ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: OutlinedButton.icon(
-                                          icon: const Icon(Icons.gavel_rounded, size: 14, color: Color(0xFFEF4444)),
-                                          label: Text('Banna', style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444))),
-                                          style: OutlinedButton.styleFrom(
-                                            side: const BorderSide(color: Color(0xFFEF4444)),
-                                            padding: const EdgeInsets.symmetric(vertical: 8),
-                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    )
+                                  else
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.04),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.check_circle_outline_rounded, size: 14, color: statoColor),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              'Pratica gestita (${stato.toUpperCase()}) • Usa il menù ⋮ per altre azioni',
+                                              style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                            ),
                                           ),
-                                          onPressed: () async {
-                                            final ok = await _viewModel.gestisciSegnalazione(segnalazioneId: id, azione: 'banna', segnalato: segnalato);
-                                            if (ok && mounted) {
-                                              AppToast.showSuccess(context, 'Account Sospeso', '@$segnalato è stato bannato.');
-                                              setSheetState(() => s['stato'] = 'bannato');
-                                            }
-                                          },
-                                        ),
+                                        ],
                                       ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(Icons.archive_outlined, color: Color(0xFF94A3B8), size: 20),
-                                        tooltip: 'Archivia',
-                                        onPressed: () async {
-                                          final ok = await _viewModel.gestisciSegnalazione(segnalazioneId: id, azione: 'archivia', segnalato: segnalato);
-                                          if (ok && mounted) {
-                                            AppToast.showSuccess(context, 'Archiviata', 'Segnalazione archiviata.');
-                                            setSheetState(() => s['stato'] = 'archiviata');
-                                          }
-                                        },
-                                      ),
-                                    ],
-                                  ),
+                                    ),
                                 ],
                               ),
                             );
@@ -3767,6 +3894,165 @@ class _ProfileViewState extends State<ProfileView> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Future<bool?> _confermaAzioneModerazione({
+    required BuildContext context,
+    required String azione,
+    required String segnalato,
+  }) {
+    String titolo = '';
+    String sottotitolo = '';
+    List<String> conseguenze = [];
+    Color accentColor = const Color(0xFFF59E0B);
+    IconData iconData = Icons.shield_rounded;
+    String confirmLabel = 'CONFERMA';
+
+    if (azione == 'ammonisci') {
+      titolo = 'Sei sicuro di voler ammonire @$segnalato?';
+      sottotitolo = 'Questa azione comporterà quanto segue:';
+      conseguenze = [
+        'Verrà inviata una notifica ufficiale di richiamo (sia Push che In-App) a @$segnalato.',
+        'La pratica verrà contrassegnata con lo stato "AMMONITO".',
+        'L\'account di @$segnalato resterà attivo ma formalmente avvisato.',
+      ];
+      accentColor = const Color(0xFF38BDF8);
+      iconData = Icons.warning_amber_rounded;
+      confirmLabel = 'SÌ, AMMONISCI';
+    } else if (azione == 'banna') {
+      titolo = 'Sei sicuro di voler bannare @$segnalato?';
+      sottotitolo = 'Questa azione comporterà quanto segue:';
+      conseguenze = [
+        'L\'account di @$segnalato verrà immediatamente sospeso dal sistema.',
+        'Se @$segnalato ha l\'app aperta, verrà espulso in tempo reale con un avviso bloccante.',
+        'Non potrà più accedere a FantaEventi finché non deciderai di riabilitarlo.',
+        'Riceverà una notifica Push e In-App di sospensione dell\'account.',
+      ];
+      accentColor = const Color(0xFFEF4444);
+      iconData = Icons.gavel_rounded;
+      confirmLabel = 'SÌ, BANNA ACCOUNT';
+    } else if (azione == 'sbanna') {
+      titolo = 'Sei sicuro di voler riabilitare @$segnalato?';
+      sottotitolo = 'Questa azione comporterà quanto segue:';
+      conseguenze = [
+        'La sospensione dell\'account di @$segnalato verrà revocata immediatamente.',
+        '@$segnalato potrà tornare ad effettuare il login e partecipare agli eventi.',
+        'Riceverà una notifica Push e In-App di riabilitazione del profilo.',
+      ];
+      accentColor = const Color(0xFF10B981);
+      iconData = Icons.lock_open_rounded;
+      confirmLabel = 'SÌ, RIABILITA';
+    } else if (azione == 'archivia') {
+      titolo = 'Sei sicuro di voler archiviare la pratica?';
+      sottotitolo = 'Questa azione comporterà quanto segue:';
+      conseguenze = [
+        'La segnalazione verrà chiusa e contrassegnata come "ARCHIVIATA".',
+        'Non verrà applicata alcuna sanzione o ammonizione a @$segnalato.',
+        'I pulsanti rapidi verranno nascosti, ma potrai sempre cambiare decisione dal menù a tendina (⋮).',
+      ];
+      accentColor = const Color(0xFF10B981);
+      iconData = Icons.archive_outlined;
+      confirmLabel = 'SÌ, ARCHIVIA';
+    } else if (azione == 'elimina') {
+      titolo = 'Sei sicuro di voler rimuovere questa segnalazione?';
+      sottotitolo = 'Questa azione comporterà quanto segue:';
+      conseguenze = [
+        'La segnalazione verrà eliminata definitivamente dall\'elenco del Centro Moderazione.',
+        'Lo stato attuale dell\'account di @$segnalato non verrà modificato.',
+      ];
+      accentColor = const Color(0xFFF87171);
+      iconData = Icons.delete_outline_rounded;
+      confirmLabel = 'SÌ, RIMUOVI';
+    }
+
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: accentColor.withValues(alpha: 0.6), width: 1.5),
+        ),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(iconData, color: accentColor, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                titolo,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              sottotitolo,
+              style: GoogleFonts.inter(
+                color: const Color(0xFF94A3B8),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...conseguenze.map(
+              (c) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('• ', style: TextStyle(color: accentColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                    Expanded(
+                      child: Text(
+                        c,
+                        style: GoogleFonts.inter(color: const Color(0xFFE2E8F0), fontSize: 12.5, height: 1.35),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: Text(
+              'ANNULLA',
+              style: GoogleFonts.poppins(color: const Color(0xFF94A3B8), fontWeight: FontWeight.w600, fontSize: 12.5),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accentColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+            child: Text(
+              confirmLabel,
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 12.5),
+            ),
+          ),
+        ],
       ),
     );
   }

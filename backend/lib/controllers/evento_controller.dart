@@ -12,6 +12,7 @@ class EventoController {
   Future<Response> getEventi(Request request) async {
     try {
       final now = DateTime.now();
+      final utenteRichiedente = (request.url.queryParameters['utente'] ?? '').toString().trim();
       final docs = await DbService.instance.eventiCollection.find().toList();
       final utentiDocs = await UtenteController.getCachedUtentiDocs();
 
@@ -131,6 +132,23 @@ class EventoController {
             }
           }
           continue;
+        }
+
+        if (utenteRichiedente.isNotEmpty) {
+          final bool isCreatore = NicknameHelper.isSame(creatorNick, utenteRichiedente, utentiDocs);
+          final bool isPartecipante = isCreatore ||
+              cleanPart.any((p) => NicknameHelper.isSame(p, utenteRichiedente, utentiDocs));
+          final bool isInvitato = cleanInv.any((i) => NicknameHelper.isSame(i, utenteRichiedente, utentiDocs));
+
+          if (!isCreatore && !isPartecipante && !isInvitato) {
+            continue;
+          }
+          if (!isCreatore && !isPartecipante && isInvitato) {
+            final bool isInizioPassatoDa30Min = now.isAfter(dtStart.add(const Duration(minutes: 30)));
+            if (isConcluso || isInizioPassatoDa30Min) {
+              continue;
+            }
+          }
         }
 
         final json = evento.toJson();
@@ -295,6 +313,22 @@ class EventoController {
         if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
           return Response.badRequest(
             body: jsonEncode({'error': 'Le iscrizioni per questo evento sono chiuse'}),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+
+        final utentiDocs = await UtenteController.getCachedUtentiDocs();
+        final rawCreator = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
+        final rawPart = (doc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final rawInv = (doc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+
+        final bool isCreatore = NicknameHelper.isSame(rawCreator, utenteName, utentiDocs);
+        final bool isGiaPart = rawPart.any((p) => NicknameHelper.isSame(p, utenteName, utentiDocs));
+        final bool isInvitato = rawInv.any((i) => NicknameHelper.isSame(i, utenteName, utentiDocs));
+
+        if (!isCreatore && !isGiaPart && !isInvitato) {
+          return Response.forbidden(
+            jsonEncode({'error': 'Non sei nella lista degli invitati per questo evento!'}),
             headers: {'content-type': 'application/json'},
           );
         }

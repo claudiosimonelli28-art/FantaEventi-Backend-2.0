@@ -652,6 +652,8 @@ class ApiService {
     }
   }
 
+  static void Function()? onCurrentUserBanned;
+
   Future<Utente?> tryAutoLogin() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -671,6 +673,13 @@ class ApiService {
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
         final Map<String, dynamic> data = jsonDecode(userJsonStr);
         _currentUser = Utente.fromJson(data);
+        if (_currentUser != null && _currentUser!.isBanned) {
+          await prefs.remove('saved_user_json');
+          await prefs.remove('saved_user_nickname');
+          _currentUser = null;
+          _rememberMeSession = false;
+          return null;
+        }
         if (_currentUser != null && (_currentUser!.avatarUrl.contains('pravatar') || _currentUser!.avatarUrl.contains('unsplash.com/photo-1535713875002'))) {
           _currentUser = _currentUser!.copyWith(avatarUrl: '');
         }
@@ -2001,6 +2010,9 @@ class ApiService {
                   : (validCurAv.isNotEmpty ? validCurAv : (_avatarCache[resolvedNick.toLowerCase()] ?? ''));
               _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
               await _saveSession(_currentUser!);
+              if (uObj.isBanned) {
+                onCurrentUserBanned?.call();
+              }
             }
           }
           if (list.isNotEmpty) {
@@ -2074,6 +2086,9 @@ class ApiService {
                 : (validCurAv.isNotEmpty ? validCurAv : (_avatarCache[resolvedNick.toLowerCase()] ?? ''));
             _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
             await _saveSession(_currentUser!);
+            if (uObj.isBanned) {
+              onCurrentUserBanned?.call();
+            }
           }
         }
         if (list.isNotEmpty) {
@@ -2393,10 +2408,11 @@ class ApiService {
     }
 
     // 1. Chiamata primaria su Backend REST Render Starter (Ultra-rapida <800ms)
+    final curNickQuery = Uri.encodeComponent((_currentUser?.nickname.isNotEmpty == true ? _currentUser!.nickname : _currentUser?.nome) ?? '');
     for (String url in baseUrls) {
       try {
         final res = await http.get(
-          Uri.parse('$url/eventi'),
+          Uri.parse(curNickQuery.isNotEmpty ? '$url/eventi?utente=$curNickQuery' : '$url/eventi'),
           headers: defaultHeaders,
         ).timeout(const Duration(seconds: 8));
 
@@ -2409,6 +2425,38 @@ class ApiService {
             final ev = Evento.fromJson(jsonMap);
             if (ev.isConcluso && now.difference(ev.dataFine).inDays >= 5) {
               continue;
+            }
+            if (_currentUser != null) {
+              final myName = _currentUser!.nome.trim();
+              final myNick = _currentUser!.nickname.trim();
+              final myId = _currentUser!.id.trim().toLowerCase();
+
+              final cleanCreator = ev.creatore.trim();
+              final bool isCreatore = isSamePerson(cleanCreator, myNick) ||
+                  isSamePerson(cleanCreator, myName) ||
+                  (myId.isNotEmpty && cleanCreator.toLowerCase() == myId);
+              final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
+                final pTrim = p.trim();
+                return isSamePerson(pTrim, myNick) ||
+                    isSamePerson(pTrim, myName) ||
+                    (myId.isNotEmpty && pTrim.toLowerCase() == myId);
+              });
+              final bool isInvitato = ev.invitati.any((i) {
+                final iTrim = i.trim();
+                return isSamePerson(iTrim, myNick) ||
+                    isSamePerson(iTrim, myName) ||
+                    (myId.isNotEmpty && iTrim.toLowerCase() == myId);
+              });
+
+              if (!isCreatore && !isPartecipante && !isInvitato) {
+                continue;
+              }
+              if (!isCreatore && !isPartecipante && isInvitato) {
+                final bool isInizioPassatoDa30Min = now.isAfter(ev.data.add(const Duration(minutes: 30)));
+                if (ev.isConcluso || isInizioPassatoDa30Min) {
+                  continue;
+                }
+              }
             }
             list.add(ev);
           }
@@ -2958,6 +3006,17 @@ class ApiService {
             throw Exception('Le iscrizioni per questo evento sono chiuse (evento già in corso o concluso)!');
           }
 
+          final rawCreator = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '').toString().trim();
+          final rawPart = (evDoc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+          final rawInv = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+          final bool isCreatore = isSamePerson(rawCreator, nicknameOrId);
+          final bool isGiaPart = rawPart.any((p) => isSamePerson(p, nicknameOrId));
+          final bool isInvitato = rawInv.any((i) => isSamePerson(i, nicknameOrId));
+
+          if (!isCreatore && !isGiaPart && !isInvitato) {
+            throw Exception('Non sei nella lista degli invitati per questo evento!');
+          }
+
           final pullList = {
             nicknameOrId,
             nicknameOrId.toLowerCase(),
@@ -2999,7 +3058,7 @@ class ApiService {
         }
       }
     } catch (e) {
-      if (e is Exception && e.toString().contains('iscrizioni per questo evento sono chiuse')) {
+      if (e is Exception && (e.toString().contains('iscrizioni per questo evento sono chiuse') || e.toString().contains('Non sei nella lista degli invitati'))) {
         rethrow;
       }
     }
@@ -5887,6 +5946,10 @@ class ApiService {
     final curUser = _currentUser;
     final curNick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
 
+    final nowIso = DateTime.now().toIso8601String();
+    bool serverHandled = false;
+    bool serverCreatedNotif = false;
+
     for (String url in baseUrls) {
       try {
         final res = await http.post(
@@ -5899,24 +5962,60 @@ class ApiService {
             'dettagli': dettagli,
           }),
         ).timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) return true;
+        if (res.statusCode == 200) {
+          serverHandled = true;
+          try {
+            final data = jsonDecode(res.body);
+            if (data is Map && data['notificaCreata'] == true) {
+              serverCreatedNotif = true;
+            }
+          } catch (_) {}
+          break;
+        }
       } catch (_) {}
     }
 
-    try {
-      final db = await _getSafeMongoDb();
-      if (db != null && db.isConnected) {
-        await db.collection('Segnalazioni').insertOne({
-          'segnalatore': curNick,
-          'segnalato': segnalato,
-          'motivo': motivo,
-          'dettagli': dettagli,
-          'timestamp': DateTime.now().toIso8601String(),
-          'stato': 'in_attesa',
-        });
-        return true;
-      }
-    } catch (_) {}
+    if (!serverHandled || !serverCreatedNotif) {
+      try {
+        final db = await _getSafeMongoDb();
+        if (db != null && db.isConnected) {
+          if (!serverHandled) {
+            await db.collection('Segnalazioni').insertOne({
+              'segnalatore': curNick,
+              'segnalato': segnalato,
+              'motivo': motivo,
+              'dettagli': dettagli,
+              'timestamp': nowIso,
+              'stato': 'in_attesa',
+            });
+            serverHandled = true;
+          }
+          if (!serverCreatedNotif) {
+            await db.collection('Notifiche').insertOne({
+              'mittente': curNick,
+              'destinatario': 'Cloud',
+              'tipo': 'segnalazione_utente',
+              'titolo': '🛡️ Nuova Segnalazione Community',
+              'messaggio': '@$curNick ha segnalato @$segnalato per "$motivo"${dettagli.isNotEmpty ? ' ("$dettagli")' : ''}. Apri il Centro Moderazione nel tuo Profilo per gestirla.',
+              'stato': 'in_attesa',
+              'letto': false,
+              'data': nowIso,
+              'timestamp': nowIso,
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (serverHandled) {
+      unawaited(PushNotificationService.instance.inviaPushAUtenti(
+        ['Cloud'],
+        titolo: '🛡️ Nuova Segnalazione Community',
+        messaggio: '@$curNick ha segnalato @$segnalato per "$motivo". Apri il Centro Moderazione nel tuo Profilo.',
+        data: {'tipo': 'segnalazione_utente'},
+      ));
+      return true;
+    }
 
     return false;
   }
@@ -5962,9 +6061,14 @@ class ApiService {
 
   Future<bool> gestisciSegnalazione({
     required String segnalazioneId,
-    required String azione, // 'ammonisci' | 'banna' | 'archivia'
+    required String azione, // 'ammonisci' | 'banna' | 'sbanna' | 'archivia' | 'elimina'
     required String segnalato,
   }) async {
+    final cleanTarget = resolveNickname(segnalato);
+    final nowIso = DateTime.now().toIso8601String();
+    bool serverHandled = false;
+    bool serverCreatedNotif = false;
+
     for (String url in baseUrls) {
       try {
         final res = await http.post(
@@ -5973,65 +6077,142 @@ class ApiService {
           body: jsonEncode({
             'segnalazioneId': segnalazioneId,
             'azione': azione,
-            'segnalato': segnalato,
+            'segnalato': cleanTarget,
           }),
         ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
-          if (azione == 'ammonisci') {
-            unawaited(PushNotificationService.instance.inviaPushAUtenti(
-              [segnalato],
-              titolo: '⚠️ Richiamo di Moderazione',
-              messaggio: 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
-              data: {'tipo': 'ammonizione_utente'},
-            ));
-          }
-          return true;
+          serverHandled = true;
+          try {
+            final data = jsonDecode(res.body);
+            if (data is Map && data['notificaCreata'] == true) {
+              serverCreatedNotif = true;
+            }
+          } catch (_) {}
+          break;
         }
       } catch (_) {}
     }
 
-    try {
-      final db = await _getSafeMongoDb();
-      if (db != null && db.isConnected) {
-        ObjectId? sObjId;
-        try { sObjId = ObjectId.fromHexString(segnalazioneId); } catch (_) {}
-        final sSelector = sObjId != null ? where.id(sObjId) : where.eq('_id', segnalazioneId);
+    if (!serverHandled || !serverCreatedNotif) {
+      try {
+        final db = await _getSafeMongoDb();
+        if (db != null && db.isConnected) {
+          ObjectId? sObjId;
+          try { sObjId = ObjectId.fromHexString(segnalazioneId); } catch (_) {}
+          final sSelector = sObjId != null ? where.id(sObjId) : where.eq('_id', segnalazioneId);
 
-        if (azione == 'ammonisci') {
-          await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'ammonito'));
-          await db.collection('Notifiche').insertOne({
-            'tipo': 'ammonizione_utente',
-            'titolo': '⚠️ Richiamo di Moderazione',
-            'messaggio': 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
-            'destinatario': segnalato,
-            'timestamp': DateTime.now().toIso8601String(),
-            'letto': false,
-          });
-          unawaited(PushNotificationService.instance.inviaPushAUtenti(
-            [segnalato],
-            titolo: '⚠️ Richiamo di Moderazione',
-            messaggio: 'Sei stato segnalato per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
-            data: {'tipo': 'ammonizione_utente'},
-          ));
-          return true;
-        } else if (azione == 'banna') {
-          await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'bannato'));
-          final uDocs = await db.collection('Utenti').find().toList();
-          for (var uDoc in uDocs) {
-            final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
-            if (isSamePerson(uNick, segnalato)) {
-              final uId = uDoc['_id'] as ObjectId;
-              await db.collection('Utenti').update(where.id(uId), modify.set('isBanned', true));
-              break;
+          if (azione == 'ammonisci') {
+            if (!serverHandled) {
+              await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'ammonito'));
+              serverHandled = true;
+            }
+            if (!serverCreatedNotif) {
+              await db.collection('Notifiche').insertOne({
+                'mittente': 'Amministrazione',
+                'destinatario': cleanTarget,
+                'tipo': 'ammonizione_utente',
+                'titolo': '⚠️ Richiamo Ufficiale di Moderazione',
+                'messaggio': 'Sei stato ammonito dall'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+                'stato': 'in_attesa',
+                'letto': false,
+                'data': nowIso,
+                'timestamp': nowIso,
+              });
+            }
+          } else if (azione == 'banna') {
+            if (!serverHandled) {
+              await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'bannato'));
+              final uDocs = await db.collection('Utenti').find().toList();
+              for (var uDoc in uDocs) {
+                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+                if (isSamePerson(uNick, cleanTarget)) {
+                  final uId = uDoc['_id'] as ObjectId;
+                  await db.collection('Utenti').update(where.id(uId), modify.set('isBanned', true));
+                  break;
+                }
+              }
+              serverHandled = true;
+            }
+            if (!serverCreatedNotif) {
+              await db.collection('Notifiche').insertOne({
+                'mittente': 'Amministrazione',
+                'destinatario': cleanTarget,
+                'tipo': 'ban_utente',
+                'titolo': '⛔ Account Sospeso',
+                'messaggio': 'Il tuo account è stato sospeso dall'Amministrazione per violazione del regolamento della community di FantaEventi.',
+                'stato': 'in_attesa',
+                'letto': false,
+                'data': nowIso,
+                'timestamp': nowIso,
+              });
+            }
+          } else if (azione == 'sbanna' || azione == 'riabilita') {
+            if (!serverHandled) {
+              await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'riabilitato'));
+              final uDocs = await db.collection('Utenti').find().toList();
+              for (var uDoc in uDocs) {
+                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+                if (isSamePerson(uNick, cleanTarget)) {
+                  final uId = uDoc['_id'] as ObjectId;
+                  await db.collection('Utenti').update(where.id(uId), modify.set('isBanned', false));
+                  break;
+                }
+              }
+              serverHandled = true;
+            }
+            if (!serverCreatedNotif) {
+              await db.collection('Notifiche').insertOne({
+                'mittente': 'Amministrazione',
+                'destinatario': cleanTarget,
+                'tipo': 'riabilita_utente',
+                'titolo': '✅ Account Riabilitato',
+                'messaggio': 'La sospensione del tuo account è stata revocata dall'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
+                'stato': 'in_attesa',
+                'letto': false,
+                'data': nowIso,
+                'timestamp': nowIso,
+              });
+            }
+          } else if (azione == 'archivia') {
+            if (!serverHandled) {
+              await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'archiviata'));
+              serverHandled = true;
+            }
+          } else if (azione == 'elimina') {
+            if (!serverHandled) {
+              await db.collection('Segnalazioni').remove(sSelector);
+              serverHandled = true;
             }
           }
-          return true;
-        } else if (azione == 'archivia') {
-          await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'archiviata'));
-          return true;
         }
+      } catch (_) {}
+    }
+
+    if (serverHandled) {
+      if (azione == 'ammonisci') {
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '⚠️ Richiamo Ufficiale di Moderazione',
+          messaggio: 'Sei stato ammonito dall'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+          data: {'tipo': 'ammonizione_utente'},
+        ));
+      } else if (azione == 'banna') {
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '⛔ Account Sospeso',
+          messaggio: 'Il tuo account è stato sospeso dall'Amministrazione per violazione del regolamento della community di FantaEventi.',
+          data: {'tipo': 'ban_utente'},
+        ));
+      } else if (azione == 'sbanna' || azione == 'riabilita') {
+        unawaited(PushNotificationService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '✅ Account Riabilitato',
+          messaggio: 'La sospensione del tuo account è stata revocata dall'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
+          data: {'tipo': 'riabilita_utente'},
+        ));
       }
-    } catch (_) {}
+      return true;
+    }
 
     return false;
   }

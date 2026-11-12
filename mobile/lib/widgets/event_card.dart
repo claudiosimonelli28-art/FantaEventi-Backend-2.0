@@ -46,7 +46,8 @@ class EventCard extends StatelessWidget {
     final isAnnullato = evento.isAnnullato;
     final isConcluso = evento.isConcluso;
     final isInCorso = evento.isInCorso;
-    final bool isIscrizioniChiuse = isAnnullato || isConcluso || (isInCorso && !isPartecipante);
+    final bool isNonInvitato = !isCreatore && !isPartecipante && !isInvitato;
+    final bool isIscrizioniChiuse = isAnnullato || isConcluso || (isInCorso && !isPartecipante) || isNonInvitato;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -293,7 +294,7 @@ class EventCard extends StatelessWidget {
                                     ? Icons.check_circle_rounded
                                     : isInvitato
                                         ? Icons.pending_actions_rounded
-                                        : Icons.person_add_alt_1_rounded,
+                                        : Icons.lock_outline_rounded,
                     size: 18,
                   ),
                   label: Text(
@@ -307,7 +308,7 @@ class EventCard extends StatelessWidget {
                                     ? 'GIÀ PARTECIPANTE'
                                     : isInvitato
                                         ? 'INVITO IN SOSPESO (RISPONDI)'
-                                        : 'PARTECIPA ALL\'EVENTO',
+                                        : 'EVENTO PRIVATO (SOLO SU INVITO)',
                     style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,

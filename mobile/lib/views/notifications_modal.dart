@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/api_service.dart';
 import 'var_decision_modal.dart';
 import 'var_witness_modal.dart';
+import 'profile_view.dart';
 import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/app_toast.dart';
@@ -1036,6 +1037,31 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                               style: ElevatedButton.styleFrom(
                                                 backgroundColor: const Color(0xFF38BDF8),
                                                 foregroundColor: Colors.white,
+                                                padding: const EdgeInsets.symmetric(vertical: 9),
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                              ),
+                                            ),
+                                          ),
+                                        ] else if (tipo == 'segnalazione_utente') ...[
+                                          const SizedBox(height: 10),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: ElevatedButton.icon(
+                                              onPressed: () {
+                                                _segnaComeLetta(notId);
+                                                Navigator.pop(context);
+                                                Navigator.of(context).push(
+                                                  MaterialPageRoute(builder: (_) => const ProfileView()),
+                                                );
+                                              },
+                                              icon: const Icon(Icons.shield_rounded, size: 15, color: Color(0xFF0F172A)),
+                                              label: Text(
+                                                '🛡️ APRI PROFILO / MODERAZIONE',
+                                                style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.bold),
+                                              ),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFF59E0B),
+                                                foregroundColor: const Color(0xFF0F172A),
                                                 padding: const EdgeInsets.symmetric(vertical: 9),
                                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                               ),
