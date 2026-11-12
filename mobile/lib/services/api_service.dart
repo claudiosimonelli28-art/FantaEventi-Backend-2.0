@@ -2403,9 +2403,14 @@ class ApiService {
         if (res.statusCode == 200 && !res.body.contains('<html>')) {
           final List<dynamic> listJson = jsonDecode(res.body);
           final List<Evento> list = [];
+          final now = DateTime.now();
           for (var item in listJson) {
             final jsonMap = Map<String, dynamic>.from(item as Map);
-            list.add(Evento.fromJson(jsonMap));
+            final ev = Evento.fromJson(jsonMap);
+            if (ev.isConcluso && now.difference(ev.dataFine).inDays >= 5) {
+              continue;
+            }
+            list.add(ev);
           }
           _eventi.clear();
           _eventi.addAll(list);
@@ -2513,15 +2518,15 @@ class ApiService {
           final bool isConcluso = !isAnnullato && (now.isAfter(dtEnd) || (d['stato'] == 'concluso'));
           final int giorniDaConclusione = isConcluso ? now.difference(dtEnd).inDays : 0;
 
-          // Se l'evento e' finito da piu' di 7 giorni, archivialo dal DB
-          if (isConcluso && giorniDaConclusione > 7) {
+          // Se l'evento e' finito da almeno 5 giorni, archivialo ed eliminalo dal DB
+          if (isConcluso && giorniDaConclusione >= 5) {
             if (d['_id'] is ObjectId) {
               oldExpiredIds.add(d['_id'] as ObjectId);
             }
             continue;
           }
 
-          // Se l'evento e' appena finito (negli ultimi 7 giorni), assegna i premi/badge/titoli una sola volta
+          // Se l'evento e' appena finito (negli ultimi 5 giorni), assegna i premi/badge/titoli una sola volta
           if (isConcluso && (d['badgeVincitoreAssegnato'] != true || d['titoliAssegnati'] != true)) {
             try {
               final evTitolo = (d['titolo'] ?? d['nome'] ?? 'Evento Fanta').toString().trim();
@@ -2859,7 +2864,7 @@ class ApiService {
           list.add(Evento.fromJson(jsonMap));
         }
 
-        // Rimozione definitiva dal DB degli eventi scaduti da oltre 7 giorni
+        // Rimozione definitiva dal DB degli eventi conclusi da almeno 5 giorni
         for (var expId in oldExpiredIds) {
           try {
             final expIdStr = expId.toHexString();
@@ -2908,6 +2913,7 @@ class ApiService {
                 return iLow == myName || iLow == myNick || iLow == myId;
               });
 
+              if (ev.isConcluso && now.difference(ev.dataFine).inDays >= 5) return true;
               if (!isCreatore && !isPartecipante && !isInvitato) return true;
               if (!isCreatore && !isPartecipante && isInvitato) {
                 final bool isInizioPassatoDa30Min = now.isAfter(ev.data.add(const Duration(minutes: 30)));

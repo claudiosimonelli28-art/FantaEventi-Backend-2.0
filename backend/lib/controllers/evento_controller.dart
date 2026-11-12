@@ -105,6 +105,34 @@ class EventoController {
         }
 
         final evento = Evento.fromMap(d);
+        // Auto-eliminazione definitiva dal feed e dal DB dopo 5 giorni dalla conclusione
+        final bool isConcluso = stato != 'annullato' && (now.isAfter(dtEnd) || stato == 'concluso');
+        if (isConcluso && now.difference(dtEnd).inDays >= 5) {
+          if (evId != null) {
+            try {
+              final evIdStr = evId.oid;
+              await DbService.instance.eventiCollection.remove(where.id(evId));
+              final bmDocs = await DbService.instance.bonusMalusCollection.find(where.eq('eventoId', evIdStr)).toList();
+              for (var bm in bmDocs) {
+                final bmId = bm['_id'] is ObjectId
+                    ? (bm['_id'] as ObjectId).oid
+                    : (bm['_id']?.toString() ?? '');
+                if (bmId.isNotEmpty) {
+                  await DbService.instance.votazioniCollection.remove(
+                    where.eq('votazioneId', bmId).or(where.eq('bonusId', bmId)),
+                  );
+                }
+              }
+              await DbService.instance.votazioniCollection.remove(where.eq('eventoId', evIdStr));
+              await DbService.instance.bonusMalusCollection.remove(where.eq('eventoId', evIdStr));
+              await DbService.instance.notificheCollection.remove(where.eq('eventoId', evIdStr));
+            } catch (e) {
+              print('⚠️ Errore auto-eliminazione evento scaduto ($evId): $e');
+            }
+          }
+          continue;
+        }
+
         final json = evento.toJson();
         json['stato'] = stato;
         json['propostoDa'] = creatorNick;
