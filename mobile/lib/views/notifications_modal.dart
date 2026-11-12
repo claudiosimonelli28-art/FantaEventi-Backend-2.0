@@ -887,7 +887,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                             height: 1.35,
                                           ),
                                         ),
-                                        if (!isLetto && !isPending && !isProposal && !(isVarGiudice && stato == 'in_attesa') && !(isVarTestimone && stato == 'in_attesa')) ...[
+                                        if (!isLetto && !isPending && !isProposal && tipo != 'segnalazione_utente' && !(isVarGiudice && stato == 'in_attesa') && !(isVarTestimone && stato == 'in_attesa')) ...[
                                           const SizedBox(height: 8),
                                           Row(
                                             children: [
@@ -1042,7 +1042,7 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                               ),
                                             ),
                                           ),
-                                        ] else if (tipo == 'segnalazione_utente') ...[
+                                        ] else if (tipo == 'segnalazione_utente' && !isLetto) ...[
                                           const SizedBox(height: 10),
                                           SizedBox(
                                             width: double.infinity,
@@ -1051,12 +1051,14 @@ class _NotificationsModalState extends State<NotificationsModal> {
                                                 _segnaComeLetta(notId);
                                                 Navigator.pop(context);
                                                 Navigator.of(context).push(
-                                                  MaterialPageRoute(builder: (_) => const ProfileView()),
+                                                  MaterialPageRoute(
+                                                    builder: (_) => const ProfileView(openModerationOnStart: true),
+                                                  ),
                                                 );
                                               },
                                               icon: const Icon(Icons.shield_rounded, size: 15, color: Color(0xFF0F172A)),
                                               label: Text(
-                                                '🛡️ APRI PROFILO / MODERAZIONE',
+                                                '🛡️ APRI CENTRO MODERAZIONE',
                                                 style: GoogleFonts.poppins(fontSize: 11.5, fontWeight: FontWeight.bold),
                                               ),
                                               style: ElevatedButton.styleFrom(

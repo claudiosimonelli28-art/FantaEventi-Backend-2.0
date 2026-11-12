@@ -14,7 +14,9 @@ import '../widgets/app_toast.dart';
 import '../widgets/context_info_modal.dart';
 
 class ProfileView extends StatefulWidget {
-  const ProfileView({super.key});
+  final bool openModerationOnStart;
+
+  const ProfileView({super.key, this.openModerationOnStart = false});
 
   @override
   State<ProfileView> createState() => _ProfileViewState();
@@ -76,6 +78,13 @@ class _ProfileViewState extends State<ProfileView> {
   void initState() {
     super.initState();
     _viewModel.inizializza();
+    if (widget.openModerationOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _mostraModalCentroModerazione();
+        }
+      });
+    }
   }
 
   @override

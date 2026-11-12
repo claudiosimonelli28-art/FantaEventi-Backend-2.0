@@ -445,8 +445,25 @@ class PushNotificationService {
     );
   }
 
-  /// Sincronizza il token FCM dell'utente loggato su MongoDB Atlas
+  /// Sincronizza il token FCM dell'utente loggato su MongoDB Atlas (protetto da lock contro race condition all'avvio)
+  Future<void>? _syncTokenFuture;
+
   Future<void> syncCurrentDeviceToken({String? overrideToken, bool forceRefresh = false}) async {
+    if (_syncTokenFuture != null && !forceRefresh && (overrideToken == null || overrideToken.isEmpty)) {
+      return _syncTokenFuture!;
+    }
+    final fut = _doSyncCurrentDeviceToken(overrideToken: overrideToken, forceRefresh: forceRefresh);
+    _syncTokenFuture = fut;
+    try {
+      await fut;
+    } finally {
+      if (_syncTokenFuture == fut) {
+        _syncTokenFuture = null;
+      }
+    }
+  }
+
+  Future<void> _doSyncCurrentDeviceToken({String? overrideToken, bool forceRefresh = false}) async {
     try {
       if (_messaging == null) {
         try {
@@ -459,15 +476,16 @@ class PushNotificationService {
       if (cur == null) return;
 
       final prefs = await SharedPreferences.getInstance();
-      const String currentTokenBuildKey = 'fcm_token_build_v2_4';
+      const String currentTokenBuildKey = 'fcm_token_build_v2_5';
       final isNewBuild = prefs.getString('fcm_token_build') != currentTokenBuildKey;
 
       if (forceRefresh || isNewBuild) {
         try {
-          await _messaging!.deleteToken();
-          await Future.delayed(const Duration(milliseconds: 500));
+          // Salva SUBITO la chiave di build prima dell'await per impedire doppi deleteToken concorrenti
           await prefs.setString('fcm_token_build', currentTokenBuildKey);
-          debugPrint('FCM Token resettato per garantire emissione token valida');
+          await _messaging!.deleteToken();
+          await Future.delayed(const Duration(milliseconds: 800));
+          debugPrint('FCM Token resettato per garantire emissione token valida (v2_5)');
         } catch (e) {
           debugPrint('Notice deleteToken: $e');
         }
@@ -476,6 +494,10 @@ class PushNotificationService {
       String? token = overrideToken;
       if (token == null || token.isEmpty) {
         token = await _messaging!.getToken();
+        if (token == null || token.isEmpty) {
+          await Future.delayed(const Duration(milliseconds: 1000));
+          token = await _messaging!.getToken();
+        }
       }
       if (token != null && token.isNotEmpty) {
         // Registra SEMPRE il token su Render e MongoDB Atlas (operazione addToSet idempotente e sicura)
@@ -606,7 +628,14 @@ class PushNotificationService {
       } else if (tipo == 'ban_utente') {
         enforceAccountSuspension();
         return;
-      } else if (tipo.contains('amicizia') || tipo == 'segnalazione_utente') {
+      } else if (tipo == 'segnalazione_utente') {
+        if (context.mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ProfileView(openModerationOnStart: true)),
+          );
+          return;
+        }
+      } else if (tipo.contains('amicizia')) {
         if (context.mounted) {
           Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const ProfileView()),

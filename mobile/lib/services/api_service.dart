@@ -377,6 +377,15 @@ class ApiService {
           modify.addToSet('fcmTokens', cleanToken),
           multiUpdate: true,
         );
+        // Pulizia preventiva eventuale token revocato precedente
+        const deadToken = 'eJhq16t_j9ZTaQCJVunFqG:APA91bFIpLCRHdaPdZWQTPpF73ePO-VGcbuu2dWrE4Xznx2-BrCadWsPStx_Ej894Qj5SurE9Az7dnQm_04ZFyMyceqMZiQTxISaHIh_0yI3RUAa4Ns7JOs';
+        if (cleanToken != deadToken) {
+          await db.collection('Utenti').update(
+            selector,
+            modify.pull('fcmTokens', deadToken),
+            multiUpdate: true,
+          );
+        }
         debugPrint('✅ FCM token registrato su MongoDB per ${cur.nome}: $cleanToken');
       }
     } catch (e) {
@@ -513,7 +522,33 @@ class ApiService {
       debugPrint('Errore getFcmTokensPerUtenti MongoDB: $e');
     }
 
-    // 2. Fallback offline: se MongoDB non è momentaneamente raggiungibile, usa la memoria locale
+    // 2. Fallback HTTP al backend Render se la connessione diretta MongoDB dal telefono non ha restituito token
+    if (allTokens.isEmpty) {
+      for (String url in baseUrls) {
+        try {
+          final res = await http.get(Uri.parse('$url/utenti'), headers: defaultHeaders).timeout(const Duration(seconds: 4));
+          if (res.statusCode == 200) {
+            final List<dynamic> data = jsonDecode(res.body);
+            for (var item in data) {
+              if (item is Map<String, dynamic>) {
+                final raw = (item['nickname'] ?? item['username'] ?? item['nome'] ?? '').toString();
+                final uNick = resolveNickname(raw).trim().toLowerCase();
+                final rawNome = (item['nome'] ?? '').toString().trim().toLowerCase();
+                for (var target in resolvedTargets) {
+                  if (target == uNick || isSamePerson(target, uNick) || target == rawNome) {
+                    final tokens = List<String>.from(item['fcmTokens'] ?? []);
+                    allTokens.addAll(tokens.where((t) => t.trim().isNotEmpty));
+                  }
+                }
+              }
+            }
+            if (allTokens.isNotEmpty) break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. Fallback offline: se né MongoDB né HTTP sono raggiungibili, usa la memoria locale
     if (allTokens.isEmpty) {
       for (var u in _utenti) {
         final uNick = resolveNickname(u.nickname.isNotEmpty ? u.nickname : u.nome).trim().toLowerCase();
@@ -6104,9 +6139,6 @@ class ApiService {
           if (azione == 'ammonisci') {
             if (!serverHandled) {
               await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'ammonito'));
-              serverHandled = true;
-            }
-            if (!serverCreatedNotif) {
               await db.collection('Notifiche').insertOne({
                 'mittente': 'Amministrazione',
                 'destinatario': cleanTarget,
@@ -6118,6 +6150,20 @@ class ApiService {
                 'data': nowIso,
                 'timestamp': nowIso,
               });
+              serverHandled = true;
+            } else if (!serverCreatedNotif) {
+              // Il server (versione precedente) ha già creato la notifica '⚠️ Richiamo di Moderazione':
+              // aggiorniamo il titolo senza inserire un duplicato!
+              await db.collection('Notifiche').update(
+                where.eq('destinatario', cleanTarget).and(where.eq('tipo', 'ammonizione_utente')).and(where.eq('letto', false)),
+                modify
+                    .set('mittente', 'Amministrazione')
+                    .set('titolo', '⚠️ Richiamo Ufficiale di Moderazione')
+                    .set('messaggio', 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.')
+                    .set('data', nowIso)
+                    .set('timestamp', nowIso),
+                multiUpdate: true,
+              );
             }
           } else if (azione == 'banna') {
             if (!serverHandled) {
