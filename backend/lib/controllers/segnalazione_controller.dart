@@ -132,6 +132,7 @@ class SegnalazioneController {
 
       final uDocs = await UtenteController.getCachedUtentiDocs();
       final cleanSegnalato = NicknameHelper.resolve(segnalato, uDocs);
+      final bool isSecondaAmmonizione = data['secondaAmmonizione'] == true;
       final nowIso = DateTime.now().toIso8601String();
 
       if (azione == 'ammonisci') {
@@ -140,13 +141,26 @@ class SegnalazioneController {
           modify.set('stato', 'ammonito'),
         );
 
+        for (var uDoc in uDocs) {
+          final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+          if (NicknameHelper.isSame(uNick, cleanSegnalato, uDocs)) {
+            final uId = uDoc['_id'] as ObjectId;
+            await DbService.instance.utentiCollection.update(
+              where.id(uId),
+              modify.set('ammonizioni', 1),
+            );
+            break;
+          }
+        }
+        UtenteController.invalidateCache();
+
         // Notifica ufficiale di ammonimento al segnalato
         await DbService.instance.notificheCollection.insertOne({
           'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
           'tipo': 'ammonizione_utente',
-          'titolo': '⚠️ Richiamo Ufficiale di Moderazione',
-          'messaggio': 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+          'titolo': '⚠️ Richiamo Ufficiale di Moderazione (1/2)',
+          'messaggio': 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Attenzione: alla prossima ammonizione il tuo account verrà automaticamente sospeso.',
           'stato': 'in_attesa',
           'letto': false,
           'data': nowIso,
@@ -163,14 +177,14 @@ class SegnalazioneController {
           modify.set('stato', 'bannato'),
         );
 
-        // Disabilita account su Utenti
+        // Disabilita account su Utenti e azzera contatore ammonizioni
         for (var uDoc in uDocs) {
           final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
           if (NicknameHelper.isSame(uNick, cleanSegnalato, uDocs)) {
             final uId = uDoc['_id'] as ObjectId;
             await DbService.instance.utentiCollection.update(
               where.id(uId),
-              modify.set('isBanned', true),
+              modify.set('isBanned', true).set('ammonizioni', 0),
             );
             break;
           }
@@ -181,8 +195,10 @@ class SegnalazioneController {
           'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
           'tipo': 'ban_utente',
-          'titolo': '⛔ Account Sospeso',
-          'messaggio': 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
+          'titolo': isSecondaAmmonizione ? '⛔ Account Sospeso (2ª Ammonizione)' : '⛔ Account Sospeso',
+          'messaggio': isSecondaAmmonizione
+              ? 'Hai ricevuto una seconda ammonizione ufficiale dall\'Amministrazione. Per somma di ammonizioni il tuo account su FantaEventi è stato sospeso.'
+              : 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
           'stato': 'in_attesa',
           'letto': false,
           'data': nowIso,
@@ -199,14 +215,14 @@ class SegnalazioneController {
           modify.set('stato', 'riabilitato'),
         );
 
-        // Riabilita account su Utenti
+        // Riabilita account su Utenti e azzera contatore ammonizioni
         for (var uDoc in uDocs) {
           final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
           if (NicknameHelper.isSame(uNick, cleanSegnalato, uDocs)) {
             final uId = uDoc['_id'] as ObjectId;
             await DbService.instance.utentiCollection.update(
               where.id(uId),
-              modify.set('isBanned', false),
+              modify.set('isBanned', false).set('ammonizioni', 0),
             );
             break;
           }

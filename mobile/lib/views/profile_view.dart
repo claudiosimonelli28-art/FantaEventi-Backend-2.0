@@ -3666,7 +3666,17 @@ class _ProfileViewState extends State<ProfileView> {
                             if (stato == 'bannato') statoColor = const Color(0xFFEF4444);
                             if (stato == 'archiviata' || stato == 'riabilitato') statoColor = const Color(0xFF10B981);
 
-                            Future<void> eseguiConConferma(String azione) async {
+                            final bool isGiaAmmonito = s['giaAmmonito'] == true ||
+                                segnalazioni.any((other) =>
+                                    other['id'] != id &&
+                                    ApiService().isSamePerson((other['segnalato'] ?? '').toString(), segnalato) &&
+                                    other['stato'] == 'ammonito');
+
+                            Future<void> eseguiConConferma(String rawAzione) async {
+                              final String azione = (rawAzione == 'ammonisci' && isGiaAmmonito)
+                                  ? 'banna_seconda_ammonizione'
+                                  : rawAzione;
+
                               final confermato = await _confermaAzioneModerazione(
                                 context: context,
                                 azione: azione,
@@ -3682,16 +3692,50 @@ class _ProfileViewState extends State<ProfileView> {
                               if (!ok || !context.mounted) return;
 
                               if (azione == 'ammonisci') {
-                                AppToast.showSuccess(context, 'Ammonizione Inviata', 'Richiamo ufficiale inviato a @$segnalato.');
-                                setSheetState(() => s['stato'] = 'ammonito');
+                                AppToast.showSuccess(context, '1ª Ammonizione Inviata', 'Richiamo ufficiale inviato a @$segnalato.');
+                                setSheetState(() {
+                                  s['stato'] = 'ammonito';
+                                  for (var item in segnalazioni) {
+                                    if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
+                                      item['giaAmmonito'] = true;
+                                    }
+                                  }
+                                });
+                              } else if (azione == 'banna_seconda_ammonizione') {
+                                AppToast.showSuccess(context, '2ª Ammonizione: Account Sospeso', '@$segnalato ha raggiunto 2 ammonizioni ed è stato bannato.');
+                                setSheetState(() {
+                                  s['stato'] = 'bannato';
+                                  for (var item in segnalazioni) {
+                                    if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
+                                      item['giaAmmonito'] = false;
+                                    }
+                                  }
+                                });
                               } else if (azione == 'banna') {
                                 AppToast.showSuccess(context, 'Account Sospeso', '@$segnalato è stato bannato ed espulso dall\'app.');
-                                setSheetState(() => s['stato'] = 'bannato');
+                                setSheetState(() {
+                                  s['stato'] = 'bannato';
+                                  for (var item in segnalazioni) {
+                                    if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
+                                      item['giaAmmonito'] = false;
+                                    }
+                                  }
+                                });
                               } else if (azione == 'sbanna') {
-                                AppToast.showSuccess(context, 'Account Riabilitato', 'Il ban di @$segnalato è stato rimosso.');
-                                setSheetState(() => s['stato'] = 'riabilitato');
+                                AppToast.showSuccess(context, 'Account Riabilitato', 'Il ban di @$segnalato è stato rimosso e le ammonizioni azzerate.');
+                                setSheetState(() {
+                                  s['stato'] = 'riabilitato';
+                                  for (var item in segnalazioni) {
+                                    if (ApiService().isSamePerson((item['segnalato'] ?? '').toString(), segnalato)) {
+                                      item['giaAmmonito'] = false;
+                                      if (item['stato'] == 'ammonito') {
+                                        item['stato'] = 'archiviata';
+                                      }
+                                    }
+                                  }
+                                });
                               } else if (azione == 'archivia') {
-                                AppToast.showSuccess(context, 'Pratica Archiviata', 'La segnalazione è stata archiviata.');
+                                AppToast.showSuccess(context, 'Pratica Archiviata', 'La segnalazione è stata archiviata definitivamente.');
                                 setSheetState(() => s['stato'] = 'archiviata');
                               } else if (azione == 'elimina') {
                                 AppToast.showInfo(context, 'Segnalazione Rimossa', 'Pratica rimossa dall\'elenco.');
@@ -3716,6 +3760,21 @@ class _ProfileViewState extends State<ProfileView> {
                                         '@$segnalato',
                                         style: GoogleFonts.poppins(fontWeight: FontWeight.bold, color: const Color(0xFFFCA5A5), fontSize: 15),
                                       ),
+                                      if (stato == 'in_attesa' && isGiaAmmonito) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF59E0B).withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(5),
+                                            border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+                                          ),
+                                          child: Text(
+                                            '🟨 GIÀ AMMONITO (1/2)',
+                                            style: GoogleFonts.poppins(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFFFBBF24)),
+                                          ),
+                                        ),
+                                      ],
                                       const Spacer(),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -3731,7 +3790,7 @@ class _ProfileViewState extends State<ProfileView> {
                                       ),
                                       const SizedBox(width: 4),
                                       PopupMenuButton<String>(
-                                        tooltip: 'Opzioni Account & Pratica',
+                                        tooltip: 'Rimuovi pratica dall\'elenco',
                                         color: const Color(0xFF1E293B),
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(12),
@@ -3740,50 +3799,6 @@ class _ProfileViewState extends State<ProfileView> {
                                         icon: const Icon(Icons.more_vert_rounded, color: Color(0xFFCBD5E1), size: 20),
                                         onSelected: (val) => eseguiConConferma(val),
                                         itemBuilder: (_) => [
-                                          if (stato != 'ammonito')
-                                            PopupMenuItem(
-                                              value: 'ammonisci',
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.warning_amber_rounded, color: Color(0xFF38BDF8), size: 18),
-                                                  const SizedBox(width: 10),
-                                                  Text('Ammonisci @$segnalato', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
-                                                ],
-                                              ),
-                                            ),
-                                          if (stato != 'bannato')
-                                            PopupMenuItem(
-                                              value: 'banna',
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.gavel_rounded, color: Color(0xFFEF4444), size: 18),
-                                                  const SizedBox(width: 10),
-                                                  Text('Banna account @$segnalato', style: GoogleFonts.inter(color: const Color(0xFFFCA5A5), fontSize: 13, fontWeight: FontWeight.w600)),
-                                                ],
-                                              ),
-                                            ),
-                                          if (stato == 'bannato')
-                                            PopupMenuItem(
-                                              value: 'sbanna',
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.lock_open_rounded, color: Color(0xFF10B981), size: 18),
-                                                  const SizedBox(width: 10),
-                                                  Text('Riabilita account @$segnalato', style: GoogleFonts.inter(color: const Color(0xFF6EE7B7), fontSize: 13, fontWeight: FontWeight.w600)),
-                                                ],
-                                              ),
-                                            ),
-                                          if (stato != 'archiviata')
-                                            PopupMenuItem(
-                                              value: 'archivia',
-                                              child: Row(
-                                                children: [
-                                                  const Icon(Icons.archive_outlined, color: Color(0xFF94A3B8), size: 18),
-                                                  const SizedBox(width: 10),
-                                                  Text('Archivia pratica', style: GoogleFonts.inter(color: Colors.white, fontSize: 13)),
-                                                ],
-                                              ),
-                                            ),
                                           PopupMenuItem(
                                             value: 'elimina',
                                             child: Row(
@@ -3880,11 +3895,11 @@ class _ProfileViewState extends State<ProfileView> {
                                       ),
                                       child: Row(
                                         children: [
-                                          Icon(Icons.check_circle_outline_rounded, size: 14, color: statoColor),
+                                          Icon(Icons.lock_clock_rounded, size: 14, color: statoColor),
                                           const SizedBox(width: 6),
                                           Expanded(
                                             child: Text(
-                                              'Pratica gestita (${stato.toUpperCase()}) • Usa il menù ⋮ per altre azioni',
+                                              'Decisione definitiva (${stato.toUpperCase()}) • Usa ⋮ per rimuovere dall\'elenco',
                                               style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
                                             ),
                                           ),
@@ -3921,18 +3936,30 @@ class _ProfileViewState extends State<ProfileView> {
 
     if (azione == 'ammonisci') {
       titolo = 'Sei sicuro di voler ammonire @$segnalato?';
-      sottotitolo = 'Questa azione comporterà quanto segue:';
+      sottotitolo = 'Questa decisione sarà definitiva e comporterà quanto segue:';
       conseguenze = [
-        'Verrà inviata una notifica ufficiale di richiamo (sia Push che In-App) a @$segnalato.',
-        'La pratica verrà contrassegnata con lo stato "AMMONITO".',
-        'L\'account di @$segnalato resterà attivo ma formalmente avvisato.',
+        'Verrà inviata la 1ª notifica ufficiale di richiamo (sia Push che In-App) a @$segnalato.',
+        'La pratica verrà chiusa definitivamente con lo stato "AMMONITO".',
+        'L\'account di @$segnalato resterà attivo (1ª ammonizione su 2), ma alla prossima ammonizione scatterà automaticamente il BAN.',
       ];
       accentColor = const Color(0xFF38BDF8);
       iconData = Icons.warning_amber_rounded;
-      confirmLabel = 'SÌ, AMMONISCI';
+      confirmLabel = 'SÌ, AMMONISCI (1/2)';
+    } else if (azione == 'banna_seconda_ammonizione') {
+      titolo = '⚠️ 2ª Ammonizione: Scatta il Ban per @$segnalato!';
+      sottotitolo = '@$segnalato è già stato ammonito in precedenza. Con la seconda ammonizione scatterà il blocco dell\'account:';
+      conseguenze = [
+        'Somma di ammonizioni (2/2): l\'account di @$segnalato NON resterà attivo ma verrà immediatamente SOSPESO (Bannato).',
+        'Se @$segnalato ha l\'app aperta, verrà espulso in tempo reale con un avviso bloccante.',
+        'Riceverà una notifica Push e In-App di sospensione dell\'account per seconda ammonizione.',
+        'La decisione su questa pratica sarà definitiva.',
+      ];
+      accentColor = const Color(0xFFEF4444);
+      iconData = Icons.gavel_rounded;
+      confirmLabel = 'SÌ, AMMONISCI E BANNA';
     } else if (azione == 'banna') {
       titolo = 'Sei sicuro di voler bannare @$segnalato?';
-      sottotitolo = 'Questa azione comporterà quanto segue:';
+      sottotitolo = 'Questa decisione sarà definitiva e comporterà quanto segue:';
       conseguenze = [
         'L\'account di @$segnalato verrà immediatamente sospeso dal sistema.',
         'Se @$segnalato ha l\'app aperta, verrà espulso in tempo reale con un avviso bloccante.',
@@ -3946,7 +3973,7 @@ class _ProfileViewState extends State<ProfileView> {
       titolo = 'Sei sicuro di voler riabilitare @$segnalato?';
       sottotitolo = 'Questa azione comporterà quanto segue:';
       conseguenze = [
-        'La sospensione dell\'account di @$segnalato verrà revocata immediatamente.',
+        'La sospensione dell\'account di @$segnalato verrà revocata immediatamente e le ammonizioni precedenti verranno azzerate.',
         '@$segnalato potrà tornare ad effettuare il login e partecipare agli eventi.',
         'Riceverà una notifica Push e In-App di riabilitazione del profilo.',
       ];
@@ -3955,11 +3982,11 @@ class _ProfileViewState extends State<ProfileView> {
       confirmLabel = 'SÌ, RIABILITA';
     } else if (azione == 'archivia') {
       titolo = 'Sei sicuro di voler archiviare la pratica?';
-      sottotitolo = 'Questa azione comporterà quanto segue:';
+      sottotitolo = 'Questa decisione sarà definitiva e comporterà quanto segue:';
       conseguenze = [
-        'La segnalazione verrà chiusa e contrassegnata come "ARCHIVIATA".',
+        'La segnalazione verrà chiusa definitivamente con lo stato "ARCHIVIATA".',
         'Non verrà applicata alcuna sanzione o ammonizione a @$segnalato.',
-        'I pulsanti rapidi verranno nascosti, ma potrai sempre cambiare decisione dal menù a tendina (⋮).',
+        'Una volta archiviata non sarà più possibile modificare la decisione (potrai solo rimuovere la pratica dall\'elenco tramite il menù ⋮).',
       ];
       accentColor = const Color(0xFF10B981);
       iconData = Icons.archive_outlined;
@@ -3968,8 +3995,8 @@ class _ProfileViewState extends State<ProfileView> {
       titolo = 'Sei sicuro di voler rimuovere questa segnalazione?';
       sottotitolo = 'Questa azione comporterà quanto segue:';
       conseguenze = [
-        'La segnalazione verrà eliminata definitivamente dall\'elenco del Centro Moderazione.',
-        'Lo stato attuale dell\'account di @$segnalato non verrà modificato.',
+        'La pratica verrà rimossa dall\'elenco per mantenere ordinato il Centro Moderazione.',
+        'Lo stato dell\'account e le eventuali ammonizioni attive di @$segnalato rimarranno invariate.',
       ];
       accentColor = const Color(0xFFF87171);
       iconData = Icons.delete_outline_rounded;

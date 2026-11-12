@@ -6058,6 +6058,7 @@ class ApiService {
   Future<List<Map<String, dynamic>>> getSegnalazioni() async {
     final curUser = _currentUser;
     final curNick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
+    List<Map<String, dynamic>> resultList = [];
 
     for (String url in baseUrls) {
       try {
@@ -6067,40 +6068,75 @@ class ApiService {
         ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
           final List<dynamic> listJson = jsonDecode(res.body);
-          return listJson.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          resultList = listJson.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          break;
         }
       } catch (_) {}
     }
 
+    // Sincronizza con MongoDB anche per persistere/leggere il contatore ammonizioni sugli Utenti
+    final Set<String> utentiGiaAmmoniti = {};
     try {
       final db = await _getSafeMongoDb();
       if (db != null && db.isConnected) {
-        final docs = await db.collection('Segnalazioni').find(where.sortBy('timestamp', descending: true)).toList();
-        return docs.map((d) {
-          final idStr = d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : d['_id']?.toString() ?? '';
-          return {
-            'id': idStr,
-            'segnalatore': d['segnalatore'] ?? '',
-            'segnalato': d['segnalato'] ?? '',
-            'motivo': d['motivo'] ?? '',
-            'dettagli': d['dettagli'] ?? '',
-            'timestamp': d['timestamp'] ?? '',
-            'stato': d['stato'] ?? 'in_attesa',
-          };
-        }).toList();
+        if (resultList.isEmpty) {
+          final docs = await db.collection('Segnalazioni').find(where.sortBy('timestamp', descending: true)).toList();
+          resultList = docs.map((d) {
+            final idStr = d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : d['_id']?.toString() ?? '';
+            return {
+              'id': idStr,
+              'segnalatore': d['segnalatore'] ?? '',
+              'segnalato': d['segnalato'] ?? '',
+              'motivo': d['motivo'] ?? '',
+              'dettagli': d['dettagli'] ?? '',
+              'timestamp': d['timestamp'] ?? '',
+              'stato': d['stato'] ?? 'in_attesa',
+            };
+          }).toList();
+        }
+
+        final uDocs = await db.collection('Utenti').find(
+          where.fields(['nickname', 'username', 'nome', 'ammonizioni', 'isBanned'])
+        ).toList();
+        for (var u in uDocs) {
+          final nick = resolveNickname((u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString()).toLowerCase();
+          final int amm = (u['ammonizioni'] is num) ? (u['ammonizioni'] as num).toInt() : 0;
+          if (amm >= 1 && u['isBanned'] != true) {
+            utentiGiaAmmoniti.add(nick);
+          }
+        }
       }
     } catch (_) {}
 
-    return [];
+    // Anche se una pratica passata presente in lista ha stato 'ammonito', l'utente è già ammonito
+    for (var s in resultList) {
+      if ((s['stato'] ?? '').toString() == 'ammonito') {
+        final nick = resolveNickname((s['segnalato'] ?? '').toString()).toLowerCase();
+        if (nick.isNotEmpty) {
+          utentiGiaAmmoniti.add(nick);
+        }
+      }
+    }
+
+    for (var s in resultList) {
+      final nick = resolveNickname((s['segnalato'] ?? '').toString()).toLowerCase();
+      if (utentiGiaAmmoniti.contains(nick)) {
+        s['giaAmmonito'] = true;
+      }
+    }
+
+    return resultList;
   }
 
   Future<bool> gestisciSegnalazione({
     required String segnalazioneId,
-    required String azione, // 'ammonisci' | 'banna' | 'sbanna' | 'archivia' | 'elimina'
+    required String azione, // 'ammonisci' | 'banna_seconda_ammonizione' | 'banna' | 'sbanna' | 'archivia' | 'elimina'
     required String segnalato,
   }) async {
     final cleanTarget = resolveNickname(segnalato);
     final nowIso = DateTime.now().toIso8601String();
+    final bool isSecondaAmmonizione = azione == 'banna_seconda_ammonizione';
+    final String serverAzione = isSecondaAmmonizione ? 'banna' : azione;
     bool serverHandled = false;
     bool serverCreatedNotif = false;
 
@@ -6111,8 +6147,9 @@ class ApiService {
           headers: defaultHeaders,
           body: jsonEncode({
             'segnalazioneId': segnalazioneId,
-            'azione': azione,
+            'azione': serverAzione,
             'segnalato': cleanTarget,
+            'secondaAmmonizione': isSecondaAmmonizione,
           }),
         ).timeout(const Duration(seconds: 8));
         if (res.statusCode == 200) {
@@ -6128,7 +6165,7 @@ class ApiService {
       } catch (_) {}
     }
 
-    if (!serverHandled || !serverCreatedNotif) {
+    if (!serverHandled || !serverCreatedNotif || azione == 'ammonisci' || isSecondaAmmonizione || azione == 'sbanna' || azione == 'riabilita' || azione == 'elimina') {
       try {
         final db = await _getSafeMongoDb();
         if (db != null && db.isConnected) {
@@ -6137,14 +6174,25 @@ class ApiService {
           final sSelector = sObjId != null ? where.id(sObjId) : where.eq('_id', segnalazioneId);
 
           if (azione == 'ammonisci') {
+            // Salva sempre ammonizioni = 1 sul documento Utente così resta anche se la pratica viene rimossa dall'elenco
+            final uDocs = await db.collection('Utenti').find().toList();
+            for (var uDoc in uDocs) {
+              final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+              if (isSamePerson(uNick, cleanTarget)) {
+                final uId = uDoc['_id'] as ObjectId;
+                await db.collection('Utenti').update(where.id(uId), modify.set('ammonizioni', 1));
+                break;
+              }
+            }
+
             if (!serverHandled) {
               await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'ammonito'));
               await db.collection('Notifiche').insertOne({
                 'mittente': 'Amministrazione',
                 'destinatario': cleanTarget,
                 'tipo': 'ammonizione_utente',
-                'titolo': '⚠️ Richiamo Ufficiale di Moderazione',
-                'messaggio': 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+                'titolo': '⚠️ Richiamo Ufficiale di Moderazione (1/2)',
+                'messaggio': 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Attenzione: alla prossima ammonizione il tuo account verrà automaticamente sospeso.',
                 'stato': 'in_attesa',
                 'letto': false,
                 'data': nowIso,
@@ -6153,30 +6201,33 @@ class ApiService {
               serverHandled = true;
             } else if (!serverCreatedNotif) {
               // Il server (versione precedente) ha già creato la notifica '⚠️ Richiamo di Moderazione':
-              // aggiorniamo il titolo senza inserire un duplicato!
+              // aggiorniamo il titolo e messaggio senza inserire un duplicato!
               await db.collection('Notifiche').update(
                 where.eq('destinatario', cleanTarget).and(where.eq('tipo', 'ammonizione_utente')).and(where.eq('letto', false)),
                 modify
                     .set('mittente', 'Amministrazione')
-                    .set('titolo', '⚠️ Richiamo Ufficiale di Moderazione')
-                    .set('messaggio', 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.')
+                    .set('titolo', '⚠️ Richiamo Ufficiale di Moderazione (1/2)')
+                    .set('messaggio', 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Attenzione: alla prossima ammonizione il tuo account verrà automaticamente sospeso.')
                     .set('data', nowIso)
                     .set('timestamp', nowIso),
                 multiUpdate: true,
               );
             }
-          } else if (azione == 'banna') {
+          } else if (azione == 'banna' || isSecondaAmmonizione) {
+            final uDocs = await db.collection('Utenti').find().toList();
+            for (var uDoc in uDocs) {
+              final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+              if (isSamePerson(uNick, cleanTarget)) {
+                final uId = uDoc['_id'] as ObjectId;
+                await db.collection('Utenti').update(
+                  where.id(uId),
+                  modify.set('isBanned', true).set('ammonizioni', 0),
+                );
+                break;
+              }
+            }
             if (!serverHandled) {
               await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'bannato'));
-              final uDocs = await db.collection('Utenti').find().toList();
-              for (var uDoc in uDocs) {
-                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
-                if (isSamePerson(uNick, cleanTarget)) {
-                  final uId = uDoc['_id'] as ObjectId;
-                  await db.collection('Utenti').update(where.id(uId), modify.set('isBanned', true));
-                  break;
-                }
-              }
               serverHandled = true;
             }
             if (!serverCreatedNotif) {
@@ -6184,8 +6235,10 @@ class ApiService {
                 'mittente': 'Amministrazione',
                 'destinatario': cleanTarget,
                 'tipo': 'ban_utente',
-                'titolo': '⛔ Account Sospeso',
-                'messaggio': 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
+                'titolo': isSecondaAmmonizione ? '⛔ Account Sospeso (2ª Ammonizione)' : '⛔ Account Sospeso',
+                'messaggio': isSecondaAmmonizione
+                    ? 'Hai ricevuto una seconda ammonizione ufficiale dall\'Amministrazione. Per somma di ammonizioni il tuo account su FantaEventi è stato sospeso.'
+                    : 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
                 'stato': 'in_attesa',
                 'letto': false,
                 'data': nowIso,
@@ -6193,17 +6246,20 @@ class ApiService {
               });
             }
           } else if (azione == 'sbanna' || azione == 'riabilita') {
+            final uDocs = await db.collection('Utenti').find().toList();
+            for (var uDoc in uDocs) {
+              final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+              if (isSamePerson(uNick, cleanTarget)) {
+                final uId = uDoc['_id'] as ObjectId;
+                await db.collection('Utenti').update(
+                  where.id(uId),
+                  modify.set('isBanned', false).set('ammonizioni', 0),
+                );
+                break;
+              }
+            }
             if (!serverHandled) {
               await db.collection('Segnalazioni').update(sSelector, modify.set('stato', 'riabilitato'));
-              final uDocs = await db.collection('Utenti').find().toList();
-              for (var uDoc in uDocs) {
-                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
-                if (isSamePerson(uNick, cleanTarget)) {
-                  final uId = uDoc['_id'] as ObjectId;
-                  await db.collection('Utenti').update(where.id(uId), modify.set('isBanned', false));
-                  break;
-                }
-              }
               serverHandled = true;
             }
             if (!serverCreatedNotif) {
@@ -6225,6 +6281,19 @@ class ApiService {
               serverHandled = true;
             }
           } else if (azione == 'elimina') {
+            // Prima di rimuovere la pratica, se era 'ammonito' assicuriamoci che l'utente conservi ammonizioni = 1 su Utenti
+            final existingDoc = await db.collection('Segnalazioni').findOne(sSelector);
+            if (existingDoc != null && existingDoc['stato'] == 'ammonito') {
+              final uDocs = await db.collection('Utenti').find().toList();
+              for (var uDoc in uDocs) {
+                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+                if (isSamePerson(uNick, cleanTarget)) {
+                  final uId = uDoc['_id'] as ObjectId;
+                  await db.collection('Utenti').update(where.id(uId), modify.set('ammonizioni', 1));
+                  break;
+                }
+              }
+            }
             if (!serverHandled) {
               await db.collection('Segnalazioni').remove(sSelector);
               serverHandled = true;
@@ -6238,15 +6307,17 @@ class ApiService {
       if (azione == 'ammonisci') {
         unawaited(PushNotificationService.instance.inviaPushAUtenti(
           [cleanTarget],
-          titolo: '⚠️ Richiamo Ufficiale di Moderazione',
-          messaggio: 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+          titolo: '⚠️ Richiamo Ufficiale di Moderazione (1/2)',
+          messaggio: 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Attenzione: alla prossima ammonizione il tuo account verrà automaticamente sospeso.',
           data: {'tipo': 'ammonizione_utente'},
         ));
-      } else if (azione == 'banna') {
+      } else if (azione == 'banna' || isSecondaAmmonizione) {
         unawaited(PushNotificationService.instance.inviaPushAUtenti(
           [cleanTarget],
-          titolo: '⛔ Account Sospeso',
-          messaggio: 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
+          titolo: isSecondaAmmonizione ? '⛔ Account Sospeso (2ª Ammonizione)' : '⛔ Account Sospeso',
+          messaggio: isSecondaAmmonizione
+              ? 'Hai ricevuto una seconda ammonizione ufficiale dall\'Amministrazione. Per somma di ammonizioni il tuo account su FantaEventi è stato sospeso.'
+              : 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
           data: {'tipo': 'ban_utente'},
         ));
       } else if (azione == 'sbanna' || azione == 'riabilita') {
