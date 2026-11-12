@@ -6112,7 +6112,7 @@ class ApiService {
                 'destinatario': cleanTarget,
                 'tipo': 'ammonizione_utente',
                 'titolo': '⚠️ Richiamo Ufficiale di Moderazione',
-                'messaggio': 'Sei stato ammonito dall'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+                'messaggio': 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
                 'stato': 'in_attesa',
                 'letto': false,
                 'data': nowIso,
@@ -6139,7 +6139,7 @@ class ApiService {
                 'destinatario': cleanTarget,
                 'tipo': 'ban_utente',
                 'titolo': '⛔ Account Sospeso',
-                'messaggio': 'Il tuo account è stato sospeso dall'Amministrazione per violazione del regolamento della community di FantaEventi.',
+                'messaggio': 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
                 'stato': 'in_attesa',
                 'letto': false,
                 'data': nowIso,
@@ -6166,7 +6166,7 @@ class ApiService {
                 'destinatario': cleanTarget,
                 'tipo': 'riabilita_utente',
                 'titolo': '✅ Account Riabilitato',
-                'messaggio': 'La sospensione del tuo account è stata revocata dall'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
+                'messaggio': 'La sospensione del tuo account è stata revocata dall\'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
                 'stato': 'in_attesa',
                 'letto': false,
                 'data': nowIso,
@@ -6193,21 +6193,21 @@ class ApiService {
         unawaited(PushNotificationService.instance.inviaPushAUtenti(
           [cleanTarget],
           titolo: '⚠️ Richiamo Ufficiale di Moderazione',
-          messaggio: 'Sei stato ammonito dall'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
+          messaggio: 'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Ti invitiamo al rispetto delle regole della community.',
           data: {'tipo': 'ammonizione_utente'},
         ));
       } else if (azione == 'banna') {
         unawaited(PushNotificationService.instance.inviaPushAUtenti(
           [cleanTarget],
           titolo: '⛔ Account Sospeso',
-          messaggio: 'Il tuo account è stato sospeso dall'Amministrazione per violazione del regolamento della community di FantaEventi.',
+          messaggio: 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
           data: {'tipo': 'ban_utente'},
         ));
       } else if (azione == 'sbanna' || azione == 'riabilita') {
         unawaited(PushNotificationService.instance.inviaPushAUtenti(
           [cleanTarget],
           titolo: '✅ Account Riabilitato',
-          messaggio: 'La sospensione del tuo account è stata revocata dall'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
+          messaggio: 'La sospensione del tuo account è stata revocata dall\'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
           data: {'tipo': 'riabilita_utente'},
         ));
       }
