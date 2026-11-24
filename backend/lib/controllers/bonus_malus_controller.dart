@@ -89,8 +89,9 @@ class BonusMalusController {
         bmHexId = res.id?.oid ?? '';
       }
 
-      // Accredita +50 XP e aggiorna storicoVoti al proponente se è una nuova proposta
-      if (isNewProposal) {
+      // Accredita +50 XP e aggiorna storicoVoti al proponente se è una nuova proposta (escluso il tutorial con awardXp=false)
+      final bool shouldAwardXp = data['awardXp'] != false;
+      if (isNewProposal && shouldAwardXp) {
         try {
           final now = ItalianTime.now();
           final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
@@ -526,6 +527,12 @@ class BonusMalusController {
       final selector = objId != null ? where.id(objId) : where.eq('nome', bmId);
 
       await DbService.instance.bonusMalusCollection.remove(selector);
+      if (bmId.isNotEmpty) {
+        await DbService.instance.votazioniCollection.remove(
+          where.eq('votazioneId', bmId).or(where.eq('bonusId', bmId)),
+        );
+        await DbService.instance.notificheCollection.remove(where.eq('bonusId', bmId));
+      }
 
       return Response.ok(
         jsonEncode({'message': 'Bonus/Malus eliminato con successo'}),

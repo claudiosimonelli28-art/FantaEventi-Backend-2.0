@@ -17,21 +17,18 @@ class FcmService {
   DateTime? _tokenExpiry;
 
   String _getChannelIdForType(String? tipo) {
-    final t = (tipo ?? '').toLowerCase();
-    if (t.startsWith('var')) {
-      return 'fantaeventi_var_v2';
-    } else if (t.contains('assegnazione') ||
-        t == 'bonus' ||
-        t == 'malus' ||
-        t.contains('ammonizione') ||
-        t.contains('ban_utente') ||
-        t.contains('segnalazione')) {
-      return 'fantaeventi_bonus_v2';
-    } else if (t.contains('proposta') || t.contains('votazione') || t == 'bonus_malus') {
-      return 'fantaeventi_votes_v2';
-    } else {
-      return 'fantaeventi_invites_v2';
+    final t = (tipo ?? '').toLowerCase().trim();
+    if (t.startsWith('var')) return 'fantaeventi_var';
+    if (t.contains('invito') || t.contains('amicizia')) return 'fantaeventi_invites';
+    if (t == 'bonus_approvato' || t == 'malus_approvato' || t == 'regola_approvata' || t.contains('approvat')) {
+      return 'fantaeventi_rules';
     }
+    if (t == 'bonus_malus' || t.contains('proposta') || t.contains('vota')) {
+      return 'fantaeventi_channel';
+    }
+    if (t.contains('malus')) return 'fantaeventi_malus';
+    if (t.contains('bonus')) return 'fantaeventi_bonus';
+    return 'fantaeventi_channel';
   }
 
   Future<Map<String, dynamic>?> _loadServiceAccount() async {

@@ -1785,6 +1785,7 @@ class ApiService {
                 'propostoDa': curUserNick,
                 'utente': curUserNick,
                 'riassegnabileMoltepliciVolte': nuovoBonus.riassegnabileMoltepliciVolte,
+                'awardXp': awardXp,
               }),
             )
             .timeout(const Duration(seconds: 10));
@@ -1796,8 +1797,10 @@ class ApiService {
             id: insertedBmId.isNotEmpty ? insertedBmId : nuovoBonus.id,
             eventoId: eventoId,
           );
-          _bonusMalusList.removeWhere((b) => b.id == finalBonus.id);
-          _bonusMalusList.insert(0, finalBonus);
+          if (finalBonus.approvato || finalBonus.stato == 'approvato') {
+            _bonusMalusList.removeWhere((b) => b.id == finalBonus.id);
+            _bonusMalusList.insert(0, finalBonus);
+          }
 
           final numParticipants = evMatch.partecipanti.length >= 2 ? evMatch.partecipanti.length : 2;
           final int quorum = (numParticipants / 2).floor() + 1;
@@ -1819,6 +1822,39 @@ class ApiService {
           );
           _votazioniList.removeWhere((v) => v.id == newVotazione.id);
           _votazioniList.insert(0, newVotazione);
+
+          final evIdx = _eventi.indexWhere((e) => e.id == eventoId || e.titolo.toLowerCase() == eventoId.toLowerCase());
+          if (evIdx != -1) {
+            final ev = _eventi[evIdx];
+            final votAttive = [
+              newVotazione,
+              ...ev.votazioniAttive.where((v) => v.id != newVotazione.id && v.titolo != newVotazione.titolo),
+            ];
+            _eventi[evIdx] = ev.copyWith(votazioniAttive: votAttive);
+          }
+
+          if (_currentUser != null && awardXp) {
+            final prog = XpProgression.aggiungiXp(
+              livelloAttuale: _currentUser!.livello,
+              xpLivelloAttuale: _currentUser!.xp,
+              deltaXp: 50,
+              xpTotaliAttuali: _currentUser!.xpTotali,
+            );
+            final logVoce = formattaVoceStorico(
+              'Proposto ${nuovoBonus.isBonus ? "Bonus" : "Malus"} "${nuovoBonus.titolo}" (+50 XP)',
+            );
+            _currentUser = _currentUser!.copyWith(
+              xp: prog.xp,
+              livello: prog.livello,
+              xpProssimoLivello: prog.xpProssimoLivello,
+              xpTotali: prog.xpTotali,
+              storicoVoti: [
+                logVoce,
+                ..._currentUser!.storicoVoti,
+              ],
+            );
+            await _saveSession(_currentUser!);
+          }
 
           invalidateCache();
 
