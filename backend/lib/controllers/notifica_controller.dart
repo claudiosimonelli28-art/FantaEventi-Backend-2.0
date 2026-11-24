@@ -3,6 +3,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../services/fcm_service.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
@@ -144,7 +145,7 @@ class NotificaController {
             final dtFineStr = evDoc['dataFine']?.toString();
             final DateTime? dtFine = dtFineStr != null ? DateTime.tryParse(dtFineStr) : null;
             final bool isEvConcluso = statoEv == 'concluso' ||
-                (statoEv != 'in_corso' && statoEv != 'in_programma' && dtFine != null && DateTime.now().isAfter(dtFine));
+                (statoEv != 'in_corso' && statoEv != 'in_programma' && dtFine != null && ItalianTime.now().isAfter(dtFine));
 
             final bool isOperativa =
                 tipo == 'invito' || tipo.contains('proposta') || tipo == 'bonus_malus' || tipo.contains('var_');
@@ -311,7 +312,7 @@ class NotificaController {
           'esitoVotazione': esitoVotazione,
           'codiceAmico': d['codiceAmico'] ?? '',
           'segnalazioneId': d['segnalazioneId'] ?? '',
-          'data': d['data']?.toString() ?? d['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+          'data': d['data']?.toString() ?? d['timestamp']?.toString() ?? ItalianTime.now().toIso8601String(),
         });
       }
 
@@ -566,7 +567,7 @@ class NotificaController {
           'tipo': 'benvenuto',
           'stato': 'in_attesa',
           'letto': false,
-          'data': DateTime.now().toIso8601String(),
+          'data': ItalianTime.now().toIso8601String(),
         });
       }
 

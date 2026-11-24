@@ -4,6 +4,7 @@ import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/bonus_malus.dart';
 import '../models/utente.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
@@ -91,7 +92,7 @@ class BonusMalusController {
       // Accredita +50 XP e aggiorna storicoVoti al proponente se è una nuova proposta
       if (isNewProposal) {
         try {
-          final now = DateTime.now();
+          final now = ItalianTime.now();
           final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
           final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] Proposto ${safePunti >= 0 ? "Bonus" : "Malus"} "$nome" (+50 XP)';
 
@@ -143,7 +144,7 @@ class BonusMalusController {
             'utente': propostoDaUtente,
             'voto': 'pro',
             'stato': 'in_votazione',
-            'data': DateTime.now().toIso8601String(),
+            'data': ItalianTime.now().toIso8601String(),
           });
         }
       } catch (_) {}
@@ -193,7 +194,7 @@ class BonusMalusController {
           return NicknameHelper.isSame(cleanD, propostoDaUtente, allUtenti);
         });
 
-        final now = DateTime.now();
+        final now = ItalianTime.now();
         for (var rawDest in destinatariSet) {
           final destUser = NicknameHelper.resolve(rawDest, allUtenti);
           final existingNot = await DbService.instance.notificheCollection.findOne(
@@ -258,7 +259,7 @@ class BonusMalusController {
         );
       }
 
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final ptStr = safePunti >= 0 ? '+$safePunti' : '$safePunti';
       final logText = '[${now.toIso8601String().substring(0, 10)} $timeStr] 🏆 Ricevuto ${safePunti >= 0 ? "Bonus" : "Malus"} "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoTitolo" ($timeStr)';
@@ -475,7 +476,7 @@ class BonusMalusController {
       }
 
       // 2. Storna i punti dall'utente (XP PERMANENTI: NON vengono sottratti)
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] ⚠️ Annullata assegnazione bonus (-$safePunti PT) (ore $timeStr)';
 

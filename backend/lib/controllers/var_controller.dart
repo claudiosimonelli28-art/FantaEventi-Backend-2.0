@@ -4,6 +4,7 @@ import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/richiesta_var.dart';
 import '../models/utente.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
@@ -50,7 +51,7 @@ class VarController {
         return _errorResponse('Campi obbligatori mancanti: eventoId, richiedente o giudice');
       }
 
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final varDoc = {
         'eventoId': eventoId,
         'eventoTitolo': eventoTitolo,
@@ -291,7 +292,7 @@ class VarController {
       }
 
       final richiesta = RichiestaVar.fromMap(doc);
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final ts = now.millisecondsSinceEpoch;
       final uDocs = await UtenteController.getCachedUtentiDocs();
       final ptStr = richiesta.punti >= 0 ? '+${richiesta.punti}' : '${richiesta.punti}';

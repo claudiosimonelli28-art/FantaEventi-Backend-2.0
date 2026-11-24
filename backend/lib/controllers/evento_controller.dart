@@ -4,6 +4,7 @@ import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
@@ -11,7 +12,7 @@ class EventoController {
   // GET /api/eventi
   Future<Response> getEventi(Request request) async {
     try {
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final utenteRichiedente = (request.url.queryParameters['utente'] ?? '').toString().trim();
       final docs = await DbService.instance.eventiCollection.find().toList();
       final utentiDocs = await UtenteController.getCachedUtentiDocs();
@@ -545,7 +546,7 @@ class EventoController {
           .map((p) => NicknameHelper.resolve(p, utentiDocs))
           .toList();
 
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
       final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] Creato evento "$titolo" (in attesa di avvio)';
 
@@ -658,7 +659,7 @@ class EventoController {
         final stato = (doc['stato'] ?? 'in_programma').toString().toLowerCase();
         final dateStr = doc['data']?.toString() ?? '';
         final dtStart = DateTime.tryParse(dateStr);
-        final now = DateTime.now();
+        final now = ItalianTime.now();
 
         if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
           return Response.badRequest(
@@ -804,7 +805,7 @@ class EventoController {
       final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
       final dateStr = evDoc['data']?.toString() ?? '';
       final dtStart = DateTime.tryParse(dateStr);
-      final now = DateTime.now();
+      final now = ItalianTime.now();
 
       if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
         return Response.badRequest(
@@ -916,7 +917,7 @@ class EventoController {
   // POST /api/eventi/riconcilia
   Future<Response> riconciliaEventiETitoli(Request request) async {
     try {
-      final now = DateTime.now();
+      final now = ItalianTime.now();
       final evDocs = await DbService.instance.eventiCollection.find().toList();
       final uDocs = await UtenteController.getCachedUtentiDocs(forceRefresh: true);
       final bmList = await DbService.instance.bonusMalusCollection.find().toList();

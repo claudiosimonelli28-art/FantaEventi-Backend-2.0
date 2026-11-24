@@ -12,9 +12,11 @@ RUN dart compile exe bin/server.dart -o bin/server
 # Build minimal runtime image
 FROM scratch
 COPY --from=build /runtime/ /
+COPY --from=build /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=build /app/bin/server /app/bin/server
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
+ENV TZ=Europe/Rome
 EXPOSE 8088
 
 CMD ["/app/bin/server"]

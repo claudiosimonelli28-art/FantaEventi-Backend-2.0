@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
@@ -24,7 +25,7 @@ class SegnalazioneController {
         );
       }
 
-      final nowIso = DateTime.now().toIso8601String();
+      final nowIso = ItalianTime.now().toIso8601String();
       final doc = {
         'segnalatore': segnalatore,
         'segnalato': segnalato,
@@ -168,7 +169,7 @@ class SegnalazioneController {
       final uDocs = await UtenteController.getCachedUtentiDocs();
       final cleanSegnalato = NicknameHelper.resolve(segnalato, uDocs);
       final bool isSecondaAmmonizione = data['secondaAmmonizione'] == true;
-      final nowIso = DateTime.now().toIso8601String();
+      final nowIso = ItalianTime.now().toIso8601String();
 
       if (azione == 'ammonisci') {
         await DbService.instance.segnalazioniCollection.update(

@@ -184,8 +184,8 @@ Future<void> main(List<String> args) async {
     // =========================================================================
     print('\n--- TEST 4: Evento, Invito, Proposta Bonus/Malus (+50 XP) e Votazione Live (+25 XP) ---');
     final now = DateTime.now();
-    final dtStart = now.add(const Duration(seconds: 5));
-    final dtEnd = now.add(const Duration(seconds: 11));
+    final dtStart = now.add(const Duration(seconds: 9));
+    final dtEnd = now.add(const Duration(seconds: 20));
 
     final evRes = await _postJson(baseUrl, '/eventi/crea', {
       'titolo': 'Evento_Collaudo_E2E_$ts',

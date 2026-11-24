@@ -1,4 +1,5 @@
 import 'package:mongo_dart/mongo_dart.dart';
+import '../utils/italian_time.dart';
 import 'bonus_malus.dart';
 import 'votazione.dart';
 
@@ -26,9 +27,9 @@ class Evento {
   String get categoria => stato;
   bool get haAltriPartecipanti => partecipanti.any((p) => p.trim().isNotEmpty && p.trim().toLowerCase() != creatore.trim().toLowerCase());
   bool get isAnnullato => stato == 'annullato';
-  bool get isConcluso => !isAnnullato && (DateTime.now().isAfter(dataFine) || stato == 'concluso');
+  bool get isConcluso => !isAnnullato && (ItalianTime.now().isAfter(dataFine) || stato == 'concluso');
   bool get isInCorso {
-    final now = DateTime.now();
+    final now = ItalianTime.now();
     return !isConcluso && !isAnnullato && (stato == 'in_corso' || (now.isAfter(data) && now.isBefore(dataFine) && haAltriPartecipanti));
   }
   bool get isInProgramma => !isConcluso && !isAnnullato && !isInCorso;
@@ -57,8 +58,8 @@ class Evento {
 
   factory Evento.fromMap(Map<String, dynamic> map) {
     final dtInizio = map['data'] != null
-        ? (map['data'] is DateTime ? map['data'] as DateTime : DateTime.tryParse(map['data'].toString()) ?? DateTime.now())
-        : DateTime.now();
+        ? (map['data'] is DateTime ? map['data'] as DateTime : DateTime.tryParse(map['data'].toString()) ?? ItalianTime.now())
+        : ItalianTime.now();
 
     final dtFine = map['dataFine'] != null
         ? (map['dataFine'] is DateTime ? map['dataFine'] as DateTime : DateTime.tryParse(map['dataFine'].toString()) ?? dtInizio.add(const Duration(hours: 4)))
@@ -71,7 +72,7 @@ class Evento {
         [];
     final bool haAltri = pList.any((p) => p.isNotEmpty && p.toLowerCase() != rawCreatore.toLowerCase());
 
-    final now = DateTime.now();
+    final now = ItalianTime.now();
     String calculatedStato = 'in_programma';
     final rawStato = (map['stato'] as String? ?? 'in_programma').toLowerCase();
 

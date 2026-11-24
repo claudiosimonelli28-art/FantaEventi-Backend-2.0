@@ -5,6 +5,7 @@ import '../db/db_service.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
 import '../models/utente.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
@@ -298,7 +299,7 @@ class VotazioneController {
               xpTotaliAttuali: curTot,
             );
 
-            final now = DateTime.now();
+            final now = ItalianTime.now();
             final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
             final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] Votato ${aFavore ? "FAVOREVOLE" : "CONTRARIO"} (+25 XP)';
 
