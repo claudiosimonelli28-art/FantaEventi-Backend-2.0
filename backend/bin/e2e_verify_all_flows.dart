@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:backend/db/db_service.dart';
+import 'package:backend/utils/italian_time.dart';
 
 void _assert(bool condition, String message) {
   if (!condition) {
@@ -183,9 +184,16 @@ Future<void> main(List<String> args) async {
     // TEST 4: CREAZIONE EVENTO, INVITO, PARTECIPAZIONE, PROPOSTA (+50 XP), VOTO (+25 XP)
     // =========================================================================
     print('\n--- TEST 4: Evento, Invito, Proposta Bonus/Malus (+50 XP) e Votazione Live (+25 XP) ---');
-    final now = DateTime.now();
-    final dtStart = now.add(const Duration(seconds: 9));
-    final dtEnd = now.add(const Duration(seconds: 20));
+    final healthResp = await http.get(Uri.parse('$baseUrl/health'));
+    final serverDateHdr = healthResp.headers['date'];
+    final DateTime serverNow = serverDateHdr != null
+        ? ItalianTime.fromUtc(HttpDate.parse(serverDateHdr))
+        : ItalianTime.now();
+    final Duration clockSkew = serverNow.difference(DateTime.now());
+    DateTime currentServerTime() => DateTime.now().add(clockSkew);
+
+    final dtStart = currentServerTime().add(const Duration(seconds: 9));
+    final dtEnd = currentServerTime().add(const Duration(seconds: 21));
 
     final evRes = await _postJson(baseUrl, '/eventi/crea', {
       'titolo': 'Evento_Collaudo_E2E_$ts',
@@ -266,7 +274,7 @@ Future<void> main(List<String> args) async {
     // TEST 5: AVVIO EVENTO IN CORSO (+100 XP CREATORE), ASSEGNAZIONE, STORNO, VAR
     // =========================================================================
     print('\n--- TEST 5: Avvio Evento in_corso (+100 XP), Assegnazione, Storno e Sentenza VAR ---');
-    final waitInCorsoMs = dtStart.difference(DateTime.now()).inMilliseconds + 800;
+    final waitInCorsoMs = dtStart.difference(currentServerTime()).inMilliseconds + 1200;
     if (waitInCorsoMs > 0) {
       await Future.delayed(Duration(milliseconds: waitInCorsoMs));
     }
@@ -366,7 +374,7 @@ Future<void> main(List<String> args) async {
     // TEST 6: CONCLUSIONE EVENTO -> TROFEO, BADGE PARTECIPAZIONE, 5 TITOLI HALL OF FAME
     // =========================================================================
     print('\n--- TEST 6: Conclusione Evento, Trofeo 1° Classificato, Badge e 5 Titoli Hall of Fame ---');
-    final waitFineMs = dtEnd.difference(DateTime.now()).inMilliseconds + 1000;
+    final waitFineMs = dtEnd.difference(currentServerTime()).inMilliseconds + 1500;
     if (waitFineMs > 0) {
       await Future.delayed(Duration(milliseconds: waitFineMs));
     }
