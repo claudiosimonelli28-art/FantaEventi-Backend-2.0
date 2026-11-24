@@ -27,21 +27,12 @@ class NotificaController {
   Future<Response> getNotificheUtente(Request request) async {
     try {
       final dest = (request.url.queryParameters['utente'] ?? '').trim();
-      final results = await Future.wait([
-        UtenteController.getCachedUtentiDocs(),
-        DbService.instance.notificheCollection.find().toList(),
-        DbService.instance.eventiCollection.find().toList(),
-        DbService.instance.bonusMalusCollection.find().toList(),
-        DbService.instance.votazioniCollection.find().toList(),
-        DbService.instance.richiesteVarCollection.find(where.excludeFields(['fotoBase64'])).toList(),
-      ]);
-
-      final uDocs = results[0];
-      final allNotifiche = results[1];
-      final eventiDocs = results[2];
-      final bmDocs = results[3];
-      final votazioniDocs = results[4];
-      final varDocs = results[5];
+      final uDocs = await UtenteController.getCachedUtentiDocs();
+      final allNotifiche = await DbService.instance.notificheCollection.find().toList();
+      final eventiDocs = await DbService.instance.eventiCollection.find().toList();
+      final bmDocs = await DbService.instance.bonusMalusCollection.find().toList();
+      final votazioniDocs = await DbService.instance.votazioniCollection.find().toList();
+      final varDocs = await DbService.instance.richiesteVarCollection.find(where.excludeFields(['fotoBase64'])).toList();
 
       final cleanNick = dest.isNotEmpty ? NicknameHelper.resolve(dest, uDocs).trim() : '';
 

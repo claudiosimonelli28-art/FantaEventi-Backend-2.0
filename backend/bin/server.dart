@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
@@ -32,15 +33,65 @@ Middleware _corsMiddleware() {
   };
 }
 
+Future<void> _dbRequestQueue = Future.value();
+
 Middleware _mongoDbMiddleware() {
   return (Handler innerHandler) {
     return (Request request) async {
-      try {
-        await DbService.instance.ensureConnected();
-      } catch (e) {
-        print('Errore riconnessione DB: $e');
+      if (request.url.path == 'api/health' || request.url.path.startsWith('privacy')) {
+        return await innerHandler(request);
       }
-      return await innerHandler(request);
+
+      final completer = Completer<void>();
+      final previous = _dbRequestQueue;
+      _dbRequestQueue = completer.future;
+      try {
+        await previous;
+      } catch (_) {}
+
+      try {
+        try {
+          await DbService.instance.ensureConnected();
+        } catch (e) {
+          print('⚠️ Errore ensureConnected, tento reconnect: $e');
+          try {
+            await DbService.instance.reconnect();
+          } catch (_) {}
+        }
+
+        var response = await innerHandler(request);
+        if (response.statusCode == 500) {
+          if (request.method == 'GET') {
+            final errBody = await response.readAsString();
+            if (errBody.contains('ConnectionException') ||
+                errBody.contains('connection closed') ||
+                errBody.contains('Database non connesso') ||
+                errBody.contains('SocketException')) {
+              print('🔄 [MongoDB] Socket chiusa rilevata su GET /${request.url.path}, riconnessione e retry immediato...');
+              try {
+                await DbService.instance.reconnect();
+                return await innerHandler(request);
+              } catch (_) {
+                return Response.internalServerError(
+                  body: errBody,
+                  headers: {'content-type': 'application/json'},
+                );
+              }
+            }
+            return Response.internalServerError(
+              body: errBody,
+              headers: {'content-type': 'application/json'},
+            );
+          } else {
+            try {
+              await DbService.instance.reconnect();
+            } catch (_) {}
+          }
+        }
+        return response;
+      } finally {
+        completer.complete();
+      }
     };
   };
 }

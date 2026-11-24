@@ -51,14 +51,40 @@ class DbService {
     return '';
   }
 
+  Future<void>? _connectingFuture;
+
   Future<void> ensureConnected() async {
-    if (_db == null || !_db!.isConnected) {
-      await connect();
+    if (_db != null && _db!.isConnected && _db!.state == State.open) {
+      return;
     }
+    await connect();
+  }
+
+  Future<void> reconnect() async {
+    try {
+      if (_db != null) {
+        await _db!.close();
+      }
+    } catch (_) {}
+    _db = null;
+    await connect();
   }
 
   Future<void> connect() async {
-    if (_db != null && _db!.isConnected) return;
+    if (_db != null && _db!.isConnected && _db!.state == State.open) return;
+    if (_connectingFuture != null) {
+      await _connectingFuture;
+      return;
+    }
+    _connectingFuture = _doConnect();
+    try {
+      await _connectingFuture;
+    } finally {
+      _connectingFuture = null;
+    }
+  }
+
+  Future<void> _doConnect() async {
     try {
       if (_db != null) {
         await _db!.close();
@@ -92,6 +118,12 @@ class DbService {
 
     if (mongoUri == null || mongoUri.trim().isEmpty) {
       throw StateError('MONGODB_URI non configurato nell\'ambiente o nel file .env');
+    }
+
+    if (!mongoUri.contains('safeAtlas=')) {
+      mongoUri = mongoUri.contains('?')
+          ? '$mongoUri&safeAtlas=true'
+          : '$mongoUri?safeAtlas=true';
     }
 
     print('🔌 Connessione al tuo database MongoDB Atlas in corso...');

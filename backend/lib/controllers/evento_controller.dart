@@ -500,6 +500,11 @@ class EventoController {
         json['creatore'] = creatorNick;
         json['partecipanti'] = cleanPart;
         json['invitati'] = cleanInv;
+        json['badgeVincitoreAssegnato'] = d['badgeVincitoreAssegnato'] == true;
+        json['titoliAssegnati'] = d['titoliAssegnati'] == true;
+        if (d['titoliVincitori'] != null) {
+          json['titoliVincitori'] = d['titoliVincitori'];
+        }
 
         resultList.add(json);
       }
