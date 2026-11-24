@@ -611,6 +611,7 @@ class VarController {
       }
 
       print('📺 [VAR] Decisione registrata per VAR $varId da $cleanGiudice: approvato=$approva');
+      UtenteController.invalidateCache();
       return _jsonResponse({
         'success': true,
         'varId': varId,

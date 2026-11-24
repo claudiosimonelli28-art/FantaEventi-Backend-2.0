@@ -98,6 +98,7 @@ class EventoController {
                       .set('xpTotali', prog.xpTotali)
                       .set('storicoVoti', curStorico),
                   );
+                  UtenteController.invalidateCache();
                   break;
                 }
               }
@@ -105,7 +106,6 @@ class EventoController {
           }
         }
 
-        final evento = Evento.fromMap(d);
         // Auto-eliminazione definitiva dal feed e dal DB dopo 5 giorni dalla conclusione
         final bool isConcluso = stato != 'annullato' && (now.isAfter(dtEnd) || stato == 'concluso');
         if (isConcluso && now.difference(dtEnd).inDays >= 5) {
@@ -133,6 +133,349 @@ class EventoController {
           }
           continue;
         }
+
+        // Se l'evento è appena finito (negli ultimi 5 giorni), assegna premi/badge/titoli una sola volta
+        if (isConcluso && (d['badgeVincitoreAssegnato'] != true || d['titoliAssegnati'] != true)) {
+          try {
+            final evTitolo = titolo.isNotEmpty ? titolo : 'Evento Fanta';
+            final evIdStr = evId?.oid ?? (d['_id']?.toString() ?? d['id']?.toString() ?? '');
+            final dateStr = '${dtEnd.day.toString().padLeft(2, '0')}/${dtEnd.month.toString().padLeft(2, '0')}/${dtEnd.year}';
+            final partBadge = '🎉 Partecipato a "$evTitolo" ($dateStr)';
+
+            final bmList = await DbService.instance.bonusMalusCollection.find(
+              where.eq('eventoId', evIdStr).or(where.eq('eventoId', evTitolo)),
+            ).toList();
+            final allVotazioni = await DbService.instance.votazioniCollection.find().toList();
+            final uDocs = await UtenteController.getCachedUtentiDocs(forceRefresh: true);
+
+            final Map<String, int> punteggi = {for (var p in cleanPart) p: 0};
+            final Map<String, int> malusPerUtente = {for (var p in cleanPart) p.trim().toLowerCase(): 0};
+            final Map<String, int> attivitaPerUtente = {for (var p in cleanPart) p.trim().toLowerCase(): 0};
+            final Map<String, int> azioniTotaliPerUtente = {for (var p in cleanPart) p.trim().toLowerCase(): 0};
+
+            String? findPartKeyLower(String rawUser) {
+              final resolved = NicknameHelper.resolve(rawUser, uDocs).trim().toLowerCase();
+              if (attivitaPerUtente.containsKey(resolved)) return resolved;
+              for (var k in attivitaPerUtente.keys) {
+                if (NicknameHelper.isSame(k, rawUser, uDocs)) return k;
+              }
+              return null;
+            }
+
+            String? findPunteggiKey(String rawUser) {
+              final resolved = NicknameHelper.resolve(rawUser, uDocs);
+              if (punteggi.containsKey(resolved)) return resolved;
+              for (var k in punteggi.keys) {
+                if (NicknameHelper.isSame(k, rawUser, uDocs)) return k;
+              }
+              return null;
+            }
+
+            final Set<String> bmIds = {};
+            for (var bm in bmList) {
+              final bmIdStr = (bm['_id'] is ObjectId
+                      ? (bm['_id'] as ObjectId).oid
+                      : (bm['_id']?.toString() ?? bm['id']?.toString() ?? ''))
+                  .toLowerCase();
+              if (bmIdStr.isNotEmpty) bmIds.add(bmIdStr);
+              final nomeBm = (bm['nome'] ?? bm['titolo'] ?? '').toString().toLowerCase();
+              if (nomeBm.isNotEmpty) bmIds.add(nomeBm);
+
+              final bool isVarSanzione = (bm['categoria'] ?? '').toString().toUpperCase() == 'VAR' ||
+                  nomeBm.contains('falsa testimonianza') ||
+                  (bm['descrizione'] ?? '').toString().toLowerCase().contains('sanzione per denuncia');
+
+              final prop = (bm['propostoDa'] ?? '').toString().trim();
+              final propKey = prop.isNotEmpty ? findPartKeyLower(prop) : null;
+              if (!isVarSanzione && propKey != null) {
+                attivitaPerUtente[propKey] = (attivitaPerUtente[propKey] ?? 0) + 1;
+                azioniTotaliPerUtente[propKey] = (azioniTotaliPerUtente[propKey] ?? 0) + 1;
+              }
+
+              final ass = (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+              final pt = (bm['punti'] as num?)?.toInt() ?? 0;
+              final bool approvato = bm['approvato'] == true || bm['stato'] == 'approvato';
+
+              for (var u in ass) {
+                final uLowerKey = findPartKeyLower(u);
+                if (uLowerKey != null) {
+                  azioniTotaliPerUtente[uLowerKey] = (azioniTotaliPerUtente[uLowerKey] ?? 0) + 1;
+                }
+                if (approvato) {
+                  final pKey = findPunteggiKey(u) ?? NicknameHelper.resolve(u, uDocs);
+                  punteggi[pKey] = (punteggi[pKey] ?? 0) + pt;
+                  if (pt < 0 && uLowerKey != null) {
+                    malusPerUtente[uLowerKey] = (malusPerUtente[uLowerKey] ?? 0) + pt.abs();
+                  }
+                }
+              }
+            }
+
+            for (var v in allVotazioni) {
+              final vEvId = (v['eventoId'] ?? v['bonusMalus']?['eventoId'] ?? '').toString().trim().toLowerCase();
+              final vBonusId = (v['bonusId'] ?? v['votazioneId'] ?? '').toString().trim().toLowerCase();
+              final vBonusTit = (v['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+
+              final bool isForThisEvent =
+                  (vEvId.isNotEmpty && (vEvId == evIdStr.toLowerCase() || vEvId == evTitolo.toLowerCase())) ||
+                  (vBonusId.isNotEmpty && bmIds.contains(vBonusId)) ||
+                  (vBonusTit.isNotEmpty && bmIds.contains(vBonusTit));
+
+              if (!isForThisEvent) continue;
+
+              if (v['utente'] != null) {
+                final voterKey = findPartKeyLower(v['utente'].toString());
+                if (voterKey != null) {
+                  attivitaPerUtente[voterKey] = (attivitaPerUtente[voterKey] ?? 0) + 1;
+                  azioniTotaliPerUtente[voterKey] = (azioniTotaliPerUtente[voterKey] ?? 0) + 1;
+                }
+              } else if (v['votiUtenti'] is Map) {
+                final votiMap = v['votiUtenti'] as Map;
+                for (var voter in votiMap.keys) {
+                  final voterKey = findPartKeyLower(voter.toString());
+                  if (voterKey != null) {
+                    attivitaPerUtente[voterKey] = (attivitaPerUtente[voterKey] ?? 0) + 1;
+                    azioniTotaliPerUtente[voterKey] = (azioniTotaliPerUtente[voterKey] ?? 0) + 1;
+                  }
+                }
+              }
+            }
+
+            bool usersUpdated = false;
+            final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+            // 1. Assegna badge al 1° in classifica
+            String? vincitoreNick;
+            if (punteggi.isNotEmpty) {
+              final sorted = punteggi.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+              vincitoreNick = NicknameHelper.resolve(sorted.first.key, uDocs);
+              final badgeMap = {
+                'titolo': '🏆 Vincitore Evento',
+                'evento': evTitolo,
+                'punti': sorted.first.value,
+                'data': now.toIso8601String(),
+              };
+
+              for (var uDoc in uDocs) {
+                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+                if (NicknameHelper.isSame(uNick, vincitoreNick, uDocs)) {
+                  final List<dynamic> currentBadgeVincitore = List.from(uDoc['badgeVincitore'] ?? []);
+                  if (!currentBadgeVincitore.any((b) => b is Map && b['evento'] == badgeMap['evento'])) {
+                    currentBadgeVincitore.add(badgeMap);
+                    final List<dynamic> currentStorico = List.from(uDoc['storicoVoti'] ?? []);
+                    final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] 🏆 Vincitore dell\'evento "$evTitolo" (+${sorted.first.value} PT)';
+                    currentStorico.insert(0, logVoce);
+                    await DbService.instance.utentiCollection.update(
+                      where.id(uDoc['_id'] as ObjectId),
+                      modify
+                        .set('badgeVincitore', currentBadgeVincitore)
+                        .set('storicoVoti', currentStorico),
+                    );
+                    usersUpdated = true;
+                  }
+                }
+              }
+            }
+
+            // 2. Assegna Badge Partecipazione a TUTTI i partecipanti
+            for (var part in cleanPart) {
+              for (var uDoc in uDocs) {
+                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+                if (NicknameHelper.isSame(uNick, part, uDocs)) {
+                  final List<dynamic> currentBadgeList = List.from(uDoc['badgeList'] ?? []);
+                  if (!currentBadgeList.any((b) => b.toString().contains(evTitolo))) {
+                    currentBadgeList.add(partBadge);
+                    await DbService.instance.utentiCollection.update(
+                      where.id(uDoc['_id'] as ObjectId),
+                      modify.set('badgeList', currentBadgeList),
+                    );
+                    usersUpdated = true;
+                  }
+                }
+              }
+            }
+
+            // 3. Assegnazione Titoli Permanenti della Bacheca (Re dei Malus, L'Avvocato, Fantasma, Lo Sbirro, Il Giustiziere)
+            if (d['titoliAssegnati'] != true) {
+              int maxMalus = 0;
+              String? bestMalusUser;
+              malusPerUtente.forEach((k, v) {
+                if (v > maxMalus) {
+                  maxMalus = v;
+                  bestMalusUser = NicknameHelper.resolve(k, uDocs);
+                }
+              });
+
+              int maxAtt = 0;
+              String? bestGiudiceUser;
+              attivitaPerUtente.forEach((k, v) {
+                if (v > maxAtt) {
+                  maxAtt = v;
+                  bestGiudiceUser = NicknameHelper.resolve(k, uDocs);
+                }
+              });
+
+              String? bestFantasmaUser;
+              int minAzioni = 0;
+              if (cleanPart.length > 1) {
+                int lowestAz = 999999;
+                for (var p in cleanPart) {
+                  if (vincitoreNick != null && NicknameHelper.isSame(p, vincitoreNick, uDocs)) continue;
+                  final pNorm = p.trim().toLowerCase();
+                  final az = azioniTotaliPerUtente[pNorm] ?? 0;
+                  if (az < lowestAz) {
+                    lowestAz = az;
+                    minAzioni = az;
+                    bestFantasmaUser = NicknameHelper.resolve(p, uDocs);
+                  }
+                }
+              }
+
+              // Auto-scadenza richieste VAR pendenti ed eliminazione foto
+              if (evIdStr.isNotEmpty) {
+                try {
+                  await DbService.instance.richiesteVarCollection.update(
+                    where.eq('eventoId', evIdStr).and(where.eq('stato', 'in_attesa')),
+                    modify.set('stato', 'scaduta').unset('fotoBase64'),
+                    multiUpdate: true,
+                  );
+                  await DbService.instance.richiesteVarCollection.update(
+                    where.eq('eventoId', evIdStr),
+                    modify.unset('fotoBase64'),
+                    multiUpdate: true,
+                  );
+                } catch (_) {}
+              }
+
+              // Calcolo Lo Sbirro e Il Giustiziere per questo evento
+              final Map<String, int> sbirroPerUtente = {};
+              final Map<String, int> giustizierePerUtente = {};
+              if (evIdStr.isNotEmpty) {
+                try {
+                  final varDocs = await DbService.instance.richiesteVarCollection
+                      .find(where.eq('eventoId', evIdStr))
+                      .toList();
+                  for (var r in varDocs) {
+                    final tipo = (r['tipo'] ?? '').toString().toLowerCase();
+                    final req = NicknameHelper.resolve((r['richiedente'] ?? '').toString(), uDocs);
+                    if (req.isEmpty) continue;
+                    if (r['stato'] == 'approvata') {
+                      giustizierePerUtente[req] = (giustizierePerUtente[req] ?? 0) + 1;
+                    }
+                    if (tipo == 'malus') {
+                      sbirroPerUtente[req] = (sbirroPerUtente[req] ?? 0) + 1;
+                    }
+                  }
+                } catch (_) {}
+              }
+
+              int maxSbirro = 0;
+              String? bestSbirroUser;
+              sbirroPerUtente.forEach((k, v) {
+                if (v > maxSbirro) {
+                  maxSbirro = v;
+                  bestSbirroUser = k;
+                }
+              });
+
+              int maxGiustiziere = 0;
+              String? bestGiustiziereUser;
+              giustizierePerUtente.forEach((k, v) {
+                if (v > maxGiustiziere) {
+                  maxGiustiziere = v;
+                  bestGiustiziereUser = k;
+                }
+              });
+
+              for (var uDoc in uDocs) {
+                final uId = uDoc['_id'] as ObjectId;
+                final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+                var mod = modify;
+                bool shouldUpdate = false;
+
+                if (bestMalusUser != null && NicknameHelper.isSame(uNick, bestMalusUser!, uDocs) && maxMalus > 0) {
+                  final cur = (uDoc['countReMalus'] as num?)?.toInt() ?? 0;
+                  mod = mod.set('countReMalus', cur + 1);
+                  shouldUpdate = true;
+                }
+                if (bestGiudiceUser != null && NicknameHelper.isSame(uNick, bestGiudiceUser!, uDocs) && maxAtt > 0) {
+                  final cur = (uDoc['countGiudice'] as num?)?.toInt() ?? (uDoc['countAvvocato'] as num?)?.toInt() ?? 0;
+                  mod = mod.set('countGiudice', cur + 1).set('countAvvocato', cur + 1);
+                  shouldUpdate = true;
+                }
+                if (bestFantasmaUser != null && NicknameHelper.isSame(uNick, bestFantasmaUser, uDocs)) {
+                  final cur = (uDoc['countFantasma'] as num?)?.toInt() ?? 0;
+                  mod = mod.set('countFantasma', cur + 1);
+                  shouldUpdate = true;
+                }
+                if (bestSbirroUser != null && NicknameHelper.isSame(uNick, bestSbirroUser!, uDocs) && maxSbirro > 0) {
+                  final cur = (uDoc['countSbirro'] as num?)?.toInt() ?? 0;
+                  mod = mod.set('countSbirro', cur + 1);
+                  shouldUpdate = true;
+                }
+                if (bestGiustiziereUser != null && NicknameHelper.isSame(uNick, bestGiustiziereUser!, uDocs) && maxGiustiziere > 0) {
+                  final cur = (uDoc['countGiustiziere'] as num?)?.toInt() ?? 0;
+                  mod = mod.set('countGiustiziere', cur + 1);
+                  shouldUpdate = true;
+                }
+
+                if (shouldUpdate) {
+                  await DbService.instance.utentiCollection.update(where.id(uId), mod);
+                  usersUpdated = true;
+                }
+              }
+
+              final Map<String, dynamic> titoliMap = {
+                'campione': vincitoreNick,
+                'campionePunti': (vincitoreNick != null ? (punteggi[vincitoreNick] ?? 0) : 0),
+                if (bestMalusUser != null && maxMalus > 0) ...{
+                  'reMalus': bestMalusUser,
+                  'reMalusPunti': maxMalus,
+                },
+                if (bestGiudiceUser != null && maxAtt > 0) ...{
+                  'avvocato': bestGiudiceUser,
+                  'avvocatoAzioni': maxAtt,
+                },
+                if (bestFantasmaUser != null) ...{
+                  'fantasma': bestFantasmaUser,
+                  'fantasmaAzioni': minAzioni,
+                },
+                if (bestSbirroUser != null && maxSbirro > 0) ...{
+                  'sbirro': bestSbirroUser,
+                  'sbirroDenunce': maxSbirro,
+                },
+                if (bestGiustiziereUser != null && maxGiustiziere > 0) ...{
+                  'giustiziere': bestGiustiziereUser,
+                  'giustiziereApprovate': maxGiustiziere,
+                },
+              };
+
+              d['badgeVincitoreAssegnato'] = true;
+              d['titoliAssegnati'] = true;
+              d['titoliVincitori'] = titoliMap;
+              d['stato'] = 'concluso';
+
+              if (evId != null) {
+                await DbService.instance.eventiCollection.update(
+                  where.id(evId),
+                  modify
+                    .set('badgeVincitoreAssegnato', true)
+                    .set('titoliAssegnati', true)
+                    .set('titoliVincitori', titoliMap)
+                    .set('stato', 'concluso'),
+                );
+              }
+            }
+
+            if (usersUpdated) {
+              UtenteController.invalidateCache();
+            }
+          } catch (errPremi) {
+            print('⚠️ Errore calcolo fine evento ($evId): $errPremi');
+          }
+        }
+
+        final evento = Evento.fromMap(d);
 
         if (utenteRichiedente.isNotEmpty) {
           final bool isCreatore = NicknameHelper.isSame(creatorNick, utenteRichiedente, utentiDocs);
@@ -247,6 +590,7 @@ class EventoController {
             where.id(uDoc['_id'] as ObjectId),
             modify.set('storicoVoti', curStorico),
           );
+          UtenteController.invalidateCache();
           break;
         }
       }

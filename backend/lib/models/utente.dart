@@ -213,6 +213,22 @@ class Utente {
       parsedDataReg = 'Attivo dal 2026';
     }
 
+    final List<String> mergedBadges = [];
+    for (final field in ['badgeList', 'badges']) {
+      final rawList = map[field];
+      if (rawList is List) {
+        for (final item in rawList) {
+          final s = item?.toString().trim() ?? '';
+          if (s.isNotEmpty && !mergedBadges.contains(s)) {
+            mergedBadges.add(s);
+          }
+        }
+      }
+    }
+    if (mergedBadges.isEmpty) {
+      mergedBadges.add('🎉 Partecipante FantaEventi');
+    }
+
     return Utente(
       mongoId: mId,
       id: parsedId,
@@ -228,10 +244,7 @@ class Utente {
       xpProssimoLivello: parsedXpProssimo,
       xpTotali: parsedXpTotali,
       puntiTotali: (map['puntiTotali'] as num?)?.toInt() ?? 0,
-      badgeList: (map['badgeList'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          ['🎉 Partecipante FantaEventi'],
+      badgeList: mergedBadges,
       storicoVoti: (map['storicoVoti'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??

@@ -166,15 +166,15 @@ class ProfileViewModel extends BaseViewModel {
     try {
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 85,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 78,
+        maxWidth: 512,
+        maxHeight: 512,
       );
 
       if (photo != null) {
         final bytes = await photo.readAsBytes();
-        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
-        _fotoLocaleFile = File(photo.path);
+        final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        _fotoLocaleFile = null;
         _utente = _utente.copyWith(avatarUrl: base64String);
         notifyListeners();
 
@@ -193,15 +193,15 @@ class ProfileViewModel extends BaseViewModel {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 78,
+        maxWidth: 512,
+        maxHeight: 512,
       );
 
       if (image != null) {
         final bytes = await image.readAsBytes();
-        final base64String = 'data:image/png;base64,${base64Encode(bytes)}';
-        _fotoLocaleFile = File(image.path);
+        final base64String = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        _fotoLocaleFile = null;
         _utente = _utente.copyWith(avatarUrl: base64String);
         notifyListeners();
 

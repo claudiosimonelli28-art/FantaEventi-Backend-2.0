@@ -990,27 +990,47 @@ class ApiService {
     throw Exception('Impossibile verificare il codice in questo momento. Verifica la connessione di rete.');
   }
 
+  int _avatarUpdateEpoch = 0;
+  DateTime? _lastLocalAvatarUpdateTime;
+  String? _lastLocalAvatarValue;
+
   Future<Utente?> syncCurrentUserFromDb() async {
-    final curUser = _currentUser;
-    if (curUser == null) return null;
+    if (_currentUser == null) return null;
+    final int epochAtStart = _avatarUpdateEpoch;
     try {
       final utenti = await getUtenti();
+      final liveCurUser = _currentUser;
+      if (liveCurUser == null) return null;
+
       final match = utenti.firstWhere(
         (u) =>
-            (curUser.id.isNotEmpty && u.id == curUser.id) ||
-            u.nickname.trim().toLowerCase() == curUser.nickname.trim().toLowerCase() ||
-            u.nome.trim().toLowerCase() == curUser.nome.trim().toLowerCase(),
-        orElse: () => curUser,
+            (liveCurUser.id.isNotEmpty && u.id == liveCurUser.id) ||
+            u.nickname.trim().toLowerCase() == liveCurUser.nickname.trim().toLowerCase() ||
+            u.nome.trim().toLowerCase() == liveCurUser.nome.trim().toLowerCase(),
+        orElse: () => liveCurUser,
       );
-      final safeAvatar = match.avatarUrl.isNotEmpty
-          ? match.avatarUrl
-          : (curUser.avatarUrl.isNotEmpty
-              ? curUser.avatarUrl
-              : (_avatarCache[curUser.nickname.toLowerCase()] ?? ''));
-      String finalAvatar = safeAvatar;
-      if (finalAvatar.isEmpty) {
-        finalAvatar = await fetchAvatarPerUtente(curUser.nickname);
+
+      final bool hasRecentLocalAvatar = _lastLocalAvatarValue != null &&
+          _lastLocalAvatarValue!.isNotEmpty &&
+          (_avatarUpdateEpoch != epochAtStart ||
+              (_lastLocalAvatarUpdateTime != null &&
+                  DateTime.now().difference(_lastLocalAvatarUpdateTime!).inSeconds < 30));
+
+      String finalAvatar;
+      if (hasRecentLocalAvatar) {
+        finalAvatar = _lastLocalAvatarValue!;
+      } else if (match.avatarUrl.isNotEmpty) {
+        finalAvatar = match.avatarUrl;
+      } else if (liveCurUser.avatarUrl.isNotEmpty) {
+        finalAvatar = liveCurUser.avatarUrl;
+      } else {
+        finalAvatar = _avatarCache[liveCurUser.nickname.toLowerCase()] ?? '';
       }
+
+      if (finalAvatar.isEmpty) {
+        finalAvatar = await fetchAvatarPerUtente(liveCurUser.nickname);
+      }
+
       _currentUser = match.copyWith(avatarUrl: finalAvatar);
       await _saveSession(_currentUser!);
       return _currentUser;
@@ -1020,9 +1040,20 @@ class ApiService {
   }
 
   Future<void> aggiornaAvatarUtente(String username, String newAvatarUrl) async {
+    _avatarUpdateEpoch++;
+    _lastLocalAvatarUpdateTime = DateTime.now();
+    _lastLocalAvatarValue = newAvatarUrl;
+
     if (_currentUser != null) {
       _currentUser = _currentUser!.copyWith(avatarUrl: newAvatarUrl);
       await _saveSession(_currentUser!);
+    }
+
+    for (int i = 0; i < _utenti.length; i++) {
+      final u = _utenti[i];
+      if (isSamePerson(u.nickname, username) || isSamePerson(u.nome, username)) {
+        _utenti[i] = u.copyWith(avatarUrl: newAvatarUrl);
+      }
     }
 
     final clean = username.replaceAll(' ', '').trim().toLowerCase();
@@ -1050,7 +1081,7 @@ class ApiService {
                 'avatarUrl': newAvatarUrl,
               }),
             )
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 12));
         if (res.statusCode == 200) {
           break;
         }
@@ -1073,6 +1104,7 @@ class ApiService {
   }
 
   Future<List<Utente>> _fetchUtentiFromDb() async {
+    final int epochAtStart = _avatarUpdateEpoch;
     final curNick = (_currentUser?.nickname.isNotEmpty == true ? _currentUser!.nickname : _currentUser?.nome) ?? '';
     for (String url in baseUrls) {
       try {
@@ -1099,31 +1131,56 @@ class ApiService {
                     !rawServerAv.contains('unsplash.com/photo-1535713875002'))
                 ? rawServerAv
                 : '';
-            final uObj = Utente.fromJson(jsonMap).copyWith(avatarUrl: validServerAv);
-            list.add(uObj);
+            var uObj = Utente.fromJson(jsonMap).copyWith(avatarUrl: validServerAv);
 
-            if (validServerAv.isNotEmpty) {
-              _cacheSingleAvatar(uObj.nome, uObj.nickname, validServerAv);
-            }
-
-            if (_currentUser != null &&
+            final bool isCurrentUserRow = _currentUser != null &&
                 (isSamePerson(uObj.nickname, _currentUser!.nickname) ||
-                    isSamePerson(uObj.nome, _currentUser!.nome))) {
+                    isSamePerson(uObj.nome, _currentUser!.nome));
+
+            if (isCurrentUserRow) {
+              final bool hasRecentLocalAvatar = _lastLocalAvatarValue != null &&
+                  _lastLocalAvatarValue!.isNotEmpty &&
+                  (_avatarUpdateEpoch != epochAtStart ||
+                      (_lastLocalAvatarUpdateTime != null &&
+                          DateTime.now().difference(_lastLocalAvatarUpdateTime!).inSeconds < 30));
+
               final curAv = _currentUser!.avatarUrl;
               final validCurAv = (curAv.isNotEmpty &&
                       !curAv.contains('pravatar') &&
                       !curAv.contains('unsplash.com/photo-1535713875002'))
                   ? curAv
                   : '';
-              final safeAvatar = validServerAv.isNotEmpty
-                  ? validServerAv
-                  : (validCurAv.isNotEmpty ? validCurAv : (_avatarCache[resolvedNick.toLowerCase()] ?? ''));
-              _currentUser = uObj.copyWith(avatarUrl: safeAvatar);
+
+              final String safeAvatar;
+              if (hasRecentLocalAvatar) {
+                safeAvatar = _lastLocalAvatarValue!;
+              } else if (validServerAv.isNotEmpty) {
+                safeAvatar = validServerAv;
+              } else if (validCurAv.isNotEmpty) {
+                safeAvatar = validCurAv;
+              } else {
+                safeAvatar = _avatarCache[resolvedNick.toLowerCase()] ?? '';
+              }
+
+              uObj = uObj.copyWith(avatarUrl: safeAvatar);
+              if (safeAvatar.isNotEmpty) {
+                _cacheSingleAvatar(uObj.nome, uObj.nickname, safeAvatar);
+              }
+              _currentUser = uObj;
               await _saveSession(_currentUser!);
               if (uObj.isBanned) {
                 onCurrentUserBanned?.call();
               }
+            } else {
+              final cachedAv = _avatarCache[resolvedNick.toLowerCase()] ?? '';
+              final effectiveAv = validServerAv.isNotEmpty ? validServerAv : cachedAv;
+              if (effectiveAv.isNotEmpty) {
+                uObj = uObj.copyWith(avatarUrl: effectiveAv);
+                _cacheSingleAvatar(uObj.nome, uObj.nickname, effectiveAv);
+              }
             }
+
+            list.add(uObj);
           }
           if (list.isNotEmpty) {
             _utenti.clear();

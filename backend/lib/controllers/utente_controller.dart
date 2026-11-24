@@ -94,10 +94,33 @@ class UtenteController {
   static List<Map<String, dynamic>>? _cachedUtentiDocs;
   static DateTime? _lastUtentiFetch;
   static const _cacheDuration = Duration(minutes: 2);
+  static final Map<String, String> _cachedAvatars = {};
+  static bool _avatarsLoaded = false;
 
   static void invalidateCache() {
     _cachedUtentiDocs = null;
     _lastUtentiFetch = null;
+  }
+
+  static Future<void> _ensureAvatarsLoaded() async {
+    if (_avatarsLoaded) return;
+    try {
+      final avatarDocs = await DbService.instance.utentiCollection.find(
+        where.fields(['avatarUrl', 'foto']),
+      ).toList();
+      for (var d in avatarDocs) {
+        final idHex = d['_id'] is ObjectId
+            ? (d['_id'] as ObjectId).oid
+            : (d['_id']?.toString() ?? '');
+        final av = (d['avatarUrl'] ?? d['foto'] ?? '').toString().trim();
+        if (idHex.isNotEmpty && av.isNotEmpty) {
+          _cachedAvatars[idHex] = av;
+        }
+      }
+      _avatarsLoaded = true;
+    } catch (e) {
+      print('⚠️ [UtenteController] Errore precaricamento avatar: $e');
+    }
   }
 
   static Future<List<Map<String, dynamic>>> getCachedUtentiDocs({bool forceRefresh = false}) async {
@@ -106,11 +129,28 @@ class UtenteController {
         _cachedUtentiDocs != null &&
         _lastUtentiFetch != null &&
         now.difference(_lastUtentiFetch!) < _cacheDuration) {
+      for (var d in _cachedUtentiDocs!) {
+        final idHex = d['_id'] is ObjectId
+            ? (d['_id'] as ObjectId).oid
+            : (d['_id']?.toString() ?? '');
+        if (idHex.isNotEmpty && _cachedAvatars.containsKey(idHex)) {
+          d['avatarUrl'] = _cachedAvatars[idHex];
+        }
+      }
       return _cachedUtentiDocs!;
     }
+    await _ensureAvatarsLoaded();
     final docs = await DbService.instance.utentiCollection.find(
       where.excludeFields(['avatarUrl', 'foto']),
     ).toList();
+    for (var d in docs) {
+      final idHex = d['_id'] is ObjectId
+          ? (d['_id'] as ObjectId).oid
+          : (d['_id']?.toString() ?? '');
+      if (idHex.isNotEmpty && _cachedAvatars.containsKey(idHex)) {
+        d['avatarUrl'] = _cachedAvatars[idHex];
+      }
+    }
     _cachedUtentiDocs = docs;
     _lastUtentiFetch = now;
     return docs;
@@ -409,6 +449,9 @@ class UtenteController {
 
       final res = await DbService.instance.utentiCollection.insertOne(utenteMap);
       final salvato = await DbService.instance.utentiCollection.findOne(where.id(res.id as ObjectId));
+      if (res.id is ObjectId && avatar.isNotEmpty) {
+        _cachedAvatars[(res.id as ObjectId).oid] = avatar;
+      }
       invalidateCache();
 
       print('✅ [MongoDB] NUOVO UTENTE REGISTRATO CON PASSWORD! ID: ${res.id}');
@@ -520,24 +563,54 @@ class UtenteController {
         );
       }
 
-      final cleanName = utenteName.toLowerCase();
-      final isClaudio = cleanName == 'cloud' || cleanName == 'claudio';
-      final selector = isClaudio
-          ? where.eq('nickname', 'Cloud').or(where.eq('nome', 'Claudio'))
-          : where.eq('username', utenteName)
-               .or(where.eq('nickname', utenteName))
-               .or(where.eq('nome', utenteName));
+      final uDocs = await getCachedUtentiDocs();
+      final resolvedNick = NicknameHelper.resolve(utenteName, uDocs);
+      bool updatedById = false;
 
-      await DbService.instance.utentiCollection.update(
-        selector,
-        modify.set('avatarUrl', avatarUrl).set('foto', avatarUrl),
-        multiUpdate: true,
-      );
+      for (var d in uDocs) {
+        final dNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(dNick, resolvedNick, uDocs) && d['_id'] is ObjectId) {
+          final uId = d['_id'] as ObjectId;
+          await DbService.instance.utentiCollection.update(
+            where.id(uId),
+            modify.set('avatarUrl', avatarUrl).set('foto', avatarUrl),
+          );
+          _cachedAvatars[uId.oid] = avatarUrl;
+          d['avatarUrl'] = avatarUrl;
+          updatedById = true;
+          break;
+        }
+      }
+
+      if (!updatedById) {
+        final cleanName = utenteName.toLowerCase();
+        final isClaudio = cleanName == 'cloud' || cleanName == 'claudio';
+        final selector = isClaudio
+            ? where.eq('nickname', 'Cloud').or(where.eq('nome', 'Claudio'))
+            : where.eq('username', utenteName)
+                 .or(where.eq('nickname', utenteName))
+                 .or(where.eq('nome', utenteName));
+
+        final targetDoc = await DbService.instance.utentiCollection.findOne(selector.fields(['_id']));
+        if (targetDoc != null && targetDoc['_id'] is ObjectId) {
+          final uId = targetDoc['_id'] as ObjectId;
+          await DbService.instance.utentiCollection.update(
+            where.id(uId),
+            modify.set('avatarUrl', avatarUrl).set('foto', avatarUrl),
+          );
+          _cachedAvatars[uId.oid] = avatarUrl;
+        }
+      }
+
       invalidateCache();
 
-      print('📸 [MongoDB] Avatar salvato permanentemente in MongoDB Atlas per l\'utente "$utenteName"!');
+      print('📸 [MongoDB] Avatar salvato permanentemente in MongoDB Atlas per l\'utente "$resolvedNick"!');
       return Response.ok(
-        jsonEncode({'message': 'Avatar salvato permanentemente in MongoDB Atlas!'}),
+        jsonEncode({
+          'success': true,
+          'message': 'Avatar salvato permanentemente in MongoDB Atlas!',
+          'utente': resolvedNick,
+        }),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
@@ -559,6 +632,33 @@ class UtenteController {
           headers: {'content-type': 'application/json'},
         );
       }
+      final uDocs = await getCachedUtentiDocs();
+      final resolvedNick = NicknameHelper.resolve(utente, uDocs);
+      for (var d in uDocs) {
+        final dNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(dNick, resolvedNick, uDocs) && d['_id'] is ObjectId) {
+          final uId = d['_id'] as ObjectId;
+          final cachedAv = _cachedAvatars[uId.oid];
+          if (cachedAv != null && cachedAv.isNotEmpty) {
+            return Response.ok(
+              jsonEncode({'avatarUrl': cachedAv}),
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          final fullDoc = await DbService.instance.utentiCollection.findOne(
+            where.id(uId).fields(['avatarUrl', 'foto']),
+          );
+          final avatar = (fullDoc?['avatarUrl'] ?? fullDoc?['foto'] ?? '').toString().trim();
+          if (avatar.isNotEmpty) {
+            _cachedAvatars[uId.oid] = avatar;
+          }
+          return Response.ok(
+            jsonEncode({'avatarUrl': avatar}),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+      }
+
       final clean = utente.toLowerCase();
       final isClaudio = clean == 'claudio' || clean == 'cloud';
       final selector = isClaudio
@@ -567,7 +667,10 @@ class UtenteController {
       final doc = await DbService.instance.utentiCollection.findOne(
         selector.fields(['avatarUrl', 'foto', 'nickname', 'nome']),
       );
-      final avatar = (doc?['avatarUrl'] ?? doc?['foto'] ?? '').toString();
+      final avatar = (doc?['avatarUrl'] ?? doc?['foto'] ?? '').toString().trim();
+      if (doc != null && doc['_id'] is ObjectId && avatar.isNotEmpty) {
+        _cachedAvatars[(doc['_id'] as ObjectId).oid] = avatar;
+      }
       return Response.ok(
         jsonEncode({'avatarUrl': avatar}),
         headers: {'content-type': 'application/json'},

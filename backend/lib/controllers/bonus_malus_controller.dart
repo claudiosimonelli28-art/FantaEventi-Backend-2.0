@@ -51,6 +51,7 @@ class BonusMalusController {
       final existing = await DbService.instance.bonusMalusCollection.findOne(
         where.eq('eventoId', eventoId).and(where.eq('nome', nome)),
       );
+      final bool isNewProposal = existing == null;
 
       String bmHexId;
       if (existing != null) {
@@ -85,6 +86,47 @@ class BonusMalusController {
 
         final res = await DbService.instance.bonusMalusCollection.insertOne(bmMap);
         bmHexId = res.id?.oid ?? '';
+      }
+
+      // Accredita +50 XP e aggiorna storicoVoti al proponente se è una nuova proposta
+      if (isNewProposal) {
+        try {
+          final now = DateTime.now();
+          final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+          final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] Proposto ${safePunti >= 0 ? "Bonus" : "Malus"} "$nome" (+50 XP)';
+
+          for (var uDoc in allUtenti) {
+            final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+            if (NicknameHelper.isSame(uNick, propostoDaUtente, allUtenti)) {
+              final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
+              final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+              final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+              final prog = XpProgression.aggiungiXp(
+                livelloAttuale: curLiv,
+                xpLivelloAttuale: curXp,
+                deltaXp: 50,
+                xpTotaliAttuali: curTot,
+              );
+
+              final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
+              oldStorico.insert(0, logVoce);
+
+              await DbService.instance.utentiCollection.update(
+                where.id(uDoc['_id'] as ObjectId),
+                modify
+                  .set('xp', prog.xp)
+                  .set('livello', prog.livello)
+                  .set('xpProssimoLivello', prog.xpProssimoLivello)
+                  .set('xpTotali', prog.xpTotali)
+                  .set('storicoVoti', oldStorico),
+              );
+              UtenteController.invalidateCache();
+              break;
+            }
+          }
+        } catch (e) {
+          print('⚠️ Errore accredito +50 XP proposta BonusMalus: $e');
+        }
       }
 
       // Registra voto pro del proponente in Votazioni se non presente
@@ -262,12 +304,10 @@ class BonusMalusController {
       // 3. Aggiorna punti e storico utente con carry-over XP
       final uDocs = await UtenteController.getCachedUtentiDocs();
       for (var uDoc in uDocs) {
-        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? '').toString().trim().toLowerCase();
-        final uName = (uDoc['nome'] ?? '').toString().trim().toLowerCase();
-        final target = utenteDestinatario.trim().toLowerCase();
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
 
-        if (uNick == target || uName == target) {
-          final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
+        if (NicknameHelper.isSame(uNick, utenteDestinatario, uDocs)) {
+          final oldPunti = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
           final curXp = (uDoc['xp'] as num?)?.toInt() ?? 0;
           final curLiv = (uDoc['livello'] as num?)?.toInt() ?? 1;
           final curTot = (uDoc['xpTotali'] as num?)?.toInt() ?? XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
@@ -294,6 +334,7 @@ class BonusMalusController {
               .set('xpTotali', prog.xpTotali)
               .set('storicoVoti', oldStorico),
           );
+          UtenteController.invalidateCache();
           break;
         }
       }
@@ -440,10 +481,9 @@ class BonusMalusController {
 
       final uDocs = await UtenteController.getCachedUtentiDocs();
       for (var uDoc in uDocs) {
-        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? '').toString().trim().toLowerCase();
-        final uName = (uDoc['nome'] ?? '').toString().trim().toLowerCase();
-        if (uNick == cleanDest || uName == cleanDest) {
-          final oldPunti = (uDoc['puntiTotali'] ?? 0) as int;
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, utenteDestinatario, uDocs)) {
+          final oldPunti = (uDoc['puntiTotali'] as num?)?.toInt() ?? 0;
           final List<dynamic> oldStorico = List.from(uDoc['storicoVoti'] ?? []);
           oldStorico.insert(0, logVoce);
 
@@ -456,6 +496,7 @@ class BonusMalusController {
               .set('puntiTotali', newPunti)
               .set('storicoVoti', oldStorico),
           );
+          UtenteController.invalidateCache();
           break;
         }
       }

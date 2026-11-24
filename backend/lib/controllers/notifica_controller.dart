@@ -7,79 +7,325 @@ import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
 class NotificaController {
+  static bool _isVeteranoUser(Map<String, dynamic>? uDoc) {
+    if (uDoc == null) return false;
+    if (uDoc['haVistoGuida'] == true ||
+        uDoc['tutorialV3Completato'] == true ||
+        uDoc['tutorialPremioRiscattato'] == true) {
+      return true;
+    }
+    final liv = (uDoc['livello'] as num?)?.toInt() ?? 1;
+    final xpTot = (uDoc['xpTotali'] as num?)?.toInt() ?? 100;
+    final storico = uDoc['storicoVoti'];
+    if (liv > 1 || xpTot > 100 || (storico is List && storico.isNotEmpty)) {
+      return true;
+    }
+    return false;
+  }
+
   // GET /api/notifiche?utente=NICKNAME
   Future<Response> getNotificheUtente(Request request) async {
     try {
-      final dest = request.url.queryParameters['utente'] ?? '';
-      final uDocs = await UtenteController.getCachedUtentiDocs();
-      final cleanDest = NicknameHelper.resolve(dest, uDocs).trim().toLowerCase();
-      final allNotifiche = await DbService.instance.notificheCollection.find().toList();
-      final docs = allNotifiche.where((d) {
-        final rawDest = (d['destinatario'] ?? '').toString().trim();
-        final resolvedDest = NicknameHelper.resolve(rawDest, uDocs).trim().toLowerCase();
-        return resolvedDest == cleanDest || rawDest.toLowerCase() == cleanDest || cleanDest.isEmpty;
+      final dest = (request.url.queryParameters['utente'] ?? '').trim();
+      final results = await Future.wait([
+        UtenteController.getCachedUtentiDocs(),
+        DbService.instance.notificheCollection.find().toList(),
+        DbService.instance.eventiCollection.find().toList(),
+        DbService.instance.bonusMalusCollection.find().toList(),
+        DbService.instance.votazioniCollection.find().toList(),
+        DbService.instance.richiesteVarCollection.find(where.excludeFields(['fotoBase64'])).toList(),
+      ]);
+
+      final uDocs = results[0];
+      final allNotifiche = results[1];
+      final eventiDocs = results[2];
+      final bmDocs = results[3];
+      final votazioniDocs = results[4];
+      final varDocs = results[5];
+
+      final cleanNick = dest.isNotEmpty ? NicknameHelper.resolve(dest, uDocs).trim() : '';
+
+      Map<String, dynamic>? targetUserDoc;
+      if (cleanNick.isNotEmpty) {
+        for (var u in uDocs) {
+          final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
+          if (NicknameHelper.isSame(uNick, cleanNick, uDocs)) {
+            targetUserDoc = u;
+            break;
+          }
+        }
+      }
+      final bool isTargetVeterano = _isVeteranoUser(targetUserDoc);
+
+      // Mappa delle RichiesteVar per ID hex / String
+      final Map<String, Map<String, dynamic>> varMap = {};
+      for (var v in varDocs) {
+        final vIdHex = v['_id'] is ObjectId ? (v['_id'] as ObjectId).oid.toLowerCase() : '';
+        final vIdStr = (v['_id']?.toString() ?? v['id']?.toString() ?? '').toLowerCase();
+        final vClean = vIdStr.replaceAll(RegExp(r'[^a-f0-9]'), '');
+        if (vIdHex.isNotEmpty) varMap[vIdHex] = v;
+        if (vIdStr.isNotEmpty) varMap[vIdStr] = v;
+        if (vClean.isNotEmpty) varMap[vClean] = v;
+      }
+
+      // Mappa degli eventi validi: Hex / String / Titolo -> Doc
+      final Map<String, Map<String, dynamic>> validEvents = {};
+      for (var ev in eventiDocs) {
+        final eIdHex = ev['_id'] is ObjectId ? (ev['_id'] as ObjectId).oid.toLowerCase() : '';
+        final eIdStr = (ev['_id']?.toString() ?? ev['id']?.toString() ?? '').toLowerCase();
+        final eClean = eIdStr.replaceAll(RegExp(r'[^a-f0-9]'), '');
+        if (eIdHex.isNotEmpty) validEvents[eIdHex] = ev;
+        if (eIdStr.isNotEmpty) validEvents[eIdStr] = ev;
+        if (eClean.isNotEmpty) validEvents[eClean] = ev;
+        final eNome = (ev['nome'] ?? ev['titolo'] ?? '').toString().trim().toLowerCase();
+        if (eNome.isNotEmpty) validEvents[eNome] = ev;
+      }
+
+      // Mappa dei BonusMalus per ID hex / Titolo
+      final Map<String, Map<String, dynamic>> bonusMalusMap = {};
+      for (var bm in bmDocs) {
+        final bmIdHex = bm['_id'] is ObjectId
+            ? (bm['_id'] as ObjectId).oid.toLowerCase()
+            : (bm['_id']?.toString() ?? '').toLowerCase();
+        if (bmIdHex.isNotEmpty) bonusMalusMap[bmIdHex] = bm;
+        final bmNome = (bm['nome'] ?? bm['titolo'] ?? '').toString().trim().toLowerCase();
+        if (bmNome.isNotEmpty) bonusMalusMap[bmNome] = bm;
+        final bmTit = (bm['titolo'] ?? '').toString().trim().toLowerCase();
+        if (bmTit.isNotEmpty) bonusMalusMap[bmTit] = bm;
+      }
+
+      // Mappa delle votazioni per bonusId / votazioneId / titolo
+      final Map<String, Map<String, dynamic>> votazioniMap = {};
+      for (var vot in votazioniDocs) {
+        final vId = vot['_id'] is ObjectId
+            ? (vot['_id'] as ObjectId).oid
+            : (vot['_id']?.toString() ?? vot['id']?.toString() ?? vot['votazioneId']?.toString() ?? '');
+        if (vId.isNotEmpty) votazioniMap[vId.toLowerCase()] = vot;
+        final bmId = vot['bonusMalus']?['id']?.toString() ?? vot['bonusId']?.toString() ?? '';
+        if (bmId.isNotEmpty) votazioniMap[bmId.toLowerCase()] = vot;
+        final vTitolo = (vot['titolo'] ?? vot['bonusMalus']?['titolo'] ?? '').toString().trim().toLowerCase();
+        if (vTitolo.isNotEmpty) votazioniMap[vTitolo] = vot;
+      }
+
+      final matchDocs = allNotifiche.where((d) {
+        final dDest = (d['destinatario'] ?? '').toString().trim();
+        if (cleanNick.isEmpty) return true;
+        return NicknameHelper.isSame(dDest, cleanNick, uDocs);
       }).toList();
 
-      // Self-healing per notifiche VAR già decise
-      final Map<String, String> varStati = {};
-      try {
-        final hasVarNotifs = docs.any((d) => (d['varId'] ?? '').toString().isNotEmpty);
-        if (hasVarNotifs) {
-          final varDocs = await DbService.instance.richiesteVarCollection
-              .find(where.fields(['stato']))
-              .toList();
-          for (var vd in varDocs) {
-            final vid = vd['_id'] is ObjectId ? (vd['_id'] as ObjectId).oid : (vd['_id']?.toString() ?? '');
-            final vst = (vd['stato'] ?? '').toString().toLowerCase();
-            if (vid.isNotEmpty && vst.isNotEmpty) {
-              varStati[vid] = vst;
-            }
+      final Set<String> seenKeys = {};
+      final List<Map<String, dynamic>> notificheList = [];
+
+      for (var d in matchDocs) {
+        final idStr = d['_id'] is ObjectId
+            ? (d['_id'] as ObjectId).oid
+            : (d['_id']?.toString() ?? d['notificaId']?.toString() ?? '');
+        if (idStr.isEmpty || seenKeys.contains(idStr)) continue;
+
+        final tipo = (d['tipo'] ?? '').toString().toLowerCase();
+
+        // Se l'utente è già veterano e c'è una notifica di benvenuto non letta rigenerata per errore, rimuovila
+        if (tipo == 'benvenuto' && isTargetVeterano && d['letto'] != true) {
+          if (d['_id'] is ObjectId) {
+            try {
+              await DbService.instance.notificheCollection.remove(where.id(d['_id'] as ObjectId));
+            } catch (_) {}
           }
+          continue;
         }
-      } catch (_) {}
 
-      final list = <Map<String, dynamic>>[];
-      for (var d in docs) {
-        final map = Map<String, dynamic>.from(d);
-        final docId = d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : (d['_id']?.toString() ?? '');
-        map['id'] = docId;
-        map.remove('_id');
-        map['mittente'] ??= 'FantaEventi';
-        map['destinatario'] ??= '';
-        map['titolo'] ??= 'Nuova Notifica';
-        map['messaggio'] ??= '';
-        map['eventoId'] ??= '';
-        map['bonusId'] ??= '';
-        map['bonusTitolo'] ??= '';
-        map['varId'] ??= '';
-        map['tipo'] ??= 'invito';
-        map['stato'] ??= 'in_attesa';
-        map['letto'] = map['letto'] == true;
-        map['data'] = map['data']?.toString() ?? map['timestamp']?.toString() ?? DateTime.now().toIso8601String();
+        final evId = (d['eventoId'] ?? '').toString().trim();
+        final evIdLower = evId.toLowerCase();
+        final evClean = evIdLower.replaceAll(RegExp(r'[^a-f0-9]'), '');
 
-        final varId = map['varId'].toString();
-        final tipo = map['tipo'].toString().toLowerCase();
-        if (varId.isNotEmpty &&
-            (tipo.contains('giudice') || tipo == 'richiesta_var') &&
-            map['stato'] == 'in_attesa') {
-          final realVarStato = varStati[varId];
-          if (realVarStato == 'approvata' || realVarStato == 'rifiutata') {
-            map['stato'] = realVarStato;
-            map['letto'] = true;
+        // Auto-eliminazione notifiche se l'evento collegato è stato cancellato o è già terminato
+        if (evId.isNotEmpty) {
+          final evDoc = validEvents[evIdLower] ?? (evClean.isNotEmpty ? validEvents[evClean] : null);
+          if (evDoc == null) {
             if (d['_id'] is ObjectId) {
-              DbService.instance.notificheCollection.update(
-                where.id(d['_id'] as ObjectId),
-                modify.set('stato', realVarStato).set('letto', true),
-              );
+              try {
+                await DbService.instance.notificheCollection.remove(where.id(d['_id'] as ObjectId));
+              } catch (_) {}
+            }
+            continue;
+          } else {
+            final statoEv = (evDoc['stato'] ?? '').toString().toLowerCase();
+            final dtFineStr = evDoc['dataFine']?.toString();
+            final DateTime? dtFine = dtFineStr != null ? DateTime.tryParse(dtFineStr) : null;
+            final bool isEvConcluso = statoEv == 'concluso' ||
+                (statoEv != 'in_corso' && statoEv != 'in_programma' && dtFine != null && DateTime.now().isAfter(dtFine));
+
+            final bool isOperativa =
+                tipo == 'invito' || tipo.contains('proposta') || tipo == 'bonus_malus' || tipo.contains('var_');
+            if (isEvConcluso && isOperativa) {
+              if (d['_id'] is ObjectId) {
+                try {
+                  await DbService.instance.notificheCollection.remove(where.id(d['_id'] as ObjectId));
+                } catch (_) {}
+              }
+              continue;
             }
           }
         }
 
-        list.add(map);
+        // Controllo dello stato di voto per proposte / votazioni live
+        bool haGiaVotato = false;
+        String votoEspresso = (d['votoEspresso'] ?? '').toString();
+        bool votazioneChiusa = false;
+        String esitoVotazione = '';
+
+        final bonusId = (d['bonusId'] ?? '').toString().trim().toLowerCase();
+        final bonusTitolo = (d['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+
+        final matchedBm = (bonusId.isNotEmpty ? bonusMalusMap[bonusId] : null) ??
+            (bonusTitolo.isNotEmpty ? bonusMalusMap[bonusTitolo] : null);
+
+        if (matchedBm != null) {
+          final propDa = (matchedBm['propostoDa'] ?? '').toString().trim();
+          if (propDa.isNotEmpty && cleanNick.isNotEmpty && NicknameHelper.isSame(propDa, cleanNick, uDocs)) {
+            haGiaVotato = true;
+            votoEspresso = 'pro';
+          }
+          final bmStato = (matchedBm['stato'] ?? '').toString().toLowerCase();
+          if (bmStato == 'approvato' || bmStato == 'respinto') {
+            votazioneChiusa = true;
+            esitoVotazione = bmStato;
+          }
+        }
+
+        if (!haGiaVotato && cleanNick.isNotEmpty) {
+          for (var vDoc in votazioniDocs) {
+            final vUser = (vDoc['utente'] ?? '').toString().trim();
+            if (!NicknameHelper.isSame(vUser, cleanNick, uDocs)) continue;
+
+            final vId = (vDoc['votazioneId'] ?? vDoc['bonusId'] ?? '').toString().trim().toLowerCase();
+            final vTit = (vDoc['bonusTitolo'] ?? '').toString().trim().toLowerCase();
+            final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
+
+            final bool idMatch = bonusId.isNotEmpty && (vId == bonusId);
+            final bool titleMatch = bonusTitolo.isNotEmpty &&
+                vTit == bonusTitolo &&
+                evIdLower.isNotEmpty &&
+                vEvId.isNotEmpty &&
+                vEvId == evIdLower;
+
+            if (idMatch || titleMatch) {
+              haGiaVotato = true;
+              votoEspresso = (vDoc['voto']?.toString() ?? 'pro').toLowerCase();
+              final vStato = (vDoc['stato'] ?? '').toString().toLowerCase();
+              if (vStato == 'approvato' || vStato == 'respinto') {
+                votazioneChiusa = true;
+                esitoVotazione = vStato;
+              }
+              break;
+            }
+          }
+        }
+
+        if ((!haGiaVotato || !votazioneChiusa) && cleanNick.isNotEmpty) {
+          Map<String, dynamic>? matchVotazione;
+          if (bonusId.isNotEmpty && votazioniMap.containsKey(bonusId)) {
+            matchVotazione = votazioniMap[bonusId];
+          } else if (bonusTitolo.isNotEmpty && votazioniMap.containsKey(bonusTitolo)) {
+            matchVotazione = votazioniMap[bonusTitolo];
+          }
+
+          if (matchVotazione != null) {
+            final votiMap = matchVotazione['votiUtenti'] as Map? ?? {};
+            for (var k in votiMap.keys) {
+              if (NicknameHelper.isSame(k.toString().trim(), cleanNick, uDocs)) {
+                haGiaVotato = true;
+                votoEspresso = votiMap[k]?.toString() ?? 'votato';
+                break;
+              }
+            }
+            final statoVot = (matchVotazione['stato'] ?? '').toString().toLowerCase();
+            if (statoVot == 'approvato' || statoVot == 'respinto' || statoVot == 'scaduto' || statoVot == 'concluso') {
+              votazioneChiusa = true;
+              esitoVotazione = statoVot;
+            }
+          }
+        }
+
+        final evDoc = evId.isNotEmpty ? (validEvents[evIdLower] ?? (evClean.isNotEmpty ? validEvents[evClean] : null)) : null;
+        final String evStato = evDoc != null ? (evDoc['stato'] ?? '').toString().toLowerCase() : '';
+        final String evDataInizio = evDoc != null ? (evDoc['data'] ?? '').toString() : '';
+
+        seenKeys.add(idStr);
+        final rawMittente = (d['mittente'] ?? 'FantaEventi').toString();
+        final resolvedMittente = NicknameHelper.resolve(rawMittente, uDocs);
+
+        String rawMessaggio = (d['messaggio'] ?? '').toString();
+        rawMessaggio = rawMessaggio
+            .replaceAll('Filippo ha proposto', '$resolvedMittente ha proposto')
+            .replaceAll('Claudio ha proposto', 'Cloud ha proposto')
+            .replaceAll('Claude ha proposto', 'Cloud ha proposto')
+            .replaceAll('Antonio ha proposto', 'Ugnom ha proposto')
+            .replaceAll('Claudio ti ha invitato', 'Cloud ti ha invitato')
+            .replaceAll('Claude ti ha invitato', 'Cloud ti ha invitato')
+            .replaceAll('Filippo ti ha invitato', 'Pippoforte ti ha invitato')
+            .replaceAll('Antonio ti ha invitato', 'Ugnom ti ha invitato')
+            .replaceAll('Claudio ha ricevuto', 'Cloud ha ricevuto')
+            .replaceAll('Claude ha ricevuto', 'Cloud ha ricevuto')
+            .replaceAll(' a Claudio ', ' a Cloud ')
+            .replaceAll(' a Claude ', ' a Cloud ');
+
+        final notVarId = (d['varId'] ?? '').toString().trim().toLowerCase();
+        final notVarClean = notVarId.replaceAll(RegExp(r'[^a-f0-9]'), '');
+        String finalStato = (d['stato'] ?? 'in_attesa').toString();
+        bool finalLetto = d['letto'] == true;
+
+        if (notVarId.isNotEmpty && tipo != 'var_esito') {
+          final matchedVar = varMap[notVarId] ?? (notVarClean.isNotEmpty ? varMap[notVarClean] : null);
+          if (matchedVar != null) {
+            final vStato = (matchedVar['stato'] ?? '').toString().toLowerCase();
+            if (vStato == 'approvata' || vStato == 'approvato') {
+              finalStato = 'approvata';
+              finalLetto = true;
+            } else if (vStato == 'rifiutata' || vStato == 'rifiutato') {
+              finalStato = 'rifiutata';
+              finalLetto = true;
+            }
+            if (d['_id'] is ObjectId &&
+                (d['stato'] == 'in_attesa' || d['stato'] == 'in_votazione') &&
+                (finalStato == 'approvata' || finalStato == 'rifiutata')) {
+              try {
+                DbService.instance.notificheCollection.update(
+                  where.id(d['_id'] as ObjectId),
+                  modify.set('stato', finalStato).set('letto', true),
+                );
+              } catch (_) {}
+            }
+          }
+        }
+
+        notificheList.add({
+          'id': idStr,
+          'mittente': resolvedMittente,
+          'destinatario': NicknameHelper.resolve((d['destinatario'] ?? '').toString(), uDocs),
+          'titolo': d['titolo'] ?? 'Nuova Notifica',
+          'messaggio': rawMessaggio,
+          'eventoId': d['eventoId'] ?? '',
+          'eventoStato': evStato,
+          'eventoDataInizio': evDataInizio,
+          'bonusId': d['bonusId'] ?? '',
+          'bonusTitolo': d['bonusTitolo'] ?? '',
+          'tipo': d['tipo'] ?? 'invito',
+          'varId': d['varId'] ?? '',
+          'stato': finalStato,
+          'letto': finalLetto,
+          'votoEspresso': votoEspresso,
+          'haGiaVotato': haGiaVotato,
+          'votazioneChiusa': votazioneChiusa,
+          'esitoVotazione': esitoVotazione,
+          'codiceAmico': d['codiceAmico'] ?? '',
+          'segnalazioneId': d['segnalazioneId'] ?? '',
+          'data': d['data']?.toString() ?? d['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+        });
       }
 
       return Response.ok(
-        jsonEncode(list),
+        jsonEncode(notificheList),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {
@@ -292,11 +538,30 @@ class NotificaController {
 
       final uDocs = await UtenteController.getCachedUtentiDocs();
       final nickname = NicknameHelper.resolve(rawNick, uDocs);
+
+      Map<String, dynamic>? targetUser;
+      for (var u in uDocs) {
+        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, nickname, uDocs)) {
+          targetUser = u;
+          break;
+        }
+      }
+
+      // La notifica di benvenuto deve arrivare SOLO ED UNICAMENTE quando l'utente si è appena iscritto.
+      if (_isVeteranoUser(targetUser)) {
+        return Response.ok(
+          jsonEncode({'success': true, 'skippedVeterano': true}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
       final allDocs = await DbService.instance.notificheCollection.find(
         where.eq('destinatario', nickname),
       ).toList();
 
       final hasWelcome = allDocs.any((n) =>
+          (n['tipo'] ?? '').toString().toLowerCase() == 'benvenuto' ||
           (n['titolo'] ?? '').toString().contains('Benvenuto') ||
           (n['mittente'] ?? '').toString().contains('Redazione'));
 
@@ -308,7 +573,7 @@ class NotificaController {
           'messaggio':
               'Ciao $nickname! Benvenuto nella community ufficiale di FantaEventi. Da qui riceverai tutti gli inviti ad eventi dei tuoi amici, le notifiche del VAR e gli aggiornamenti di classifica. Puoi eliminare qualsiasi notifica toccando la \'X\' in alto a destra nella card!',
           'tipo': 'benvenuto',
-          'stato': 'letto',
+          'stato': 'in_attesa',
           'letto': false,
           'data': DateTime.now().toIso8601String(),
         });

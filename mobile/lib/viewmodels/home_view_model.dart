@@ -146,7 +146,7 @@ class HomeViewModel extends BaseViewModel {
       final unreadNots = nots.where((n) {
         final nId = (n['id'] ?? '').toString();
         if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
-        if (n['letto'] == true || n['stato'] == 'letto') return false;
+        if (n['letto'] == true) return false;
         return true;
       }).toList();
 
@@ -181,7 +181,7 @@ class HomeViewModel extends BaseViewModel {
     final unreadNots = nots.where((n) {
       final nId = (n['id'] ?? '').toString();
       if (nId.isNotEmpty && _readNotificaIds.contains(nId)) return false;
-      if (n['letto'] == true || n['stato'] == 'letto') return false;
+      if (n['letto'] == true) return false;
       return true;
     }).toList();
     _numeroNotifiche = unreadNots.length;

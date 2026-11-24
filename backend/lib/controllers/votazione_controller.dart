@@ -271,11 +271,12 @@ class VotazioneController {
       // 3. Sincronizza stato notifica dell'utente
       final notDocs = await DbService.instance.notificheCollection.find().toList();
       for (var notDoc in notDocs) {
-        final dest = (notDoc['destinatario'] ?? '').toString().trim().toLowerCase();
+        final dest = (notDoc['destinatario'] ?? '').toString().trim();
         final bId = (notDoc['bonusId'] ?? '').toString().trim().toLowerCase();
         final notId = notDoc['_id'] is ObjectId ? (notDoc['_id'] as ObjectId).oid : notDoc['_id']?.toString() ?? '';
-        final isMatch = (bId.isNotEmpty && (bId == idOrEventoId.toLowerCase())) || notId == idOrEventoId;
-        if (dest == userNick.toLowerCase() && isMatch) {
+        final isMatch = (bId.isNotEmpty && (bId == idOrEventoId.toLowerCase() || bId == realBmHex.toLowerCase())) ||
+            notId == idOrEventoId;
+        if (NicknameHelper.isSame(dest, userNick, uDocs) && isMatch && notDoc['_id'] is ObjectId) {
           await DbService.instance.notificheCollection.update(
             where.id(notDoc['_id'] as ObjectId),
             modify.set('stato', aFavore ? 'accettato' : 'rifiutato').set('votoEspresso', aFavore ? 'pro' : 'contro').set('letto', true),
@@ -313,6 +314,7 @@ class VotazioneController {
                 .set('xpTotali', prog.xpTotali)
                 .set('storicoVoti', oldStorico),
             );
+            UtenteController.invalidateCache();
             break;
           }
         }
