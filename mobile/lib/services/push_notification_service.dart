@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:googleapis_auth/auth_io.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -133,11 +132,6 @@ class PushNotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
-
-  // Cache per autenticazione OAuth2 con Firebase Service Account (FCM v1)
-  static Map<String, dynamic>? _serviceAccountMap;
-  static String? _cachedAccessToken;
-  static DateTime? _tokenExpiry;
 
   static const MethodChannel _settingsMethodChannel = MethodChannel('com.fantaeventi.mobile/settings');
 
@@ -329,11 +323,11 @@ class PushNotificationService {
         debugPrint('Notice ascoltatori FirebaseMessaging: $e');
       }
 
-      // Precarica il service account in memoria
-      unawaited(_loadServiceAccount());
+      // Rimuove eventuale vecchia copia locale del service account dal dispositivo per sicurezza
+      unawaited(SharedPreferences.getInstance().then((prefs) => prefs.remove('cached_firebase_service_account_v1')));
 
       _isInitialized = true;
-      debugPrint('PushNotificationService inizializzato con successo con FCM v1.');
+      debugPrint('PushNotificationService inizializzato con successo (Server-Side FCM v1).');
     } catch (e) {
       debugPrint('PushNotificationService initialize notice: $e');
     }
@@ -673,66 +667,9 @@ class PushNotificationService {
     }
   }
 
-  // --- MOTORE DI DISPATCH FCM v1 CON GOOGLE SERVICE ACCOUNT ---
+  // --- MOTORE DI DISPATCH FCM v1 TRAMITE BACKEND RENDER (ZERO CHIAVI SUL TELEFONO) ---
 
-  static Future<Map<String, dynamic>?> _loadServiceAccount() async {
-    if (_serviceAccountMap != null) return _serviceAccountMap;
-    // 1. Prova prima dalla cache locale super-veloce su disco (0 ms)
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cachedJson = prefs.getString('cached_firebase_service_account_v1');
-      if (cachedJson != null && cachedJson.isNotEmpty) {
-        _serviceAccountMap = jsonDecode(cachedJson) as Map<String, dynamic>;
-        return _serviceAccountMap;
-      }
-    } catch (_) {}
-
-    // 2. Se non presente in cache locale, carica da MongoDB Atlas
-    try {
-      final config = await ApiService().getFirebaseServiceAccountConfig();
-      if (config != null) {
-        _serviceAccountMap = config;
-        // Salva in cache locale per i successivi utilizzi
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('cached_firebase_service_account_v1', jsonEncode(config));
-        } catch (_) {}
-        return _serviceAccountMap;
-      }
-    } catch (e) {
-      debugPrint('Notice caricamento service account da Atlas: $e');
-    }
-    return null;
-  }
-
-  static Future<String?> _getAccessToken() async {
-    try {
-      final now = DateTime.now();
-      if (_cachedAccessToken != null &&
-          _tokenExpiry != null &&
-          now.isBefore(_tokenExpiry!.subtract(const Duration(minutes: 2)))) {
-        return _cachedAccessToken;
-      }
-
-      final sa = await _loadServiceAccount();
-      if (sa == null) return null;
-
-      final credentials = ServiceAccountCredentials.fromJson(sa);
-      final client = await clientViaServiceAccount(credentials, [
-        'https://www.googleapis.com/auth/firebase.messaging',
-      ]).timeout(const Duration(seconds: 10));
-
-      _cachedAccessToken = client.credentials.accessToken.data;
-      _tokenExpiry = client.credentials.accessToken.expiry;
-      client.close();
-      return _cachedAccessToken;
-    } catch (e) {
-      debugPrint('Errore autenticazione OAuth2 FCM v1: $e');
-      return null;
-    }
-  }
-
-  /// Invia una notifica push istantanea ai token FCM dei nickname destinatari
+  /// Invia una notifica push istantanea ai token FCM dei nickname destinatari tramite il backend sicuro
   Future<void> inviaPushAUtenti(
     List<String> destinatariNicknames, {
     required String titolo,
@@ -741,111 +678,27 @@ class PushNotificationService {
   }) async {
     if (destinatariNicknames.isEmpty) return;
 
-    try {
-      final tokens = await ApiService().getFcmTokensPerUtenti(destinatariNicknames);
-      if (tokens.isEmpty) {
-        debugPrint('Nessun token FCM registrato per i destinatari: $destinatariNicknames');
-        return;
-      }
-
-      debugPrint('Inizio invio push a ${tokens.length} token per $destinatariNicknames: $titolo');
-      for (final token in tokens) {
-        try {
-          await _sendFcmV1(
-            token: token,
-            titolo: titolo,
-            messaggio: messaggio,
-            data: data ?? {},
-          );
-        } catch (e) {
-          debugPrint('Errore invio push singolo token: $e');
+    for (final url in ApiService().baseUrls) {
+      try {
+        final response = await http
+            .post(
+              Uri.parse('$url/notifiche/push'),
+              headers: ApiService().defaultHeaders,
+              body: jsonEncode({
+                'destinatari': destinatariNicknames,
+                'titolo': titolo,
+                'messaggio': messaggio,
+                'data': data ?? <String, dynamic>{},
+              }),
+            )
+            .timeout(const Duration(seconds: 8));
+        if (response.statusCode == 200) {
+          debugPrint('✅ Push FCM v1 recapitata tramite backend a $destinatariNicknames ($titolo)');
+          return;
         }
+      } catch (e) {
+        debugPrint('Errore inviaPushAUtenti tramite backend: $e');
       }
-    } catch (e) {
-      debugPrint('Errore inviaPushAUtenti: $e');
-    }
-  }
-
-  /// Invia il payload a Firebase Cloud Messaging tramite HTTP v1 (OAuth2)
-  Future<void> _sendFcmV1({
-    required String token,
-    required String titolo,
-    required String messaggio,
-    required Map<String, dynamic> data,
-  }) async {
-    try {
-      final accessToken = await _getAccessToken();
-      if (accessToken == null || accessToken.isEmpty) {
-        debugPrint('Impossibile ottenere OAuth2 token per FCM v1');
-        return;
-      }
-
-      final sa = await _loadServiceAccount();
-      final projectId = sa?['project_id'] ?? 'fantaeventi-dd26a';
-      final url = 'https://fcm.googleapis.com/v1/projects/$projectId/messages:send';
-
-      // FCM v1 richiede che tutti i valori in data siano stringhe
-      final Map<String, String> stringData = {};
-      data.forEach((k, v) {
-        if (v != null) stringData[k] = v.toString();
-      });
-      stringData['titolo'] = titolo;
-      stringData['messaggio'] = messaggio;
-      stringData['click_action'] = 'FLUTTER_NOTIFICATION_CLICK';
-
-      final targetChannel = getChannelForType(data['tipo']?.toString());
-
-      final payload = {
-        'message': {
-          'token': token,
-          'notification': {
-            'title': titolo,
-            'body': messaggio,
-          },
-          'data': stringData,
-          'android': {
-            'priority': 'high',
-            'notification': {
-              'channel_id': targetChannel.id,
-              'default_vibrate_timings': true,
-              'notification_priority': 'PRIORITY_MAX',
-              'visibility': 'PUBLIC',
-            },
-          },
-          'apns': {
-            'payload': {
-              'aps': {
-                'sound': 'default',
-                'badge': 1,
-                'content-available': 1,
-              },
-            },
-          },
-        },
-      };
-
-      final response = await http.post(
-        Uri.parse(url),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-        body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        debugPrint('✅ Push FCM v1 inviata con successo a $token ($titolo)');
-      } else {
-        debugPrint('❌ Esito risposta FCM v1 (${response.statusCode}): ${response.body}');
-        if (response.statusCode == 404 ||
-            response.body.contains('UNREGISTERED') ||
-            response.body.contains('NotRegistered')) {
-          debugPrint('🧹 Rimozione automatica token FCM non più valido: $token');
-          unawaited(ApiService().rimuoviFcmTokenGlobale(token));
-        }
-      }
-    } catch (e) {
-      debugPrint('Errore durante la chiamata HTTP a FCM v1: $e');
     }
   }
 }
