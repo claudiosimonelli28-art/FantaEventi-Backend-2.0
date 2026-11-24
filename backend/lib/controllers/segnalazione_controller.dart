@@ -80,10 +80,20 @@ class SegnalazioneController {
       final docs = await DbService.instance.segnalazioniCollection
           .find(where.sortBy('timestamp', descending: true))
           .toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs();
+      final Set<String> utentiGiaAmmoniti = {};
+
+      for (var u in uDocs) {
+        final nick = NicknameHelper.resolve((u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString(), uDocs).toLowerCase();
+        final int amm = (u['ammonizioni'] is num) ? (u['ammonizioni'] as num).toInt() : 0;
+        if (amm >= 1 && u['isBanned'] != true) {
+          utentiGiaAmmoniti.add(nick);
+        }
+      }
 
       final list = docs.map((d) {
         final idStr = d['_id'] is ObjectId ? (d['_id'] as ObjectId).oid : d['_id']?.toString() ?? '';
-        return {
+        return <String, dynamic>{
           'id': idStr,
           'segnalatore': d['segnalatore'] ?? '',
           'segnalato': d['segnalato'] ?? '',
@@ -91,8 +101,33 @@ class SegnalazioneController {
           'dettagli': d['dettagli'] ?? '',
           'timestamp': d['timestamp'] ?? '',
           'stato': d['stato'] ?? 'in_attesa',
+          'ammonizioneScontata': d['ammonizioneScontata'] == true,
         };
       }).toList();
+
+      final Set<String> utentiValutatiDaStorico = {};
+      for (var s in list) {
+        final st = (s['stato'] ?? '').toString().toLowerCase();
+        final nick = NicknameHelper.resolve((s['segnalato'] ?? '').toString(), uDocs).toLowerCase();
+        if (nick.isEmpty || utentiValutatiDaStorico.contains(nick)) continue;
+
+        if (st == 'bannato' || st == 'riabilitato') {
+          utentiGiaAmmoniti.remove(nick);
+          utentiValutatiDaStorico.add(nick);
+        } else if (st == 'ammonito') {
+          if (s['ammonizioneScontata'] == true) {
+            utentiGiaAmmoniti.remove(nick);
+          } else {
+            utentiGiaAmmoniti.add(nick);
+          }
+          utentiValutatiDaStorico.add(nick);
+        }
+      }
+
+      for (var s in list) {
+        final nick = NicknameHelper.resolve((s['segnalato'] ?? '').toString(), uDocs).toLowerCase();
+        s['giaAmmonito'] = utentiGiaAmmoniti.contains(nick);
+      }
 
       return Response.ok(
         jsonEncode(list),
@@ -176,6 +211,11 @@ class SegnalazioneController {
           sSelector,
           modify.set('stato', 'bannato'),
         );
+        await DbService.instance.segnalazioniCollection.update(
+          where.eq('segnalato', cleanSegnalato).and(where.eq('stato', 'ammonito')),
+          modify.set('ammonizioneScontata', true),
+          multiUpdate: true,
+        );
 
         // Disabilita account su Utenti e azzera contatore ammonizioni
         for (var uDoc in uDocs) {
@@ -213,6 +253,11 @@ class SegnalazioneController {
         await DbService.instance.segnalazioniCollection.update(
           sSelector,
           modify.set('stato', 'riabilitato'),
+        );
+        await DbService.instance.segnalazioniCollection.update(
+          where.eq('segnalato', cleanSegnalato).and(where.eq('stato', 'ammonito')),
+          modify.set('ammonizioneScontata', true),
+          multiUpdate: true,
         );
 
         // Riabilita account su Utenti e azzera contatore ammonizioni

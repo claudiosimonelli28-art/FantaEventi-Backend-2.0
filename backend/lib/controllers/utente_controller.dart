@@ -6,6 +6,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/utente.dart';
+import '../utils/auth_token_helper.dart';
 import '../utils/nickname_helper.dart';
 
 
@@ -238,9 +239,14 @@ class UtenteController {
         );
       }
       print('✅ Login riuscito con password per utente: ${utente.username}');
+      final token = AuthTokenHelper.generateToken(
+        id: utente.id,
+        nickname: utente.nickname,
+      );
       return Response.ok(
         jsonEncode({
           'message': 'Login effettuato con successo',
+          'token': token,
           'utente': utente.toJson(),
         }),
         headers: {'content-type': 'application/json'},
@@ -260,7 +266,21 @@ class UtenteController {
       print('📥 [HTTP GET /api/utenti] Recupero lista utenti dal database...');
       final docs = await getCachedUtentiDocs();
       print('📦 [MongoDB] Trovati ${docs.length} utenti nel database.');
-      final utenti = docs.map((d) => Utente.fromMap(d).toJson()).toList();
+      final verifiedNick = AuthTokenHelper.getVerifiedNickname(request) ??
+          (request.url.queryParameters['utente'] ?? '').trim();
+
+      final utenti = docs.map((d) {
+        final u = Utente.fromMap(d);
+        final json = u.toJson();
+        // Non esporre mai i token FCM dei dispositivi nella lista pubblica utenti
+        final isSelf = verifiedNick.isNotEmpty &&
+            NicknameHelper.isSame(u.nickname, verifiedNick, docs);
+        if (!isSelf) {
+          json['fcmTokens'] = <String>[];
+        }
+        return json;
+      }).toList();
+
       return Response.ok(
         jsonEncode(utenti),
         headers: {'content-type': 'application/json'},
@@ -393,10 +413,16 @@ class UtenteController {
 
       print('✅ [MongoDB] NUOVO UTENTE REGISTRATO CON PASSWORD! ID: ${res.id}');
 
+      final nuovoUtente = Utente.fromMap(salvato!);
+      final token = AuthTokenHelper.generateToken(
+        id: nuovoUtente.id,
+        nickname: nuovoUtente.nickname,
+      );
       return Response.ok(
         jsonEncode({
           'message': 'Nuovo utente salvato automaticamente nel database MongoDB!',
-          'utente': Utente.fromMap(salvato!).toJson(),
+          'token': token,
+          'utente': nuovoUtente.toJson(),
         }),
         headers: {'content-type': 'application/json'},
       );
@@ -456,11 +482,16 @@ class UtenteController {
 
       final updatedDoc = await DbService.instance.utentiCollection.findOne(selector);
       final utente = Utente.fromMap(updatedDoc!);
+      final token = AuthTokenHelper.generateToken(
+        id: utente.id,
+        nickname: utente.nickname,
+      );
 
       print('✅ Password impostata con successo per utente "$username"');
       return Response.ok(
         jsonEncode({
           'message': 'Password impostata con successo!',
+          'token': token,
           'utente': utente.toJson(),
         }),
         headers: {'content-type': 'application/json'},
@@ -1180,6 +1211,245 @@ class UtenteController {
 
       return Response.ok(
         jsonEncode({'bloccati': bloccati}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Segna il tutorial / guida regole come completata e accredita +100 XP una tantum (anti-farming)
+  Future<Response> completaGuida(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final rawNick = (data['utente'] ?? data['nickname'] ?? data['username'] ?? '').toString().trim();
+      final bool awardXp = data['awardXp'] != false;
+
+      if (rawNick.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'utente obbligatorio'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await getCachedUtentiDocs(forceRefresh: true);
+      final cleanNick = NicknameHelper.resolve(rawNick, uDocs);
+      Map<String, dynamic>? targetDoc;
+      for (var d in uDocs) {
+        final uNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanNick, uDocs)) {
+          targetDoc = d;
+          break;
+        }
+      }
+
+      if (targetDoc == null) {
+        return Response.notFound(
+          jsonEncode({'error': 'Utente non trovato'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uId = targetDoc['_id'] as ObjectId;
+      final bool alreadyRedeemed = targetDoc['tutorialPremioRiscattato'] == true ||
+          targetDoc['tutorialV3Completato'] == true ||
+          targetDoc['haVistoGuida'] == true;
+      final bool shouldAward = awardXp && !alreadyRedeemed;
+
+      final curLiv = (targetDoc['livello'] as num?)?.toInt() ?? 1;
+      final curXp = (targetDoc['xp'] as num?)?.toInt() ?? 100;
+      final curTot = (targetDoc['xpTotali'] as num?)?.toInt() ??
+          XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+
+      final prog = shouldAward
+          ? XpProgression.aggiungiXp(
+              livelloAttuale: curLiv,
+              xpLivelloAttuale: curXp,
+              deltaXp: 100,
+              xpTotaliAttuali: curTot,
+            )
+          : XpProgression.calcolaProgressione(xpTotali: curTot > 0 ? curTot : curXp);
+
+      final badge = curLiv >= 2 ? '🎓 Pioniero FantaEventi' : '🌱 Recluta FantaEventi';
+
+      await DbService.instance.utentiCollection.update(
+        where.id(uId),
+        modify
+          .set('haVistoGuida', true)
+          .set('tutorialV3Completato', true)
+          .set('tutorialPremioRiscattato', true)
+          .set('livello', prog.livello)
+          .set('xp', prog.xp)
+          .set('xpProssimoLivello', prog.xpProssimoLivello)
+          .set('xpTotali', prog.xpTotali)
+          .addToSet('badgeList', badge),
+      );
+
+      invalidateCache();
+      final updatedDoc = await DbService.instance.utentiCollection.findOne(where.id(uId));
+      return Response.ok(
+        jsonEncode({
+          'success': true,
+          'alreadyRedeemed': alreadyRedeemed,
+          if (updatedDoc != null) 'utente': Utente.fromMap(updatedDoc).toJson(),
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Invia una richiesta di amicizia tramite codiceAmico o nickname (POST /api/utenti/amicizia/richiedi)
+  Future<Response> inviaRichiestaAmicizia(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final rawMittente = (data['mittente'] ?? data['utente'] ?? '').toString().trim();
+      final cleanCode = (data['codiceAmico'] ?? data['target'] ?? '').toString().trim().toUpperCase();
+
+      if (rawMittente.isEmpty || cleanCode.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'mittente e codiceAmico sono obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await getCachedUtentiDocs();
+      final mittenteNick = NicknameHelper.resolve(rawMittente, uDocs);
+      Utente? mittenteUser;
+      Utente? targetUser;
+
+      for (var d in uDocs) {
+        final u = Utente.fromMap(d);
+        if (NicknameHelper.isSame(u.nickname, mittenteNick, uDocs)) {
+          mittenteUser = u;
+        }
+        if (u.codiceAmico.toUpperCase() == cleanCode ||
+            u.nickname.toLowerCase() == cleanCode.toLowerCase()) {
+          targetUser = u;
+        }
+      }
+
+      if (targetUser == null) {
+        return Response.notFound(
+          jsonEncode({'error': 'Nessun utente trovato con il codice "$cleanCode"'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (NicknameHelper.isSame(targetUser.nickname, mittenteNick, uDocs)) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Non puoi inviare una richiesta di amicizia a te stesso!'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      if (mittenteUser != null &&
+          mittenteUser.amici.any((a) => NicknameHelper.isSame(a, targetUser!.nickname, uDocs))) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Siete già amici!'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      await DbService.instance.notificheCollection.insertOne({
+        'mittente': mittenteNick,
+        'destinatario': targetUser.nickname,
+        'titolo': '👥 Nuova Richiesta di Amicizia',
+        'messaggio': '$mittenteNick vuole aggiungerti agli amici!',
+        'eventoId': '',
+        'tipo': 'richiesta_amicizia',
+        'stato': 'in_attesa',
+        'letto': false,
+        'codiceAmico': mittenteUser?.codiceAmico ?? '',
+        'data': DateTime.now().toIso8601String(),
+      });
+
+      return Response.ok(
+        jsonEncode({
+          'success': true,
+          'targetNickname': targetUser.nickname,
+          'mittente': mittenteNick,
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Risponde a una richiesta di amicizia (POST /api/utenti/amicizia/rispondi)
+  Future<Response> rispondiRichiestaAmicizia(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final notificaId = (data['notificaId'] ?? '').toString().trim();
+      final rawMittente = (data['mittente'] ?? '').toString().trim();
+      final rawDestinatario = (data['destinatario'] ?? data['utente'] ?? '').toString().trim();
+      final bool accetta = data['accetta'] == true || data['azione'] == 'accetta';
+
+      final uDocs = await getCachedUtentiDocs();
+      final mittente = NicknameHelper.resolve(rawMittente, uDocs);
+      final destinatario = NicknameHelper.resolve(rawDestinatario, uDocs);
+
+      if (notificaId.isNotEmpty) {
+        ObjectId? objId;
+        try { objId = ObjectId.fromHexString(notificaId); } catch (_) {}
+        final selector = objId != null ? where.id(objId) : where.eq('_id', notificaId);
+        await DbService.instance.notificheCollection.update(
+          selector,
+          modify.set('stato', accetta ? 'accettato' : 'rifiutato').set('letto', true),
+        );
+      }
+
+      if (accetta && mittente.isNotEmpty && destinatario.isNotEmpty) {
+        for (var d in uDocs) {
+          final uNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+          final uId = d['_id'] as ObjectId;
+          if (NicknameHelper.isSame(uNick, destinatario, uDocs)) {
+            final List<dynamic> amici = List.from(d['amici'] ?? []);
+            if (!amici.any((a) => NicknameHelper.isSame(a.toString(), mittente, uDocs))) {
+              amici.add(mittente);
+              await DbService.instance.utentiCollection.update(where.id(uId), modify.set('amici', amici));
+            }
+          }
+          if (NicknameHelper.isSame(uNick, mittente, uDocs)) {
+            final List<dynamic> amici = List.from(d['amici'] ?? []);
+            if (!amici.any((a) => NicknameHelper.isSame(a.toString(), destinatario, uDocs))) {
+              amici.add(destinatario);
+              await DbService.instance.utentiCollection.update(where.id(uId), modify.set('amici', amici));
+            }
+          }
+        }
+
+        await DbService.instance.notificheCollection.insertOne({
+          'mittente': destinatario,
+          'destinatario': mittente,
+          'titolo': '👥 Richiesta di Amicizia Accettata!',
+          'messaggio': '$destinatario ha accettato la tua richiesta di amicizia! Ora siete amici.',
+          'eventoId': '',
+          'tipo': 'amicizia_accettata',
+          'stato': 'consegnato',
+          'letto': false,
+          'data': DateTime.now().toIso8601String(),
+        });
+
+        invalidateCache();
+      }
+
+      return Response.ok(
+        jsonEncode({'success': true, 'accetta': accetta}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

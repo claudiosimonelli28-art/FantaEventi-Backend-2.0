@@ -220,6 +220,7 @@ class EventoController {
         'invitati': invitatiFinali,
         'xpCreatoreAssegnati': false, // Deferito a quando l'evento parte in corso
         'penalitaFalsaTestimonianza': data['penalitaFalsaTestimonianza'] ?? -10,
+        'copertinaUrl': data['copertinaUrl'] ?? '',
       };
 
       // Anti-duplicazione idempotente: se un evento identico è già stato creato dal medesimo creatore, restituiscilo
@@ -413,6 +414,332 @@ class EventoController {
 
       return Response.ok(
         jsonEncode({'message': 'Evento eliminato con successo dal database'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // POST /api/eventi/invita
+  Future<Response> invitaAmici(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final eventoId = (data['eventoId'] ?? '').toString().trim();
+      final rawNuovi = (data['nuoviInvitati'] ?? data['invitati']) as List<dynamic>? ?? [];
+      final nuoviInvitati = rawNuovi.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).toList();
+
+      if (eventoId.isEmpty || nuoviInvitati.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'eventoId e nuoviInvitati sono obbligatori'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      ObjectId? objId;
+      try { objId = ObjectId.fromHexString(eventoId); } catch (_) {}
+      final evSelector = objId != null ? where.id(objId) : where.eq('_id', eventoId);
+      final evDoc = await DbService.instance.eventiCollection.findOne(evSelector);
+
+      if (evDoc == null) {
+        return Response.notFound(
+          jsonEncode({'error': 'Evento non trovato nel database.'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final stato = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
+      final dateStr = evDoc['data']?.toString() ?? '';
+      final dtStart = DateTime.tryParse(dateStr);
+      final now = DateTime.now();
+
+      if (stato == 'concluso' || stato == 'in_corso' || (dtStart != null && now.isAfter(dtStart))) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Non è più possibile invitare amici: l\'evento è già in corso o concluso!'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final utentiDocs = await UtenteController.getCachedUtentiDocs();
+      final rawCreatore = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? data['utente'] ?? 'Cloud').toString().trim();
+      final creatore = NicknameHelper.resolve(rawCreatore, utentiDocs);
+      final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? 'Evento').toString();
+
+      final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
+      final List<dynamic> currentPartecipanti = List.from(evDoc['partecipanti'] ?? []);
+
+      final List<String> aggiuntiEffettivi = [];
+      for (var amico in nuoviInvitati) {
+        final resolvedAmico = NicknameHelper.resolve(amico, utentiDocs);
+        final giaPart = currentPartecipanti.any((p) => NicknameHelper.isSame(p.toString(), resolvedAmico, utentiDocs));
+        final giaInv = currentInvitati.any((i) => NicknameHelper.isSame(i.toString(), resolvedAmico, utentiDocs));
+
+        if (!giaPart && !giaInv && !NicknameHelper.isSame(resolvedAmico, creatore, utentiDocs)) {
+          currentInvitati.add(resolvedAmico);
+          aggiuntiEffettivi.add(resolvedAmico);
+        }
+      }
+
+      if (aggiuntiEffettivi.isNotEmpty) {
+        await DbService.instance.eventiCollection.update(
+          evSelector,
+          modify.set('invitati', currentInvitati),
+        );
+
+        for (var amico in aggiuntiEffettivi) {
+          await DbService.instance.notificheCollection.insertOne({
+            'mittente': creatore,
+            'destinatario': amico,
+            'titolo': 'Invito ad Evento: $evTitolo',
+            'messaggio': '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
+            'eventoId': eventoId,
+            'tipo': 'invito',
+            'stato': 'in_attesa',
+            'letto': false,
+            'data': now.toIso8601String(),
+          });
+        }
+      }
+
+      return Response.ok(
+        jsonEncode({
+          'success': true,
+          'aggiuntiEffettivi': aggiuntiEffettivi,
+          'invitati': currentInvitati,
+          'eventoTitolo': evTitolo,
+          'creatore': creatore,
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // POST /api/eventi/copertina
+  Future<Response> aggiornaCopertina(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final eventoId = (data['eventoId'] ?? '').toString().trim();
+      final copertinaUrl = (data['copertinaUrl'] ?? '').toString().trim();
+
+      if (eventoId.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'eventoId obbligatorio'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final evDocs = await DbService.instance.eventiCollection.find().toList();
+      final target = eventoId.toLowerCase();
+      for (var doc in evDocs) {
+        final dId = (doc['_id'] is ObjectId ? (doc['_id'] as ObjectId).oid : doc['_id']?.toString() ?? '').trim().toLowerCase();
+        final dTit = (doc['titolo'] ?? doc['nome'] ?? '').toString().trim().toLowerCase();
+        if (dId == target || dTit == target) {
+          await DbService.instance.eventiCollection.update(
+            where.id(doc['_id'] as ObjectId),
+            modify.set('copertinaUrl', copertinaUrl),
+          );
+          break;
+        }
+      }
+
+      return Response.ok(
+        jsonEncode({'success': true, 'message': 'Copertina evento aggiornata'}),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  // POST /api/eventi/riconcilia
+  Future<Response> riconciliaEventiETitoli(Request request) async {
+    try {
+      final now = DateTime.now();
+      final evDocs = await DbService.instance.eventiCollection.find().toList();
+      final uDocs = await UtenteController.getCachedUtentiDocs(forceRefresh: true);
+      final bmList = await DbService.instance.bonusMalusCollection.find().toList();
+
+      bool userDocsModified = false;
+      final Map<String, int> reMalusTotali = {};
+      final Map<String, int> avvocatoTotali = {};
+      final Map<String, int> fantasmaTotali = {};
+      final Map<String, int> sbirroTotali = {};
+      final Map<String, int> giustiziereTotali = {};
+
+      for (var ev in evDocs) {
+        final evId = ev['_id'] is ObjectId ? (ev['_id'] as ObjectId).oid : (ev['_id']?.toString() ?? '');
+        final evTitolo = (ev['titolo'] ?? ev['nome'] ?? 'Evento Fanta').toString().trim();
+        final dtEndStr = ev['dataFine']?.toString() ?? ev['data']?.toString() ?? now.toIso8601String();
+        final dtEnd = DateTime.tryParse(dtEndStr) ?? now;
+        final bool isConcluso = ev['stato'] != 'annullato' && (now.isAfter(dtEnd) || ev['stato'] == 'concluso');
+        if (!isConcluso || ev['stato'] == 'annullato') continue;
+
+        final partecipanti = (ev['partecipanti'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+        final dateStr = '${dtEnd.day.toString().padLeft(2, '0')}/${dtEnd.month.toString().padLeft(2, '0')}/${dtEnd.year}';
+        final partBadge = '🎉 Partecipato a "$evTitolo" ($dateStr)';
+
+        String? vincitoreNick = ev['titoliVincitori']?['campione']?.toString();
+        int maxPoints = (ev['titoliVincitori']?['campionePunti'] as num?)?.toInt() ?? 0;
+
+        if (vincitoreNick == null || vincitoreNick.isEmpty) {
+          final evBm = bmList.where((b) {
+            final bEvId = (b['eventoId'] ?? '').toString().trim().toLowerCase();
+            return bEvId == evId.toLowerCase() || bEvId == evTitolo.toLowerCase();
+          }).toList();
+
+          final Map<String, int> punteggi = {for (var p in partecipanti) p: 0};
+          for (var bm in evBm) {
+            final bool approvato = bm['approvato'] == true || bm['stato'] == 'approvato';
+            if (!approvato) continue;
+            final ass = (bm['assegnatoA'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+            final pt = (bm['punti'] as num?)?.toInt() ?? 0;
+            for (var u in ass) {
+              punteggi[u] = (punteggi[u] ?? 0) + pt;
+            }
+          }
+          if (punteggi.isNotEmpty) {
+            final sorted = punteggi.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+            vincitoreNick = sorted.first.key;
+            maxPoints = sorted.first.value;
+          }
+        }
+
+        if (vincitoreNick != null && vincitoreNick.isNotEmpty) {
+          final resolvedWinner = NicknameHelper.resolve(vincitoreNick, uDocs);
+          final badgeMap = {
+            'titolo': '🏆 Vincitore Evento',
+            'evento': evTitolo,
+            'punti': maxPoints,
+            'data': dtEnd.toIso8601String(),
+          };
+
+          for (var uDoc in uDocs) {
+            final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+            if (NicknameHelper.isSame(uNick, resolvedWinner, uDocs)) {
+              final List<dynamic> currentBadgeVincitore = List.from(uDoc['badgeVincitore'] ?? []);
+              final bool giaAssegnato = currentBadgeVincitore.any((b) => b is Map && b['evento'] == evTitolo);
+              if (!giaAssegnato) {
+                currentBadgeVincitore.add(badgeMap);
+                uDoc['badgeVincitore'] = currentBadgeVincitore;
+
+                final List<dynamic> currentStorico = List.from(uDoc['storicoVoti'] ?? []);
+                final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+                final logVoce = '[${now.toIso8601String().substring(0, 10)} $timeStr] 🏆 Vincitore dell\'evento "$evTitolo" ($maxPoints PT)';
+                if (!currentStorico.any((s) => s.toString().contains('Vincitore dell\'evento "$evTitolo"'))) {
+                  currentStorico.insert(0, logVoce);
+                  uDoc['storicoVoti'] = currentStorico;
+                }
+
+                await DbService.instance.utentiCollection.update(
+                  where.id(uDoc['_id'] as ObjectId),
+                  modify.set('badgeVincitore', currentBadgeVincitore).set('storicoVoti', uDoc['storicoVoti']),
+                );
+                userDocsModified = true;
+              }
+            }
+          }
+        }
+
+        for (var part in partecipanti) {
+          for (var uDoc in uDocs) {
+            final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+            if (NicknameHelper.isSame(uNick, part, uDocs)) {
+              final List<dynamic> currentBadgeList = List.from(uDoc['badgeList'] ?? []);
+              if (!currentBadgeList.any((b) => b.toString().contains(evTitolo))) {
+                currentBadgeList.add(partBadge);
+                uDoc['badgeList'] = currentBadgeList;
+                await DbService.instance.utentiCollection.update(
+                  where.id(uDoc['_id'] as ObjectId),
+                  modify.set('badgeList', currentBadgeList),
+                );
+                userDocsModified = true;
+              }
+            }
+          }
+        }
+
+        final titoli = ev['titoliVincitori'] as Map<String, dynamic>?;
+        if (titoli != null) {
+          final rm = titoli['reMalus']?.toString();
+          if (rm != null && rm.isNotEmpty) {
+            final resolved = NicknameHelper.resolve(rm, uDocs);
+            reMalusTotali[resolved] = (reMalusTotali[resolved] ?? 0) + 1;
+          }
+          final avv = (titoli['avvocato'] ?? titoli['giudice'])?.toString();
+          if (avv != null && avv.isNotEmpty) {
+            final resolved = NicknameHelper.resolve(avv, uDocs);
+            avvocatoTotali[resolved] = (avvocatoTotali[resolved] ?? 0) + 1;
+          }
+          final fts = titoli['fantasma']?.toString();
+          if (fts != null && fts.isNotEmpty) {
+            final resolved = NicknameHelper.resolve(fts, uDocs);
+            fantasmaTotali[resolved] = (fantasmaTotali[resolved] ?? 0) + 1;
+          }
+          final sb = titoli['sbirro']?.toString();
+          if (sb != null && sb.isNotEmpty) {
+            final resolved = NicknameHelper.resolve(sb, uDocs);
+            sbirroTotali[resolved] = (sbirroTotali[resolved] ?? 0) + 1;
+          }
+          final gst = titoli['giustiziere']?.toString();
+          if (gst != null && gst.isNotEmpty) {
+            final resolved = NicknameHelper.resolve(gst, uDocs);
+            giustiziereTotali[resolved] = (giustiziereTotali[resolved] ?? 0) + 1;
+          }
+        }
+      }
+
+      for (var uDoc in uDocs) {
+        final uId = uDoc['_id'] as ObjectId;
+        final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString();
+        var mod = modify;
+        bool shouldUpdate = false;
+
+        void checkAndUpdateTitle(String field, Map<String, int> map) {
+          int count = 0;
+          for (var entry in map.entries) {
+            if (NicknameHelper.isSame(uNick, entry.key, uDocs)) {
+              count += entry.value;
+            }
+          }
+          final curVal = (uDoc[field] as num?)?.toInt() ?? 0;
+          if (count > curVal) {
+            mod = mod.set(field, count);
+            shouldUpdate = true;
+          }
+        }
+
+        checkAndUpdateTitle('countReMalus', reMalusTotali);
+        checkAndUpdateTitle('countGiudice', avvocatoTotali);
+        checkAndUpdateTitle('countAvvocato', avvocatoTotali);
+        checkAndUpdateTitle('countFantasma', fantasmaTotali);
+        checkAndUpdateTitle('countSbirro', sbirroTotali);
+        checkAndUpdateTitle('countGiustiziere', giustiziereTotali);
+
+        if (shouldUpdate) {
+          await DbService.instance.utentiCollection.update(where.id(uId), mod);
+          userDocsModified = true;
+        }
+      }
+
+      if (userDocsModified) {
+        UtenteController.invalidateCache();
+      }
+
+      return Response.ok(
+        jsonEncode({'success': true, 'modified': userDocsModified}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

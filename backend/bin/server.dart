@@ -63,7 +63,7 @@ void main() async {
   final segnalazioneCtrl = SegnalazioneController();
 
   // Health Check
-  app.get('/api/health', (Request req) => Response.ok('OK dfc379a'));
+  app.get('/api/health', (Request req) => Response.ok('OK v2.5-secure'));
 
   // Rotte Utenti
   app.post('/api/login', utenteCtrl.login);
@@ -81,6 +81,9 @@ void main() async {
   app.post('/api/utenti/blocca', utenteCtrl.bloccaUtente);
   app.post('/api/utenti/sblocca', utenteCtrl.sbloccaUtente);
   app.get('/api/utenti/bloccati', utenteCtrl.getUtentiBloccati);
+  app.post('/api/utenti/completa-guida', utenteCtrl.completaGuida);
+  app.post('/api/utenti/amicizia/richiedi', utenteCtrl.inviaRichiestaAmicizia);
+  app.post('/api/utenti/amicizia/rispondi', utenteCtrl.rispondiRichiestaAmicizia);
 
   // Rotte Segnalazioni & Moderazione (Apple UGC 1.2)
   app.post('/api/segnalazioni/crea', segnalazioneCtrl.creaSegnalazione);
@@ -92,11 +95,21 @@ void main() async {
   app.post('/api/eventi/crea', eventoCtrl.creaEvento);
   app.post('/api/eventi/partecipa', eventoCtrl.partecipaEvento);
   app.post('/api/eventi/elimina', eventoCtrl.eliminaEvento);
+  app.post('/api/eventi/invita', eventoCtrl.invitaAmici);
+  app.post('/api/eventi/copertina', eventoCtrl.aggiornaCopertina);
+  app.post('/api/eventi/riconcilia', eventoCtrl.riconciliaEventiETitoli);
 
   // Rotte Notifiche & Inviti
   app.get('/api/notifiche', notificaCtrl.getNotificheUtente);
+  app.post('/api/notifiche/push', notificaCtrl.inviaPush);
   app.post('/api/notifiche/rispondi', notificaCtrl.rispondiNotifica);
   app.post('/api/notifiche/segna-letta', notificaCtrl.segnaLetta);
+  app.post('/api/notifiche/segna-tutte-lette', notificaCtrl.segnaTutteLette);
+  app.post('/api/notifiche/elimina', notificaCtrl.eliminaNotifica);
+  app.post('/api/notifiche/elimina-multiple', notificaCtrl.eliminaNotificheMultiple);
+  app.post('/api/notifiche/elimina-multiplo', notificaCtrl.eliminaNotificheMultiple);
+  app.post('/api/notifiche/elimina-tutte', notificaCtrl.eliminaTutteNotifiche);
+  app.post('/api/notifiche/benvenuto', notificaCtrl.assicuraNotificaBenvenuto);
 
   // Rotte Bonus / Malus
   app.get('/api/bonusmalus', bonusMalusCtrl.getBonusMalus);
