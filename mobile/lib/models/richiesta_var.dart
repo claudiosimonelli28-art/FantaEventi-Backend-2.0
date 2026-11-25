@@ -76,8 +76,11 @@ class RichiestaVar {
       parsedDecisione = DateTime.tryParse(json['dataDecisione'].toString());
     }
 
+    final rawId = json['id'] ?? json['_id'];
+    final parsedId = rawId is String ? rawId : (rawId?.toString() ?? '');
+
     return RichiestaVar(
-      id: json['id']?.toString() ?? json['_id']?.toHexString() ?? json['_id']?.toString() ?? '',
+      id: parsedId,
       eventoId: json['eventoId']?.toString() ?? '',
       eventoTitolo: json['eventoTitolo']?.toString() ?? '',
       tipo: json['tipo']?.toString() ?? 'bonus',

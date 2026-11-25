@@ -165,6 +165,7 @@ class VarController {
       if (resMap['_id'] is ObjectId) {
         resMap['_id'] = (resMap['_id'] as ObjectId).oid;
       }
+      resMap['id'] = resMap['_id']?.toString() ?? id;
       return _jsonResponse(resMap);
     } catch (e) {
       return _errorResponse(e.toString(), statusCode: 500);
@@ -186,6 +187,7 @@ class VarController {
         if (map['_id'] is ObjectId) {
           map['_id'] = (map['_id'] as ObjectId).oid;
         }
+        map['id'] = map['_id']?.toString() ?? '';
         return map;
       }).toList();
 
@@ -216,6 +218,7 @@ class VarController {
         if (map['_id'] is ObjectId) {
           map['_id'] = (map['_id'] as ObjectId).oid;
         }
+        map['id'] = map['_id']?.toString() ?? '';
         return map;
       }).toList();
 
@@ -634,6 +637,75 @@ class VarController {
 
       print('📺 [VAR] Decisione registrata per VAR $varId da $cleanGiudice: approvato=$approva');
       UtenteController.invalidateCache();
+
+      // Dispatch push server-side (protetto da guardia anti-duplicato in FcmService)
+      if (approva) {
+        final bool isBonus = richiesta.punti >= 0;
+        final String notificaTitolo = isBonus ? '🏆 Bonus Assegnato!' : '💀 Malus Assegnato!';
+        if (cleanRichiedente.isNotEmpty) {
+          unawaited(
+            FcmService.instance.inviaPushAUtenti(
+              [cleanRichiedente],
+              titolo: '📺 VAR: Richiesta Approvata! ✅',
+              messaggio: 'Il Giudice ha convalidato la tua segnalazione per "${richiesta.bonusMalusTitolo}". I punti sono stati assegnati.',
+              data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+            ),
+          );
+        }
+        if (cleanBersaglio.isNotEmpty) {
+          unawaited(
+            FcmService.instance.inviaPushAUtenti(
+              [cleanBersaglio],
+              titolo: notificaTitolo,
+              messaggio: 'Hai ricevuto "${richiesta.bonusMalusTitolo}" ($ptStr PT) per l\'evento "$eventoNome"!',
+              data: {
+                'tipo': isBonus ? 'assegnazione_bonus' : 'assegnazione_malus',
+                'eventoId': richiesta.eventoId,
+                'varId': varId,
+              },
+            ),
+          );
+        }
+        final otherDests = eventParticipants.where((d) => !NicknameHelper.isSame(d, cleanBersaglio, uDocs)).toList();
+        if (otherDests.isNotEmpty) {
+          unawaited(
+            FcmService.instance.inviaPushAUtenti(
+              otherDests,
+              titolo: notificaTitolo,
+              messaggio: '$cleanBersaglio ha ricevuto "${richiesta.bonusMalusTitolo}" ($ptStr PT) per l\'evento "$eventoNome"!',
+              data: {
+                'tipo': isBonus ? 'assegnazione_bonus' : 'assegnazione_malus',
+                'eventoId': richiesta.eventoId,
+                'varId': varId,
+              },
+            ),
+          );
+        }
+      } else {
+        if (cleanRichiedente.isNotEmpty) {
+          unawaited(
+            FcmService.instance.inviaPushAUtenti(
+              [cleanRichiedente],
+              titolo: isSanzionato ? '🚨 VAR: Denuncia Respinta e Sanzionata! ❌' : '📺 VAR: Segnalazione Respinta ❌',
+              messaggio: isSanzionato
+                  ? 'La tua denuncia per "${richiesta.bonusMalusTitolo}" è stata respinta come infondata. Sanzione applicata!'
+                  : 'La verifica per "${richiesta.bonusMalusTitolo}" non è stata convalidata dal Giudice.',
+              data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+            ),
+          );
+        }
+        if (cleanBersaglio.isNotEmpty && !NicknameHelper.isSame(cleanBersaglio, cleanRichiedente, uDocs)) {
+          unawaited(
+            FcmService.instance.inviaPushAUtenti(
+              [cleanBersaglio],
+              titolo: '📺 VAR: Segnalazione Respinta',
+              messaggio: 'La segnalazione contro di te per "${richiesta.bonusMalusTitolo}" è stata esaminata e respinta dal Giudice.',
+              data: {'tipo': 'var_esito', 'eventoId': richiesta.eventoId, 'varId': varId},
+            ),
+          );
+        }
+      }
+
       return _jsonResponse({
         'success': true,
         'varId': varId,
