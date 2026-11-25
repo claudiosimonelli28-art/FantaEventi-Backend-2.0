@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
+import '../services/fcm_service.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
@@ -623,6 +625,20 @@ class EventoController {
         }
       }
 
+      if (invitatiFinali.isNotEmpty) {
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            invitatiFinali,
+            titolo: '🎉 Invito ad Evento: $titolo',
+            messaggio: '$propostoDa ti ha invitato a partecipare all\'evento "$titolo"!',
+            data: {
+              'tipo': 'invito',
+              'eventoId': insertedId,
+            },
+          ),
+        );
+      }
+
       return Response.ok(
         jsonEncode({'message': 'Evento creato con successo', 'id': insertedId}),
         headers: {'content-type': 'application/json'},
@@ -853,6 +869,17 @@ class EventoController {
             'data': now.toIso8601String(),
           });
         }
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            aggiuntiEffettivi,
+            titolo: '🎉 Invito ad Evento: $evTitolo',
+            messaggio: '$creatore ti ha invitato a partecipare all\'evento "$evTitolo"!',
+            data: {
+              'tipo': 'invito',
+              'eventoId': eventoId,
+            },
+          ),
+        );
       }
 
       return Response.ok(

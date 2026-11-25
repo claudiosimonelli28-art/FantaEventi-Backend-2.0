@@ -273,10 +273,13 @@ class ApiService {
     _fcmServerKey = key.trim();
   }
 
-  Future<void> salvaFcmToken(String token) async {
+  /// Registra il token FCM sul backend.
+  /// Ritorna `true` se accettato, `false` se il backend segnala `tokenInvalid == true` (HTTP 409 UNREGISTERED),
+  /// permettendo a PushNotificationService di rigenerare un nuovo token fresco.
+  Future<bool> salvaFcmToken(String token) async {
     final cur = _currentUser;
     final cleanToken = token.trim();
-    if (cur == null || cleanToken.isEmpty) return;
+    if (cur == null || cleanToken.isEmpty) return true;
 
     for (String url in baseUrls) {
       try {
@@ -289,19 +292,29 @@ class ApiService {
                 'token': cleanToken,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 8));
+        if (res.statusCode == 409) {
+          // Il server ha verificato con Google FCM che questo token è UNREGISTERED!
+          if (_currentUser != null && _currentUser!.fcmTokens.contains(cleanToken)) {
+            final cleaned = List<String>.from(_currentUser!.fcmTokens)..remove(cleanToken);
+            _currentUser = _currentUser!.copyWith(fcmTokens: cleaned);
+            await _saveSession(_currentUser!);
+          }
+          return false;
+        }
         if (res.statusCode == 200) {
-          break;
+          if (_currentUser != null && !_currentUser!.fcmTokens.contains(cleanToken)) {
+            _currentUser = _currentUser!.copyWith(
+              fcmTokens: [..._currentUser!.fcmTokens, cleanToken],
+            );
+            await _saveSession(_currentUser!);
+          }
+          return true;
         }
       } catch (_) {}
     }
 
-    if (!_currentUser!.fcmTokens.contains(cleanToken)) {
-      _currentUser = _currentUser!.copyWith(
-        fcmTokens: [..._currentUser!.fcmTokens, cleanToken],
-      );
-      await _saveSession(_currentUser!);
-    }
+    return true;
   }
 
   Future<void> rimuoviFcmToken(String token) async {

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/richiesta_var.dart';
 import '../models/utente.dart';
+import '../services/fcm_service.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
@@ -113,6 +115,25 @@ class VarController {
           'letto': false,
           'data': now.toIso8601String(),
         });
+      }
+
+      unawaited(
+        FcmService.instance.inviaPushAUtenti(
+          [giudice],
+          titolo: '📺 VAR: Richiesta da Esaminare!',
+          messaggio: msgGiudice,
+          data: {'tipo': 'var_richiesta_giudice', 'eventoId': eventoId, 'varId': varId},
+        ),
+      );
+      if (testimoni.isNotEmpty) {
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            testimoni,
+            titolo: '👀 Chiamata a Testimoniare al VAR',
+            messaggio: '$richiedente ti ha indicato come testimone per "$bonusMalusTitolo". Confermi l\'accaduto?',
+            data: {'tipo': 'var_testimone', 'eventoId': eventoId, 'varId': varId},
+          ),
+        );
       }
 
       print('📺 [VAR] Nuova richiesta creata con ID $varId da $richiedente (Giudice: $giudice)');

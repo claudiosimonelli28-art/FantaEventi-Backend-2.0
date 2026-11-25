@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/bonus_malus.dart';
 import '../models/utente.dart';
+import '../services/fcm_service.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
@@ -221,11 +223,28 @@ class BonusMalusController {
         }
       } catch (_) {}
 
+      final resolvedDests = destinatariSet.map((d) => NicknameHelper.resolve(d, allUtenti)).toSet().toList();
+      if (resolvedDests.isNotEmpty) {
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            resolvedDests,
+            titolo: '⚡ Nuova Regola Proposta: $nome',
+            messaggio:
+                '$propostoDaUtente ha proposto "$nome" (${safePunti >= 0 ? "+$safePunti" : "$safePunti"} PT) in "$eventoNome". Entra a votare!',
+            data: {
+              'tipo': 'votazione',
+              'eventoId': eventoId,
+              'bonusId': bmHexId,
+            },
+          ),
+        );
+      }
+
       return Response.ok(
         jsonEncode({
           'message': 'Bonus/Malus creato con successo',
           'id': bmHexId,
-          'destinatari': destinatariSet.map((d) => NicknameHelper.resolve(d, allUtenti)).toList(),
+          'destinatari': resolvedDests,
           'eventoTitolo': eventoNome,
         }),
         headers: {'content-type': 'application/json'},
@@ -401,6 +420,26 @@ class BonusMalusController {
             'votoEspresso': 'pro',
             'data': now.toIso8601String(),
           });
+        }
+
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            [cleanDestUser],
+            titolo: notificaTitolo,
+            messaggio: 'Hai ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoNome"!',
+            data: {'tipo': notificaTipo, 'eventoId': eventoId},
+          ),
+        );
+        final altri = destList.where((d) => !NicknameHelper.isSame(d, cleanDestUser, uDocs)).toList();
+        if (altri.isNotEmpty) {
+          unawaited(
+            FcmService.instance.inviaPushAUtenti(
+              altri,
+              titolo: notificaTitolo,
+              messaggio: '$cleanDestUser ha ricevuto "$bonusTitolo" ($ptStr PT) per l\'evento "$eventoNome"!',
+              data: {'tipo': notificaTipo, 'eventoId': eventoId},
+            ),
+          );
         }
       } catch (errNot) {
         print('Notice inserimento notifica assegnazione: $errNot');

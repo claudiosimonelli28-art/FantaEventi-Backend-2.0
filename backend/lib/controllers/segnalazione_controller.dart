@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
+import '../services/fcm_service.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
@@ -49,6 +51,15 @@ class SegnalazioneController {
         'data': nowIso,
         'timestamp': nowIso,
       });
+
+      unawaited(
+        FcmService.instance.inviaPushAUtenti(
+          ['Cloud'],
+          titolo: '🛡️ Nuova Segnalazione Community',
+          messaggio: '@$segnalatore ha segnalato @$segnalato per "$motivo". Apri il Centro Moderazione nel tuo Profilo.',
+          data: {'tipo': 'segnalazione_utente'},
+        ),
+      );
 
       return Response.ok(
         jsonEncode({

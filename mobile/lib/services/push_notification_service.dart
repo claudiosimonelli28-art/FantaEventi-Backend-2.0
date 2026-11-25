@@ -439,22 +439,25 @@ class PushNotificationService {
     );
   }
 
-  /// Sincronizza il token FCM dell'utente loggato su MongoDB Atlas (protetto da lock contro race condition all'avvio)
-  Future<void>? _syncTokenFuture;
+  /// Sincronizza il token FCM dell'utente loggato su MongoDB Atlas (protetto da coda seriale contro race condition)
+  Future<void> _syncTokenQueue = Future.value();
+  String? _lastVerifiedUserTokenKey;
 
-  Future<void> syncCurrentDeviceToken({String? overrideToken, bool forceRefresh = false}) async {
-    if (_syncTokenFuture != null && !forceRefresh && (overrideToken == null || overrideToken.isEmpty)) {
-      return _syncTokenFuture!;
-    }
-    final fut = _doSyncCurrentDeviceToken(overrideToken: overrideToken, forceRefresh: forceRefresh);
-    _syncTokenFuture = fut;
-    try {
-      await fut;
-    } finally {
-      if (_syncTokenFuture == fut) {
-        _syncTokenFuture = null;
+  Future<void> syncCurrentDeviceToken({String? overrideToken, bool forceRefresh = false}) {
+    final completer = Completer<void>();
+    final prev = _syncTokenQueue;
+    _syncTokenQueue = completer.future;
+
+    return () async {
+      try {
+        await prev;
+      } catch (_) {}
+      try {
+        await _doSyncCurrentDeviceToken(overrideToken: overrideToken, forceRefresh: forceRefresh);
+      } finally {
+        completer.complete();
       }
-    }
+    }();
   }
 
   Future<void> _doSyncCurrentDeviceToken({String? overrideToken, bool forceRefresh = false}) async {
@@ -470,16 +473,13 @@ class PushNotificationService {
       if (cur == null) return;
 
       final prefs = await SharedPreferences.getInstance();
-      const String currentTokenBuildKey = 'fcm_token_build_v2_5';
-      final isNewBuild = prefs.getString('fcm_token_build') != currentTokenBuildKey;
 
-      if (forceRefresh || isNewBuild) {
+      if (forceRefresh) {
         try {
-          // Salva SUBITO la chiave di build prima dell'await per impedire doppi deleteToken concorrenti
-          await prefs.setString('fcm_token_build', currentTokenBuildKey);
+          _lastVerifiedUserTokenKey = null;
           await _messaging!.deleteToken();
-          await Future.delayed(const Duration(milliseconds: 800));
-          debugPrint('FCM Token resettato per garantire emissione token valida (v2_5)');
+          await Future.delayed(const Duration(milliseconds: 1200));
+          debugPrint('FCM Token resettato su richiesta esplicita');
         } catch (e) {
           debugPrint('Notice deleteToken: $e');
         }
@@ -493,11 +493,40 @@ class PushNotificationService {
           token = await _messaging!.getToken();
         }
       }
+
       if (token != null && token.isNotEmpty) {
-        // Registra SEMPRE il token su Render e MongoDB Atlas (operazione addToSet idempotente e sicura)
-        await ApiService().salvaFcmToken(token);
-        await prefs.setString('cached_fcm_token', token);
-        debugPrint('FCM Token registrato per l\'utente corrente (${cur.nome}): $token');
+        final userKey = '${cur.nickname.toLowerCase()}|$token';
+        if (!forceRefresh && _lastVerifiedUserTokenKey == userKey) {
+          return;
+        }
+
+        final accepted = await ApiService().salvaFcmToken(token);
+        if (accepted) {
+          _lastVerifiedUserTokenKey = userKey;
+          await prefs.setString('cached_fcm_token', token);
+          debugPrint('✅ FCM Token registrato e verificato per ${cur.nickname}: $token');
+        } else {
+          // Il server ha rilevato che Google FCM considera questo token UNREGISTERED (404)!
+          // Auto-guarigione immediata: forziamo Google Play Services ad emettere un nuovo token pulito!
+          debugPrint('🔄 Token FCM locale obsoleto (UNREGISTERED), rigenerazione automatica in corso...');
+          _lastVerifiedUserTokenKey = null;
+          await prefs.remove('cached_fcm_token');
+          try {
+            await _messaging!.deleteToken();
+            await Future.delayed(const Duration(milliseconds: 1500));
+            final freshToken = await _messaging!.getToken();
+            if (freshToken != null && freshToken.isNotEmpty && freshToken != token) {
+              final okRetry = await ApiService().salvaFcmToken(freshToken);
+              if (okRetry) {
+                _lastVerifiedUserTokenKey = '${cur.nickname.toLowerCase()}|$freshToken';
+                await prefs.setString('cached_fcm_token', freshToken);
+                debugPrint('✅ Nuovo FCM Token rigenerato con successo per ${cur.nickname}: $freshToken');
+              }
+            }
+          } catch (e) {
+            debugPrint('Errore rigenerazione FCM token: $e');
+          }
+        }
       }
     } catch (e) {
       debugPrint('Errore sync FCM token: $e');
@@ -506,6 +535,7 @@ class PushNotificationService {
 
   /// Rimuove il token FCM corrente dal profilo MongoDB Atlas (chiamato al Logout)
   Future<void> unregisterCurrentDeviceToken() async {
+    _lastVerifiedUserTokenKey = null;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('cached_fcm_token');

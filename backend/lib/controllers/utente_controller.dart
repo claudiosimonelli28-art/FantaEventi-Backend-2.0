@@ -6,6 +6,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../models/utente.dart';
+import '../services/fcm_service.dart';
 import '../utils/auth_token_helper.dart';
 import '../utils/nickname_helper.dart';
 
@@ -698,6 +699,27 @@ class UtenteController {
         );
       }
 
+      // Verifica dry-run con Google FCM: se il token è UNREGISTERED (es. rimasto nella cache locale del telefono),
+      // lo rimuoviamo dal DB e rispondiamo 409 così l'app forza la rigenerazione di un nuovo token valido!
+      final isValid = await FcmService.instance.isTokenValidOnFcm(token);
+      if (!isValid) {
+        await DbService.instance.utentiCollection.update(
+          where.eq('fcmTokens', token),
+          modify.pull('fcmTokens', token),
+          multiUpdate: true,
+        );
+        invalidateCache();
+        return Response(
+          409,
+          body: jsonEncode({
+            'success': false,
+            'tokenInvalid': true,
+            'error': 'FCM token UNREGISTERED: richiesto rinnovo sul dispositivo',
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
       final uDocs = await getCachedUtentiDocs();
       final cleanName = NicknameHelper.resolve(utenteName, uDocs);
       for (var u in uDocs) {
@@ -712,7 +734,7 @@ class UtenteController {
       }
       invalidateCache();
       return Response.ok(
-        jsonEncode({'success': true, 'message': 'FCM token registrato con successo'}),
+        jsonEncode({'success': true, 'message': 'FCM token registrato e verificato con successo'}),
         headers: {'content-type': 'application/json'},
       );
     } catch (e) {

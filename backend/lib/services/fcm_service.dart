@@ -15,6 +15,8 @@ class FcmService {
   Map<String, dynamic>? _serviceAccountMap;
   String? _cachedAccessToken;
   DateTime? _tokenExpiry;
+  final Set<String> _verifiedValidTokens = {};
+  final Map<String, DateTime> _recentPushFingerprints = {};
 
   String _getChannelIdForType(String? tipo) {
     final t = (tipo ?? '').toLowerCase().trim();
@@ -134,6 +136,61 @@ class FcmService {
     return sentCount;
   }
 
+  /// Verifica con dry-run (validate_only: true) su Google FCM se un token dispositivo è realmente valido
+  /// e non è rimasto bloccato in stato UNREGISTERED nella cache locale di Google Play Services.
+  Future<bool> isTokenValidOnFcm(String token) async {
+    final cleanToken = token.trim();
+    if (cleanToken.isEmpty) return false;
+    if (_verifiedValidTokens.contains(cleanToken)) return true;
+
+    try {
+      final accessToken = await _getAccessToken();
+      if (accessToken == null || accessToken.isEmpty) {
+        // Se momentaneamente non possiamo interrogare OAuth2, non blocchiamo la registrazione
+        return true;
+      }
+      final sa = await _loadServiceAccount();
+      final projectId = sa?['project_id'] ?? 'fantaeventi-dd26a';
+      final url = 'https://fcm.googleapis.com/v1/projects/$projectId/messages:send';
+
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $accessToken',
+            },
+            body: jsonEncode({
+              'validate_only': true,
+              'message': {
+                'token': cleanToken,
+                'notification': {'title': 'Check', 'body': 'Check'},
+              },
+            }),
+          )
+          .timeout(const Duration(seconds: 6));
+
+      if (response.statusCode == 200) {
+        _verifiedValidTokens.add(cleanToken);
+        return true;
+      }
+
+      if (response.statusCode == 404 ||
+          response.body.contains('UNREGISTERED') ||
+          response.body.contains('NotRegistered') ||
+          response.body.contains('INVALID_ARGUMENT')) {
+        _verifiedValidTokens.remove(cleanToken);
+        print('⚠️ [FCM Backend] Token rifiutato da Google FCM (${response.statusCode}): verrà richiesto rinnovo al telefono.');
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      print('⚠️ [FCM Backend] Errore temporaneo validate_only: $e');
+      return true;
+    }
+  }
+
   Future<bool> _sendFcmV1({
     required String token,
     required String titolo,
@@ -141,6 +198,21 @@ class FcmService {
     required Map<String, dynamic> data,
   }) async {
     try {
+      // Guardia anti-duplicato (12 secondi) nel caso in cui sia il server sia il client richiedano il push
+      final now = DateTime.now();
+      _recentPushFingerprints.removeWhere((_, ts) => now.difference(ts).inSeconds > 12);
+      final tipoKey = (data['tipo'] ?? '').toString().toLowerCase();
+      final evKey = (data['eventoId'] ?? '').toString().toLowerCase();
+      final bmKey = (data['bonusId'] ?? '').toString().toLowerCase();
+      final varKey = (data['varId'] ?? '').toString().toLowerCase();
+      final fingerprint = (tipoKey.isNotEmpty && (evKey.isNotEmpty || bmKey.isNotEmpty || varKey.isNotEmpty))
+          ? '$token|$tipoKey|$evKey|$bmKey|$varKey'
+          : '$token|$titolo|$messaggio';
+      if (_recentPushFingerprints.containsKey(fingerprint)) {
+        return true;
+      }
+      _recentPushFingerprints[fingerprint] = now;
+
       final accessToken = await _getAccessToken();
       if (accessToken == null || accessToken.isEmpty) return false;
 
@@ -204,6 +276,7 @@ class FcmService {
         if (response.statusCode == 404 ||
             response.body.contains('UNREGISTERED') ||
             response.body.contains('NotRegistered')) {
+          _verifiedValidTokens.remove(token);
           print('🧹 [FCM Backend] Rimozione token non più valido: $token');
           unawaited(
             DbService.instance.utentiCollection
