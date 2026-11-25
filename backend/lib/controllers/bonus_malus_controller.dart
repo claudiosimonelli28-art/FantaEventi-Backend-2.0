@@ -190,11 +190,15 @@ class BonusMalusController {
         final rawInv = (evDoc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
         destinatariSet.addAll(rawInv);
 
-        // Esclude categoricamente il proponente da ricezione notifiche
+        final rawRifiutati = (evDoc['rifiutati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+
+        // Esclude categoricamente il proponente e chi ha rifiutato l'invito da ricezione notifiche
         destinatariSet.removeWhere((d) {
           final cleanD = d.trim();
           if (cleanD.isEmpty) return true;
-          return NicknameHelper.isSame(cleanD, propostoDaUtente, allUtenti);
+          if (NicknameHelper.isSame(cleanD, propostoDaUtente, allUtenti)) return true;
+          if (rawRifiutati.any((r) => NicknameHelper.isSame(r, cleanD, allUtenti))) return true;
+          return false;
         });
 
         final now = ItalianTime.now();

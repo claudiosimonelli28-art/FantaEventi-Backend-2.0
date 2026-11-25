@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
@@ -5,11 +6,32 @@ import '../db/db_service.dart';
 import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
 import '../models/utente.dart';
+import '../services/fcm_service.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
 
 class VotazioneController {
+  static int _calcolaNumPartecipantiConfermati(
+    Map<String, dynamic> evMatch,
+    List<Map<String, dynamic>> uDocs,
+  ) {
+    final Set<String> uniqueLower = {};
+    final rawCreator = (evMatch['creatore'] ?? evMatch['propostoDa'] ?? '').toString().trim();
+    if (rawCreator.isNotEmpty) {
+      uniqueLower.add(NicknameHelper.resolve(rawCreator, uDocs).trim().toLowerCase());
+    }
+    final List<dynamic> partList = List.from(evMatch['partecipanti'] ?? []);
+    for (final p in partList) {
+      final s = p.toString().trim();
+      if (s.isNotEmpty) {
+        uniqueLower.add(NicknameHelper.resolve(s, uDocs).trim().toLowerCase());
+      }
+    }
+    // Se nessun invitato ha ancora accettato (solo 1 partecipante), usiamo 3 così il quorum resta 2
+    // e una singola proposta non si auto-approva né va in spareggio con 1 solo voto.
+    return uniqueLower.length >= 2 ? uniqueLower.length : 3;
+  }
   // GET /api/votazioni
   Future<Response> getVotazioni(Request request) async {
     try {
@@ -66,8 +88,7 @@ class VotazioneController {
           orElse: () => <String, dynamic>{},
         );
 
-        final List<dynamic> partList = List.from(evMatch['partecipanti'] ?? []);
-        final int numPartecipanti = partList.length >= 2 ? partList.length : 3;
+        final int numPartecipanti = _calcolaNumPartecipantiConfermati(evMatch, uDocs);
         final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
 
         final Set<String> countedUsers = {};
@@ -111,11 +132,18 @@ class VotazioneController {
           }
         }
 
-        if (isApprovato && !giaApprovatoDaDb && bm['_id'] is ObjectId) {
+        if (isApprovato && bm['_id'] is ObjectId && (bm['stato'] != 'approvato' || bm['approvato'] != true)) {
           try {
             await DbService.instance.bonusMalusCollection.update(
               where.id(bm['_id'] as ObjectId),
               modify.set('stato', 'approvato').set('approvato', true),
+            );
+          } catch (_) {}
+        } else if (isRespinto && bm['_id'] is ObjectId && bm['stato'] != 'respinto') {
+          try {
+            await DbService.instance.bonusMalusCollection.update(
+              where.id(bm['_id'] as ObjectId),
+              modify.set('stato', 'respinto').set('approvato', false),
             );
           } catch (_) {}
         }
@@ -188,9 +216,7 @@ class VotazioneController {
       if (bmObjId != null) {
         bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.id(bmObjId));
       }
-      if (bmDoc == null) {
-        bmDoc = await DbService.instance.bonusMalusCollection.findOne(where.eq('nome', idOrEventoId));
-      }
+      bmDoc ??= await DbService.instance.bonusMalusCollection.findOne(where.eq('nome', idOrEventoId));
       if (bmDoc == null && bmObjId != null) {
         final vDoc = await DbService.instance.votazioniCollection.findOne(where.id(bmObjId));
         if (vDoc != null) {
@@ -217,53 +243,151 @@ class VotazioneController {
         ),
       );
       final bool giaVotato = existingVote != null;
+      final nowIso = ItalianTime.now().toIso8601String();
 
       // 2. Inserisci o aggiorna il voto
       if (existingVote != null) {
         await DbService.instance.votazioniCollection.update(
           where.id(existingVote['_id'] as ObjectId),
-          modify.set('voto', aFavore ? 'pro' : 'contro').set('data', DateTime.now().toIso8601String()),
+          modify.set('voto', aFavore ? 'pro' : 'contro').set('data', nowIso),
         );
       } else {
         await DbService.instance.votazioniCollection.insertOne({
           'votazioneId': realBmHex,
           'bonusId': realBmHex,
+          if (bmDoc != null && (bmDoc['eventoId'] ?? '').toString().isNotEmpty)
+            'eventoId': bmDoc['eventoId'].toString(),
+          if (bmDoc != null && (bmDoc['nome'] ?? bmDoc['titolo'] ?? '').toString().isNotEmpty)
+            'bonusTitolo': (bmDoc['nome'] ?? bmDoc['titolo']).toString(),
           'utente': userNick,
           'voto': aFavore ? 'pro' : 'contro',
-          'data': DateTime.now().toIso8601String(),
+          'data': nowIso,
         });
       }
 
-      // 2b. Valuta Quorum e aggiorna BonusMalus se target raggiunto
+      // 2b. Valuta Quorum ((N / 2).floor() + 1) e Spareggio Organizzatore su numero pari di partecipanti
       try {
-        final allVotes = await DbService.instance.votazioniCollection.find(
-          where.eq('votazioneId', realBmHex)
-               .or(where.eq('bonusId', realBmHex))
-               .or(where.eq('votazioneId', idOrEventoId))
-               .or(where.eq('bonusId', idOrEventoId)),
-        ).toList();
-
-        final proCount = allVotes.where((v) => v['voto'] == 'pro' || v['voto'] == 'favorevole' || v['voto'] == 'si' || v['aFavore'] == true).length;
-        final controCount = allVotes.where((v) => v['voto'] == 'contro' || v['voto'] == 'no' || v['aFavore'] == false).length;
-
         if (bmDoc != null) {
-          final evId = (bmDoc['eventoId'] ?? '').toString();
+          final bool wasAlreadyApproved = bmDoc['approvato'] == true || bmDoc['stato'] == 'approvato';
+          final evId = (bmDoc['eventoId'] ?? '').toString().trim();
+          final nomeBM = (bmDoc['nome'] ?? bmDoc['titolo'] ?? 'Regola').toString();
+          final rawPropDa = (bmDoc['propostoDa'] ?? '').toString().trim();
+          final effectivePropDa = NicknameHelper.resolve(rawPropDa, uDocs);
+
+          final Map<String, String> votiUtenti = {
+            if (effectivePropDa.isNotEmpty) effectivePropDa: 'pro',
+            if (effectivePropDa.isNotEmpty) effectivePropDa.toLowerCase(): 'pro',
+          };
+
+          final allVotes = await DbService.instance.votazioniCollection.find(
+            where.eq('votazioneId', realBmHex)
+                 .or(where.eq('bonusId', realBmHex))
+                 .or(where.eq('votazioneId', idOrEventoId))
+                 .or(where.eq('bonusId', idOrEventoId)),
+          ).toList();
+
+          final cleanEvId = evId.toLowerCase();
+          for (final vDoc in allVotes) {
+            final vEvId = (vDoc['eventoId'] ?? '').toString().trim().toLowerCase();
+            if (vEvId.isNotEmpty && cleanEvId.isNotEmpty && vEvId != cleanEvId) {
+              continue;
+            }
+            final rawU = (vDoc['utente'] ?? '').toString().trim();
+            if (rawU.isEmpty) continue;
+            final val = (vDoc['voto']?.toString() ?? '').toLowerCase();
+            final voteStr = (val == 'pro' || val == 'accetta' || val == 'favorevole' || val == 'si' || vDoc['aFavore'] == true)
+                ? 'pro'
+                : 'contro';
+            final u = NicknameHelper.resolve(rawU, uDocs);
+            votiUtenti[u] = voteStr;
+            votiUtenti[u.toLowerCase()] = voteStr;
+          }
+
           ObjectId? evObjId;
           try { evObjId = ObjectId.fromHexString(evId); } catch (_) {}
-          final evDoc = await DbService.instance.eventiCollection.findOne(evObjId != null ? where.id(evObjId) : where.eq('_id', evId));
-          final partecipanti = (evDoc?['partecipanti'] as List<dynamic>?) ?? [];
-          final numPart = partecipanti.isNotEmpty ? partecipanti.length : 2;
-          final quorum = (numPart / 2).ceil();
+          Map<String, dynamic>? evDoc;
+          if (evObjId != null) {
+            evDoc = await DbService.instance.eventiCollection.findOne(where.id(evObjId));
+          }
+          evDoc ??= await DbService.instance.eventiCollection.findOne(
+            where.eq('_id', evId).or(where.eq('titolo', evId)).or(where.eq('nome', evId)),
+          );
 
-          if (controCount >= quorum && controCount > proCount) {
-            await DbService.instance.bonusMalusCollection.update(
-              where.id(bmDoc['_id'] as ObjectId),
-              modify.set('stato', 'respinto').set('approvato', false),
+          final int numPartecipanti = _calcolaNumPartecipantiConfermati(evDoc ?? <String, dynamic>{}, uDocs);
+          final int quorumCalcolato = (numPartecipanti / 2).floor() + 1;
+
+          final Set<String> countedUsers = {};
+          int fav = 0;
+          int cont = 0;
+          votiUtenti.forEach((user, vote) {
+            final normUser = NicknameHelper.resolve(user, uDocs).trim().toLowerCase();
+            if (!countedUsers.contains(normUser)) {
+              countedUsers.add(normUser);
+              if (vote == 'pro') fav++;
+              if (vote == 'contro') cont++;
+            }
+          });
+
+          final int totalVotiEspressi = fav + cont;
+          bool isApprovato = fav >= quorumCalcolato;
+          bool isRespinto = !isApprovato && (cont >= quorumCalcolato);
+
+          if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
+            final rawNomeOrg = (evDoc?['creatore'] ?? evDoc?['propostoDa'] ?? '').toString();
+            final nomeOrganizzatore = NicknameHelper.resolve(rawNomeOrg, uDocs);
+            final creatoreVoteKey = votiUtenti.keys.firstWhere(
+              (k) => NicknameHelper.isSame(k, nomeOrganizzatore, uDocs),
+              orElse: () => '',
             );
-          } else if (proCount >= quorum && proCount >= controCount) {
+            if (creatoreVoteKey.isNotEmpty) {
+              final creatoreVote = votiUtenti[creatoreVoteKey];
+              if (creatoreVote == 'pro') {
+                isApprovato = true;
+              } else if (creatoreVote == 'contro') {
+                isRespinto = true;
+              }
+            }
+          }
+
+          if (isApprovato) {
             await DbService.instance.bonusMalusCollection.update(
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'approvato').set('approvato', true),
+            );
+            if (!wasAlreadyApproved && evDoc != null) {
+              final rifiutatiRaw = List<dynamic>.from(evDoc['rifiutati'] ?? []);
+              final Set<String> pushTargets = {};
+              final rawCreator = (evDoc['creatore'] ?? evDoc['propostoDa'] ?? '').toString().trim();
+              if (rawCreator.isNotEmpty) {
+                pushTargets.add(NicknameHelper.resolve(rawCreator, uDocs));
+              }
+              for (final p in [...List.from(evDoc['partecipanti'] ?? []), ...List.from(evDoc['invitati'] ?? [])]) {
+                final s = p.toString().trim();
+                if (s.isEmpty) continue;
+                final resolved = NicknameHelper.resolve(s, uDocs);
+                if (!rifiutatiRaw.any((r) => NicknameHelper.isSame(r.toString(), resolved, uDocs))) {
+                  pushTargets.add(resolved);
+                }
+              }
+              if (pushTargets.isNotEmpty) {
+                unawaited(
+                  FcmService.instance.inviaPushAUtenti(
+                    pushTargets.toList(),
+                    titolo: '🎉 Nuova Regola Approvata: $nomeBM',
+                    messaggio: 'La regola "$nomeBM" ha raggiunto il quorum ed è ora attiva nel catalogo!',
+                    data: {
+                      'tipo': 'bonus_approvato',
+                      'eventoId': evId,
+                      'bonusId': realBmHex,
+                    },
+                  ),
+                );
+              }
+            }
+          } else if (isRespinto) {
+            await DbService.instance.bonusMalusCollection.update(
+              where.id(bmDoc['_id'] as ObjectId),
+              modify.set('stato', 'respinto').set('approvato', false),
             );
           }
         }

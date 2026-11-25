@@ -214,6 +214,16 @@ class SegnalazioneController {
           'timestamp': nowIso,
         });
 
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            [cleanSegnalato],
+            titolo: '⚠️ Richiamo Ufficiale di Moderazione (1/2)',
+            messaggio:
+                'Sei stato ammonito dall\'Amministrazione per comportamenti non conformi al regolamento di FantaEventi. Attenzione: alla prossima ammonizione il tuo account verrà automaticamente sospeso.',
+            data: {'tipo': 'ammonizione_utente'},
+          ),
+        );
+
         return Response.ok(
           jsonEncode({'success': true, 'azione': 'ammonito', 'notificaCreata': true}),
           headers: {'content-type': 'application/json'},
@@ -243,19 +253,31 @@ class SegnalazioneController {
         }
         UtenteController.invalidateCache();
 
+        final banTitle = isSecondaAmmonizione ? '⛔ Account Sospeso (2ª Ammonizione)' : '⛔ Account Sospeso';
+        final banMsg = isSecondaAmmonizione
+            ? 'Hai ricevuto una seconda ammonizione ufficiale dall\'Amministrazione. Per somma di ammonizioni il tuo account su FantaEventi è stato sospeso.'
+            : 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.';
+
         await DbService.instance.notificheCollection.insertOne({
           'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
           'tipo': 'ban_utente',
-          'titolo': isSecondaAmmonizione ? '⛔ Account Sospeso (2ª Ammonizione)' : '⛔ Account Sospeso',
-          'messaggio': isSecondaAmmonizione
-              ? 'Hai ricevuto una seconda ammonizione ufficiale dall\'Amministrazione. Per somma di ammonizioni il tuo account su FantaEventi è stato sospeso.'
-              : 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.',
+          'titolo': banTitle,
+          'messaggio': banMsg,
           'stato': 'in_attesa',
           'letto': false,
           'data': nowIso,
           'timestamp': nowIso,
         });
+
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            [cleanSegnalato],
+            titolo: banTitle,
+            messaggio: banMsg,
+            data: {'tipo': 'ban_utente'},
+          ),
+        );
 
         return Response.ok(
           jsonEncode({'success': true, 'azione': 'bannato', 'notificaCreata': true}),
@@ -297,6 +319,16 @@ class SegnalazioneController {
           'data': nowIso,
           'timestamp': nowIso,
         });
+
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            [cleanSegnalato],
+            titolo: '✅ Account Riabilitato',
+            messaggio:
+                'La sospensione del tuo account è stata revocata dall\'Amministrazione. Puoi tornare a utilizzare FantaEventi!',
+            data: {'tipo': 'riabilita_utente'},
+          ),
+        );
 
         return Response.ok(
           jsonEncode({'success': true, 'azione': 'riabilitato', 'notificaCreata': true}),

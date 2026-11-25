@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
@@ -141,6 +142,19 @@ class NotificaController {
             }
             continue;
           } else {
+            // Se l'utente ha rifiutato definitivamente l'invito a questo evento, non deve più vedere alcuna notifica dell'evento
+            if (cleanNick.isNotEmpty) {
+              final rifiutatiEv = (evDoc['rifiutati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+              if (rifiutatiEv.any((r) => NicknameHelper.isSame(r, cleanNick, uDocs))) {
+                if (d['_id'] is ObjectId) {
+                  try {
+                    await DbService.instance.notificheCollection.remove(where.id(d['_id'] as ObjectId));
+                  } catch (_) {}
+                }
+                continue;
+              }
+            }
+
             final statoEv = (evDoc['stato'] ?? '').toString().toLowerCase();
             final dtFineStr = evDoc['dataFine']?.toString();
             final DateTime? dtFine = dtFineStr != null ? DateTime.tryParse(dtFineStr) : null;
@@ -598,51 +612,157 @@ class NotificaController {
       final doc = await DbService.instance.notificheCollection.findOne(selector);
 
       if (doc != null) {
-        final eventoId = doc['eventoId']?.toString() ?? '';
+        final uDocs = await UtenteController.getCachedUtentiDocs();
+        final resolvedUtente = NicknameHelper.resolve(utente, uDocs);
+        final eventoId = doc['eventoId']?.toString().trim() ?? '';
+        final tipoNot = (doc['tipo'] ?? '').toString().toLowerCase().trim();
         final isPro = azione == 'accetta' || azione == 'pro' || azione == 'favorevole';
         final nuovoStato = isPro ? 'accettato' : 'rifiutato';
 
-        await DbService.instance.notificheCollection.update(
-          selector,
-          modify.set('stato', nuovoStato).set('votoEspresso', isPro ? 'pro' : 'contro').set('letto', true),
-        );
-
-        if (azione == 'accetta' && eventoId.isNotEmpty) {
+        if (eventoId.isNotEmpty && (tipoNot == 'invito' || (doc['bonusId'] ?? '').toString().trim().isEmpty)) {
           ObjectId? evObjId;
           try { evObjId = ObjectId.fromHexString(eventoId); } catch (_) {}
-          final evSelector = evObjId != null ? where.id(evObjId) : where.eq('nome', eventoId);
-          final evDoc = await DbService.instance.eventiCollection.findOne(evSelector);
+          Map<String, dynamic>? evDoc;
+          if (evObjId != null) {
+            evDoc = await DbService.instance.eventiCollection.findOne(where.id(evObjId));
+          }
+          evDoc ??= await DbService.instance.eventiCollection.findOne(
+            where.eq('_id', eventoId).or(where.eq('nome', eventoId)).or(where.eq('titolo', eventoId)),
+          );
 
           if (evDoc != null) {
-            final pullList = {
-              utente,
-              utente.toLowerCase(),
-              utente.toUpperCase(),
-              utente.trim(),
-              utente.trim().toLowerCase(),
-            }.toList();
+            final evRealId = evDoc['_id'] as ObjectId;
+            final evRealHex = evRealId.oid;
+            final evTitolo = (evDoc['titolo'] ?? evDoc['nome'] ?? '').toString().trim();
+            final rawCreator = (evDoc['propostoDa'] ?? evDoc['creatore'] ?? '').toString().trim();
+            final List<dynamic> currentPart = List.from(evDoc['partecipanti'] ?? []);
+            final List<dynamic> currentInv = List.from(evDoc['invitati'] ?? []);
+            final List<dynamic> currentRifiutati = List.from(evDoc['rifiutati'] ?? []);
 
-            await DbService.instance.eventiCollection.update(
-              evSelector,
-              modify
-                .addToSet('partecipanti', utente)
-                .pullAll('invitati', pullList),
+            if (isPro) {
+              if (currentRifiutati.any((r) => NicknameHelper.isSame(r.toString(), resolvedUtente, uDocs))) {
+                return Response.forbidden(
+                  jsonEncode({'error': 'Hai rifiutato l\'invito a questo evento e non puoi più partecipare!'}),
+                  headers: {'content-type': 'application/json'},
+                );
+              }
+
+              final statoEv = (evDoc['stato'] ?? 'in_programma').toString().toLowerCase();
+              final dtStart = DateTime.tryParse((evDoc['data'] ?? '').toString());
+              final now = ItalianTime.now();
+              if (statoEv == 'concluso' || statoEv == 'in_corso' || statoEv == 'annullato' || (dtStart != null && now.isAfter(dtStart))) {
+                return Response.badRequest(
+                  body: jsonEncode({'error': 'Le iscrizioni per questo evento sono chiuse'}),
+                  headers: {'content-type': 'application/json'},
+                );
+              }
+
+              currentInv.removeWhere((i) => NicknameHelper.isSame(i.toString(), resolvedUtente, uDocs));
+              if (!currentPart.any((p) => NicknameHelper.isSame(p.toString(), resolvedUtente, uDocs))) {
+                currentPart.add(resolvedUtente);
+              }
+
+              await DbService.instance.eventiCollection.update(
+                where.id(evRealId),
+                modify.set('partecipanti', currentPart).set('invitati', currentInv),
+              );
+
+              await DbService.instance.notificheCollection.update(
+                selector,
+                modify.set('stato', 'accettato').set('votoEspresso', 'pro').set('letto', true),
+              );
+            } else {
+              // RIFIUTO DEFINITIVO INVITO EVENTO:
+              // 1) Rimuovi da invitati (e da partecipanti se non creatore) e aggiungi in rifiutati
+              currentInv.removeWhere((i) => NicknameHelper.isSame(i.toString(), resolvedUtente, uDocs));
+              if (!NicknameHelper.isSame(rawCreator, resolvedUtente, uDocs)) {
+                currentPart.removeWhere((p) => NicknameHelper.isSame(p.toString(), resolvedUtente, uDocs));
+              }
+              if (!currentRifiutati.any((r) => NicknameHelper.isSame(r.toString(), resolvedUtente, uDocs))) {
+                currentRifiutati.add(resolvedUtente);
+              }
+
+              await DbService.instance.eventiCollection.update(
+                where.id(evRealId),
+                modify
+                  .set('invitati', currentInv)
+                  .set('partecipanti', currentPart)
+                  .set('rifiutati', currentRifiutati),
+              );
+
+              // 2) Rimuovi TUTTE le notifiche di questo evento (invito, proposte, ecc.) per l'utente che ha rifiutato
+              final allNots = await DbService.instance.notificheCollection.find().toList();
+              for (final n in allNots) {
+                if (n['_id'] is! ObjectId) continue;
+                final nDest = (n['destinatario'] ?? '').toString().trim();
+                if (!NicknameHelper.isSame(nDest, resolvedUtente, uDocs)) continue;
+                final nEvId = (n['eventoId'] ?? '').toString().trim().toLowerCase();
+                final bool sameEv = nEvId.isNotEmpty &&
+                    (nEvId == eventoId.toLowerCase() ||
+                     nEvId == evRealHex.toLowerCase() ||
+                     (evTitolo.isNotEmpty && nEvId == evTitolo.toLowerCase()));
+                if (sameEv || n['_id'] == doc['_id']) {
+                  await DbService.instance.notificheCollection.remove(where.id(n['_id'] as ObjectId));
+                }
+              }
+            }
+          } else {
+            await DbService.instance.notificheCollection.update(
+              selector,
+              modify.set('stato', nuovoStato).set('votoEspresso', isPro ? 'pro' : 'contro').set('letto', true),
             );
           }
+        } else {
+          await DbService.instance.notificheCollection.update(
+            selector,
+            modify.set('stato', nuovoStato).set('votoEspresso', isPro ? 'pro' : 'contro').set('letto', true),
+          );
         }
 
         // Accettazione richiesta di amicizia
-        if (azione == 'accetta' && doc['tipo'] == 'richiesta_amicizia') {
-          final mittente = (doc['mittente'] ?? '').toString().trim();
-          final destinatario = (doc['destinatario'] ?? utente).toString().trim();
+        if (azione == 'accetta' && tipoNot == 'richiesta_amicizia') {
+          final mittente = NicknameHelper.resolve((doc['mittente'] ?? '').toString().trim(), uDocs);
+          final destinatario = NicknameHelper.resolve((doc['destinatario'] ?? resolvedUtente).toString().trim(), uDocs);
           if (mittente.isNotEmpty && destinatario.isNotEmpty) {
-            await DbService.instance.utentiCollection.update(
-              where.eq('nickname', mittente).or(where.eq('nome', mittente)),
-              modify.addToSet('amici', destinatario),
-            );
-            await DbService.instance.utentiCollection.update(
-              where.eq('nickname', destinatario).or(where.eq('nome', destinatario)),
-              modify.addToSet('amici', mittente),
+            for (var d in uDocs) {
+              final uNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+              final uId = d['_id'] as ObjectId;
+              if (NicknameHelper.isSame(uNick, destinatario, uDocs)) {
+                final List<dynamic> amici = List.from(d['amici'] ?? []);
+                if (!amici.any((a) => NicknameHelper.isSame(a.toString(), mittente, uDocs))) {
+                  amici.add(mittente);
+                  await DbService.instance.utentiCollection.update(where.id(uId), modify.set('amici', amici));
+                }
+              }
+              if (NicknameHelper.isSame(uNick, mittente, uDocs)) {
+                final List<dynamic> amici = List.from(d['amici'] ?? []);
+                if (!amici.any((a) => NicknameHelper.isSame(a.toString(), destinatario, uDocs))) {
+                  amici.add(destinatario);
+                  await DbService.instance.utentiCollection.update(where.id(uId), modify.set('amici', amici));
+                }
+              }
+            }
+
+            final acceptMsg = '$destinatario ha accettato la tua richiesta di amicizia! Ora siete amici.';
+            await DbService.instance.notificheCollection.insertOne({
+              'mittente': destinatario,
+              'destinatario': mittente,
+              'titolo': '👥 Richiesta di Amicizia Accettata!',
+              'messaggio': acceptMsg,
+              'eventoId': '',
+              'tipo': 'amicizia_accettata',
+              'stato': 'consegnato',
+              'letto': false,
+              'data': ItalianTime.now().toIso8601String(),
+            });
+
+            unawaited(
+              FcmService.instance.inviaPushAUtenti(
+                [mittente],
+                titolo: '👥 Richiesta di Amicizia Accettata!',
+                messaggio: acceptMsg,
+                data: {'tipo': 'amicizia'},
+              ),
             );
             UtenteController.invalidateCache();
           }

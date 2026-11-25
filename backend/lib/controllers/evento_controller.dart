@@ -38,7 +38,11 @@ class EventoController {
         final cleanPart = rawPart.map((p) => NicknameHelper.resolve(p, utentiDocs)).toList();
 
         final rawInv = (d['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
-        final cleanInv = rawInv.map((i) => NicknameHelper.resolve(i, utentiDocs)).toList();
+        final rawRifiutati = (d['rifiutati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final cleanInv = rawInv
+            .map((i) => NicknameHelper.resolve(i, utentiDocs))
+            .where((i) => !rawRifiutati.any((r) => NicknameHelper.isSame(r, i, utentiDocs)))
+            .toList();
 
         final bool haAltriPartecipanti = cleanPart.any((p) => p.isNotEmpty && !NicknameHelper.isSame(p, creatorNick, utentiDocs));
         String stato = (d['stato'] ?? 'in_programma').toString().toLowerCase();
@@ -481,6 +485,9 @@ class EventoController {
         final evento = Evento.fromMap(d);
 
         if (utenteRichiedente.isNotEmpty) {
+          if (rawRifiutati.any((r) => NicknameHelper.isSame(r, utenteRichiedente, utentiDocs))) {
+            continue;
+          }
           final bool isCreatore = NicknameHelper.isSame(creatorNick, utenteRichiedente, utentiDocs);
           final bool isPartecipante = isCreatore ||
               cleanPart.any((p) => NicknameHelper.isSame(p, utenteRichiedente, utentiDocs));
@@ -688,6 +695,14 @@ class EventoController {
         final rawCreator = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
         final rawPart = (doc['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
         final rawInv = (doc['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final rawRifiutati = (doc['rifiutati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+
+        if (rawRifiutati.any((r) => NicknameHelper.isSame(r, utenteName, utentiDocs))) {
+          return Response.forbidden(
+            jsonEncode({'error': 'Non sei nella lista degli invitati: hai già rifiutato l\'invito a questo evento!'}),
+            headers: {'content-type': 'application/json'},
+          );
+        }
 
         final bool isCreatore = NicknameHelper.isSame(rawCreator, utenteName, utentiDocs);
         final bool isGiaPart = rawPart.any((p) => NicknameHelper.isSame(p, utenteName, utentiDocs));
@@ -837,14 +852,16 @@ class EventoController {
 
       final List<dynamic> currentInvitati = List.from(evDoc['invitati'] ?? []);
       final List<dynamic> currentPartecipanti = List.from(evDoc['partecipanti'] ?? []);
+      final List<dynamic> currentRifiutati = List.from(evDoc['rifiutati'] ?? []);
 
       final List<String> aggiuntiEffettivi = [];
       for (var amico in nuoviInvitati) {
         final resolvedAmico = NicknameHelper.resolve(amico, utentiDocs);
         final giaPart = currentPartecipanti.any((p) => NicknameHelper.isSame(p.toString(), resolvedAmico, utentiDocs));
         final giaInv = currentInvitati.any((i) => NicknameHelper.isSame(i.toString(), resolvedAmico, utentiDocs));
+        final giaRifiutato = currentRifiutati.any((r) => NicknameHelper.isSame(r.toString(), resolvedAmico, utentiDocs));
 
-        if (!giaPart && !giaInv && !NicknameHelper.isSame(resolvedAmico, creatore, utentiDocs)) {
+        if (!giaPart && !giaInv && !giaRifiutato && !NicknameHelper.isSame(resolvedAmico, creatore, utentiDocs)) {
           currentInvitati.add(resolvedAmico);
           aggiuntiEffettivi.add(resolvedAmico);
         }

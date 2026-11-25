@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -8,6 +9,7 @@ import '../db/db_service.dart';
 import '../models/utente.dart';
 import '../services/fcm_service.dart';
 import '../utils/auth_token_helper.dart';
+import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 
 
@@ -1205,15 +1207,28 @@ class UtenteController {
       } catch (_) {}
 
       // 4. Invia notifica di blocco al target
+      final blockMsg =
+          '$cleanUtente ti ha bloccato. Momentaneamente non siete più amici fino a quando $cleanUtente non ti sbloccherà.';
+      final nowIso = ItalianTime.now().toIso8601String();
       await DbService.instance.notificheCollection.insertOne({
         'tipo': 'blocco_utente',
         'titolo': '🚫 Sei stato bloccato',
-        'messaggio': '$cleanUtente ti ha bloccato. Momentaneamente non siete più amici fino a quando $cleanUtente non ti sbloccherà.',
+        'messaggio': blockMsg,
         'mittente': cleanUtente,
         'destinatario': cleanTarget,
-        'timestamp': DateTime.now().toIso8601String(),
+        'data': nowIso,
+        'timestamp': nowIso,
         'letto': false,
       });
+
+      unawaited(
+        FcmService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '🚫 Sei stato bloccato',
+          messaggio: blockMsg,
+          data: {'tipo': 'blocco_utente'},
+        ),
+      );
 
       invalidateCache();
       return Response.ok(
@@ -1288,15 +1303,27 @@ class UtenteController {
       }
 
       // 3. Invia notifica di sblocco al target
+      final unblockMsg = '$cleanUtente ti ha sbloccato. Siete di nuovo amici!';
+      final nowIso = ItalianTime.now().toIso8601String();
       await DbService.instance.notificheCollection.insertOne({
         'tipo': 'sblocco_utente',
         'titolo': '🤝 Sei stato sbloccato',
-        'messaggio': '$cleanUtente ti ha sbloccato. Siete di nuovo amici!',
+        'messaggio': unblockMsg,
         'mittente': cleanUtente,
         'destinatario': cleanTarget,
-        'timestamp': DateTime.now().toIso8601String(),
+        'data': nowIso,
+        'timestamp': nowIso,
         'letto': false,
       });
+
+      unawaited(
+        FcmService.instance.inviaPushAUtenti(
+          [cleanTarget],
+          titolo: '🤝 Sei stato sbloccato',
+          messaggio: unblockMsg,
+          data: {'tipo': 'sblocco_utente'},
+        ),
+      );
 
       invalidateCache();
       return Response.ok(
@@ -1485,18 +1512,66 @@ class UtenteController {
         );
       }
 
-      await DbService.instance.notificheCollection.insertOne({
-        'mittente': mittenteNick,
-        'destinatario': targetUser.nickname,
-        'titolo': '👥 Nuova Richiesta di Amicizia',
-        'messaggio': '$mittenteNick vuole aggiungerti agli amici!',
-        'eventoId': '',
-        'tipo': 'richiesta_amicizia',
-        'stato': 'in_attesa',
-        'letto': false,
-        'codiceAmico': mittenteUser?.codiceAmico ?? '',
-        'data': DateTime.now().toIso8601String(),
-      });
+      // Controllo bidirezionale utenti bloccati
+      final bool targetBlockedSender =
+          targetUser.utentiBloccati.any((b) => NicknameHelper.isSame(b, mittenteNick, uDocs));
+      final bool senderBlockedTarget = mittenteUser != null &&
+          mittenteUser.utentiBloccati.any((b) => NicknameHelper.isSame(b, targetUser!.nickname, uDocs));
+      if (targetBlockedSender || senderBlockedTarget) {
+        return Response.badRequest(
+          body: jsonEncode({
+            'error': senderBlockedTarget
+                ? 'Nessun utente trovato disponibile: hai bloccato questo utente. Sbloccalo prima dall\'Area Riservata!'
+                : 'Nessun utente trovato disponibile per ricevere richieste di amicizia.',
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final nowIso = ItalianTime.now().toIso8601String();
+      final pendingDocs = await DbService.instance.notificheCollection.find(
+        where.eq('tipo', 'richiesta_amicizia').and(where.eq('stato', 'in_attesa')),
+      ).toList();
+
+      Map<String, dynamic>? existingPending;
+      for (final p in pendingDocs) {
+        final pMitt = (p['mittente'] ?? '').toString().trim();
+        final pDest = (p['destinatario'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(pMitt, mittenteNick, uDocs) &&
+            NicknameHelper.isSame(pDest, targetUser.nickname, uDocs)) {
+          existingPending = p;
+          break;
+        }
+      }
+
+      if (existingPending != null && existingPending['_id'] is ObjectId) {
+        await DbService.instance.notificheCollection.update(
+          where.id(existingPending['_id'] as ObjectId),
+          modify.set('letto', false).set('data', nowIso),
+        );
+      } else {
+        await DbService.instance.notificheCollection.insertOne({
+          'mittente': mittenteNick,
+          'destinatario': targetUser.nickname,
+          'titolo': '👥 Nuova Richiesta di Amicizia',
+          'messaggio': '$mittenteNick vuole aggiungerti agli amici!',
+          'eventoId': '',
+          'tipo': 'richiesta_amicizia',
+          'stato': 'in_attesa',
+          'letto': false,
+          'codiceAmico': mittenteUser?.codiceAmico ?? '',
+          'data': nowIso,
+        });
+      }
+
+      unawaited(
+        FcmService.instance.inviaPushAUtenti(
+          [targetUser.nickname],
+          titolo: '👥 Nuova Richiesta di Amicizia',
+          messaggio: '$mittenteNick vuole aggiungerti agli amici!',
+          data: {'tipo': 'amicizia'},
+        ),
+      );
 
       return Response.ok(
         jsonEncode({
@@ -1558,17 +1633,27 @@ class UtenteController {
           }
         }
 
+        final acceptMsg = '$destinatario ha accettato la tua richiesta di amicizia! Ora siete amici.';
         await DbService.instance.notificheCollection.insertOne({
           'mittente': destinatario,
           'destinatario': mittente,
           'titolo': '👥 Richiesta di Amicizia Accettata!',
-          'messaggio': '$destinatario ha accettato la tua richiesta di amicizia! Ora siete amici.',
+          'messaggio': acceptMsg,
           'eventoId': '',
           'tipo': 'amicizia_accettata',
           'stato': 'consegnato',
           'letto': false,
-          'data': DateTime.now().toIso8601String(),
+          'data': ItalianTime.now().toIso8601String(),
         });
+
+        unawaited(
+          FcmService.instance.inviaPushAUtenti(
+            [mittente],
+            titolo: '👥 Richiesta di Amicizia Accettata!',
+            messaggio: acceptMsg,
+            data: {'tipo': 'amicizia'},
+          ),
+        );
 
         invalidateCache();
       }
