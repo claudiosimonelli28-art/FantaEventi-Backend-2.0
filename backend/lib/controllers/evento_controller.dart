@@ -6,6 +6,7 @@ import '../db/db_service.dart';
 import '../models/evento.dart';
 import '../models/utente.dart';
 import '../services/fcm_service.dart';
+import '../utils/auth_token_helper.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
@@ -15,7 +16,10 @@ class EventoController {
   Future<Response> getEventi(Request request) async {
     try {
       final now = ItalianTime.now();
-      final utenteRichiedente = (request.url.queryParameters['utente'] ?? '').toString().trim();
+      final queryUtente = (request.url.queryParameters['utente'] ?? '').toString().trim();
+      final utenteRichiedente = queryUtente.isNotEmpty
+          ? queryUtente
+          : (AuthTokenHelper.getVerifiedNickname(request) ?? '');
       final docs = await DbService.instance.eventiCollection.find().toList();
       final utentiDocs = await UtenteController.getCachedUtentiDocs();
 
@@ -780,7 +784,11 @@ class EventoController {
 
       final utentiDocs = await UtenteController.getCachedUtentiDocs();
       final creatoreDoc = (doc['propostoDa'] ?? doc['creatore'] ?? '').toString().trim();
-      final isAllowed = creatoreDoc.isEmpty || NicknameHelper.isSame(creatoreDoc, utente, utentiDocs) || utente.trim().toLowerCase() == 'cloud';
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request) ?? utente;
+      final isAdmin = AuthTokenHelper.isAdminRequest(request);
+      final isAllowed = creatoreDoc.isEmpty ||
+          NicknameHelper.isSame(creatoreDoc, verifiedCaller, utentiDocs) ||
+          isAdmin;
 
       if (!isAllowed) {
         return Response.forbidden(

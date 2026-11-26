@@ -39,9 +39,10 @@ class _LoginViewState extends State<LoginView> {
     if (notice != null && notice.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        final isOtherDevice = notice.toLowerCase().contains('altro dispositivo');
         AppToast.showWarning(
           context,
-          'Accesso su un altro dispositivo 📱',
+          isOtherDevice ? 'Accesso su un altro dispositivo 📱' : 'Sessione scaduta 🔒',
           notice,
           const Duration(seconds: 6),
         );

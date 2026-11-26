@@ -570,6 +570,18 @@ class UtenteController {
         );
       }
 
+      // Sicurezza critica: imposta-password è consentito SOLO ai profili storici che non hanno ancora una password.
+      // Se una password è già presente, il cambio può avvenire esclusivamente tramite codice OTP email (Brevo).
+      final existingPassword = (doc['password'] ?? doc['passwordHash'] ?? '').toString().trim();
+      if (existingPassword.isNotEmpty) {
+        return Response.forbidden(
+          jsonEncode({
+            'error': 'Questo profilo ha già una password impostata. Usa "Password dimenticata?" per reimpostarla via email.',
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
       final sessionId = AuthTokenHelper.generateSessionId();
       final oldTokens = List<String>.from(doc['fcmTokens'] ?? [])
           .map((t) => t.trim())
@@ -630,7 +642,12 @@ class UtenteController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final utenteName = (data['utente'] ?? data['username'] ?? data['nickname'])?.toString().trim() ?? '';
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final isAdmin = AuthTokenHelper.isAdminRequest(request);
+      final requestedName = (data['utente'] ?? data['username'] ?? data['nickname'])?.toString().trim() ?? '';
+      final utenteName = (!isAdmin && verifiedCaller != null && verifiedCaller.isNotEmpty)
+          ? verifiedCaller
+          : (requestedName.isNotEmpty ? requestedName : (verifiedCaller ?? ''));
       final avatarUrl = data['avatarUrl']?.toString().trim() ?? '';
 
       print('📥 [HTTP POST /api/utenti/avatar] Aggiornamento foto profilo per "$utenteName"');
@@ -767,7 +784,9 @@ class UtenteController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final utenteName = (data['utente'] ?? data['username'] ?? data['nickname'])?.toString().trim() ?? '';
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawName = (data['utente'] ?? data['username'] ?? data['nickname'])?.toString().trim() ?? '';
+      final utenteName = (verifiedCaller != null && verifiedCaller.isNotEmpty) ? verifiedCaller : rawName;
       final token = data['token']?.toString().trim() ?? '';
 
       if (utenteName.isEmpty || token.isEmpty) {
@@ -1236,6 +1255,22 @@ class UtenteController {
 
       if (targetUser != null) {
         final uId = targetUser['_id'] as ObjectId;
+        final targetIdHex = uId.oid;
+        final targetNick = (targetUser['nickname'] ?? targetUser['username'] ?? targetUser['nome'] ?? '').toString().trim();
+
+        final verifiedSub = AuthTokenHelper.getVerifiedUserId(request) ?? '';
+        final verifiedNick = AuthTokenHelper.getVerifiedNickname(request) ?? '';
+        final isAdmin = AuthTokenHelper.isAdminRequest(request);
+        final isOwner = (verifiedSub.isNotEmpty && verifiedSub == targetIdHex) ||
+            (verifiedNick.isNotEmpty && NicknameHelper.isSame(verifiedNick, targetNick, allUsers));
+
+        if (!isOwner && !isAdmin) {
+          return Response.forbidden(
+            jsonEncode({'error': 'Non sei autorizzato a eliminare un account diverso dal tuo.'}),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+
         await DbService.instance.utentiCollection.remove(where.id(uId));
 
         final matchNames = <String>{};
@@ -1274,7 +1309,9 @@ class UtenteController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final utente = (data['utente'] ?? data['bloccante'] ?? data['sbloccante'] ?? '').toString().trim();
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawUtente = (data['utente'] ?? data['bloccante'] ?? data['sbloccante'] ?? '').toString().trim();
+      final utente = (verifiedCaller != null && verifiedCaller.isNotEmpty) ? verifiedCaller : rawUtente;
       final target = (data['target'] ?? data['bloccato'] ?? data['sbloccato'] ?? '').toString().trim();
 
       if (utente.isEmpty || target.isEmpty) {
@@ -1447,7 +1484,9 @@ class UtenteController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final utente = (data['utente'] ?? data['bloccante'] ?? data['sbloccante'] ?? '').toString().trim();
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawUtente = (data['utente'] ?? data['bloccante'] ?? data['sbloccante'] ?? '').toString().trim();
+      final utente = (verifiedCaller != null && verifiedCaller.isNotEmpty) ? verifiedCaller : rawUtente;
       final target = (data['target'] ?? data['bloccato'] ?? data['sbloccato'] ?? '').toString().trim();
 
       if (utente.isEmpty || target.isEmpty) {
@@ -1576,7 +1615,10 @@ class UtenteController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final rawNick = (data['utente'] ?? data['nickname'] ?? data['username'] ?? '').toString().trim();
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawNick = (verifiedCaller != null && verifiedCaller.isNotEmpty)
+          ? verifiedCaller
+          : (data['utente'] ?? data['nickname'] ?? data['username'] ?? '').toString().trim();
       final bool awardXp = data['awardXp'] != false;
 
       if (rawNick.isEmpty) {
@@ -1662,7 +1704,10 @@ class UtenteController {
     try {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final rawMittente = (data['mittente'] ?? data['utente'] ?? '').toString().trim();
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawMittente = (verifiedCaller != null && verifiedCaller.isNotEmpty)
+          ? verifiedCaller
+          : (data['mittente'] ?? data['utente'] ?? '').toString().trim();
       final cleanCode = (data['codiceAmico'] ?? data['target'] ?? '').toString().trim().toUpperCase();
 
       if (rawMittente.isEmpty || cleanCode.isEmpty) {

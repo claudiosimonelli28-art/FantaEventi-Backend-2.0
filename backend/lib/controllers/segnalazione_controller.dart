@@ -4,6 +4,7 @@ import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
 import '../services/fcm_service.dart';
+import '../utils/auth_token_helper.dart';
 import '../utils/italian_time.dart';
 import '../utils/nickname_helper.dart';
 import 'utente_controller.dart';
@@ -15,7 +16,9 @@ class SegnalazioneController {
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 
-      final segnalatore = (data['segnalatore'] ?? '').toString().trim();
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawSegnalatore = (data['segnalatore'] ?? '').toString().trim();
+      final segnalatore = (verifiedCaller != null && verifiedCaller.isNotEmpty) ? verifiedCaller : rawSegnalatore;
       final segnalato = (data['segnalato'] ?? '').toString().trim();
       final motivo = (data['motivo'] ?? '').toString().trim();
       final dettagli = (data['dettagli'] ?? '').toString().trim();
@@ -81,14 +84,12 @@ class SegnalazioneController {
     }
   }
 
-  /// Recupera tutte le segnalazioni (riservato all'amministratore / Cloud)
+  /// Recupera tutte le segnalazioni (riservato esclusivamente all'amministratore Cloud verificato via JWT)
   Future<Response> getSegnalazioni(Request request) async {
     try {
-      final utenteRichiedente = (request.url.queryParameters['utente'] ?? '').toString().trim().toLowerCase();
-      // Riservato a Cloud / Admin
-      if (utenteRichiedente.isNotEmpty && utenteRichiedente != 'cloud' && utenteRichiedente != 'claudio') {
+      if (!AuthTokenHelper.isAdminRequest(request)) {
         return Response.forbidden(
-          jsonEncode({'error': 'Accesso riservato all\'amministratore'}),
+          jsonEncode({'error': 'Accesso riservato esclusivamente all\'amministratore'}),
           headers: {'content-type': 'application/json'},
         );
       }
@@ -157,9 +158,16 @@ class SegnalazioneController {
     }
   }
 
-  /// Gestisce una segnalazione: Ammonisci, Banna o Archivia (riservato a Cloud)
+  /// Gestisce una segnalazione: Ammonisci, Banna o Archivia (riservato esclusivamente a Cloud verificato via JWT)
   Future<Response> gestisciSegnalazione(Request request) async {
     try {
+      if (!AuthTokenHelper.isAdminRequest(request)) {
+        return Response.forbidden(
+          jsonEncode({'error': 'Azioni di moderazione riservate esclusivamente all\'amministratore'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
       final body = await request.readAsString();
       final data = jsonDecode(body) as Map<String, dynamic>;
 

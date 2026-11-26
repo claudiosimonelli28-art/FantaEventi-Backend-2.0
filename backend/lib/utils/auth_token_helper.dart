@@ -118,4 +118,20 @@ class AuthTokenHelper {
     final sid = auth?['sid']?.toString().trim();
     return (sid != null && sid.isNotEmpty) ? sid : null;
   }
+
+  /// Restituisce l'ID documento utente (sub) contenuto nel token Bearer verificato
+  static String? getVerifiedUserId(Request request) {
+    final auth = getAuthFromRequest(request);
+    final sub = auth?['sub']?.toString().trim();
+    return (sub != null && sub.isNotEmpty) ? sub : null;
+  }
+
+  /// Verifica crittograficamente se la richiesta proviene dall'Amministratore (Cloud)
+  static bool isAdminRequest(Request request) {
+    final auth = getAuthFromRequest(request);
+    if (auth == null) return false;
+    if (auth['isAdmin'] == true) return true;
+    final nick = (auth['nickname'] ?? '').toString().trim().toLowerCase();
+    return nick == 'cloud' || nick == 'claudio';
+  }
 }
