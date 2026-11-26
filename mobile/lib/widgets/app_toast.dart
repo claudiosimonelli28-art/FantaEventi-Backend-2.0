@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 enum AppToastType { success, error, warning, info }
 
 class AppToast {
+  static OverlayEntry? _activeOverlayEntry;
+  static Timer? _activeOverlayTimer;
+
   static void showSuccess(
     BuildContext context,
     String title, [
@@ -64,6 +68,15 @@ class AppToast {
     );
   }
 
+  static void _dismissActiveOverlay() {
+    _activeOverlayTimer?.cancel();
+    _activeOverlayTimer = null;
+    try {
+      _activeOverlayEntry?.remove();
+    } catch (_) {}
+    _activeOverlayEntry = null;
+  }
+
   static void show(
     BuildContext context, {
     required String title,
@@ -71,6 +84,8 @@ class AppToast {
     required AppToastType type,
     Duration duration = const Duration(seconds: 3),
   }) {
+    if (!context.mounted) return;
+
     Color accentColor;
     IconData icon;
 
@@ -93,76 +108,109 @@ class AppToast {
         break;
     }
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        duration: duration,
-        content: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: accentColor.withValues(alpha: 0.6), width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 14,
-                offset: const Offset(0, 6),
-              ),
-              BoxShadow(
-                color: accentColor.withValues(alpha: 0.18),
-                blurRadius: 16,
-                offset: const Offset(0, 2),
-              ),
-            ],
+    final Widget toastCard = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accentColor.withValues(alpha: 0.6), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.45),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.18),
-                  shape: BoxShape.circle,
+          BoxShadow(
+            color: accentColor.withValues(alpha: 0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: accentColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: Colors.white,
+                  ),
                 ),
-                child: Icon(icon, color: accentColor, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.white,
-                      ),
+                if (message != null && message.trim().isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    message.trim(),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: const Color(0xFFCBD5E1),
+                      height: 1.3,
                     ),
-                    if (message != null && message.trim().isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        message.trim(),
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: const Color(0xFFCBD5E1),
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
+
+    // Mostra sempre sul root Overlay così il banner appare in primo piano anche sopra BottomSheet e Dialoghi aperti
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay != null) {
+      _dismissActiveOverlay();
+      final bottomInset = MediaQuery.maybeOf(context)?.padding.bottom ?? 16.0;
+      final entry = OverlayEntry(
+        builder: (ctx) => Positioned(
+          left: 16,
+          right: 16,
+          bottom: bottomInset + 16,
+          child: SafeArea(
+            top: false,
+            child: Material(
+              color: Colors.transparent,
+              child: GestureDetector(
+                onTap: _dismissActiveOverlay,
+                child: toastCard,
+              ),
+            ),
+          ),
+        ),
+      );
+      _activeOverlayEntry = entry;
+      overlay.insert(entry);
+      _activeOverlayTimer = Timer(duration, _dismissActiveOverlay);
+      return;
+    }
+
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger != null) {
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          duration: duration,
+          content: toastCard,
+        ),
+      );
+    }
   }
 }

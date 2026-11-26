@@ -22,7 +22,11 @@ class FcmService {
     final t = (tipo ?? '').toLowerCase().trim();
     if (t.startsWith('var')) return 'fantaeventi_var';
     if (t.contains('invito') || t.contains('amicizia')) return 'fantaeventi_invites';
-    if (t == 'bonus_approvato' || t == 'malus_approvato' || t == 'regola_approvata' || t.contains('approvat')) {
+    if (t == 'bonus_approvato' ||
+        t == 'malus_approvato' ||
+        t == 'regola_approvata' ||
+        t == 'regola_rifiutata' ||
+        t.contains('approvat')) {
       return 'fantaeventi_rules';
     }
     if (t == 'bonus_malus' || t.contains('proposta') || t.contains('vota')) {

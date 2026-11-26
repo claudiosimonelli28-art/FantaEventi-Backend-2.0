@@ -197,8 +197,12 @@ class PushNotificationService {
     if (t.startsWith('var')) return channelVar;
     // 2. Inviti ad eventi & Richieste di Amicizia
     if (t.contains('invito') || t.contains('amicizia')) return channelInvites;
-    // 3. Nuove Regole Approvate nel catalogo ufficiale
-    if (t == 'bonus_approvato' || t == 'malus_approvato' || t == 'regola_approvata' || t.contains('approvat')) {
+    // 3. Nuove Regole Approvate / Rifiutate
+    if (t == 'bonus_approvato' ||
+        t == 'malus_approvato' ||
+        t == 'regola_approvata' ||
+        t == 'regola_rifiutata' ||
+        t.contains('approvat')) {
       return channelRules;
     }
     // 4. Nuove Proposte e Votazioni live da votare

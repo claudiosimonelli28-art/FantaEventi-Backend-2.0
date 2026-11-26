@@ -269,6 +269,7 @@ class VotazioneController {
       try {
         if (bmDoc != null) {
           final bool wasAlreadyApproved = bmDoc['approvato'] == true || bmDoc['stato'] == 'approvato';
+          final bool wasAlreadyRejected = bmDoc['stato'] == 'respinto';
           final evId = (bmDoc['eventoId'] ?? '').toString().trim();
           final nomeBM = (bmDoc['nome'] ?? bmDoc['titolo'] ?? 'Regola').toString();
           final rawPropDa = (bmDoc['propostoDa'] ?? '').toString().trim();
@@ -331,6 +332,7 @@ class VotazioneController {
           final int totalVotiEspressi = fav + cont;
           bool isApprovato = fav >= quorumCalcolato;
           bool isRespinto = !isApprovato && (cont >= quorumCalcolato);
+          bool decisaDaSpareggio = false;
 
           if (!isApprovato && !isRespinto && (numPartecipanti % 2 == 0) && (totalVotiEspressi >= numPartecipanti) && (fav == cont)) {
             final rawNomeOrg = (evDoc?['creatore'] ?? evDoc?['propostoDa'] ?? '').toString();
@@ -343,8 +345,10 @@ class VotazioneController {
               final creatoreVote = votiUtenti[creatoreVoteKey];
               if (creatoreVote == 'pro') {
                 isApprovato = true;
+                decisaDaSpareggio = true;
               } else if (creatoreVote == 'contro') {
                 isRespinto = true;
+                decisaDaSpareggio = true;
               }
             }
           }
@@ -389,6 +393,38 @@ class VotazioneController {
               where.id(bmDoc['_id'] as ObjectId),
               modify.set('stato', 'respinto').set('approvato', false),
             );
+            if (!wasAlreadyRejected && effectivePropDa.isNotEmpty) {
+              final evTitolo = (evDoc?['titolo'] ?? evDoc?['nome'] ?? 'Evento').toString().trim();
+              final rejectTitle = '❌ Regola Rifiutata: $nomeBM';
+              final rejectMsg = decisaDaSpareggio
+                  ? 'La regola "$nomeBM" è stata rifiutata per decisione in parità dell\'Organizzatore nell\'evento "$evTitolo".'
+                  : 'La regola "$nomeBM" non ha superato il quorum ed è stata rifiutata nell\'evento "$evTitolo".';
+
+              await DbService.instance.notificheCollection.insertOne({
+                'mittente': 'Sistema',
+                'destinatario': effectivePropDa,
+                'titolo': rejectTitle,
+                'messaggio': rejectMsg,
+                'eventoId': evId,
+                'tipo': 'regola_rifiutata',
+                'stato': 'consegnato',
+                'letto': false,
+                'data': nowIso,
+              });
+
+              unawaited(
+                FcmService.instance.inviaPushAUtenti(
+                  [effectivePropDa],
+                  titolo: rejectTitle,
+                  messaggio: rejectMsg,
+                  data: {
+                    'tipo': 'regola_rifiutata',
+                    'eventoId': evId,
+                    'bonusId': realBmHex,
+                  },
+                ),
+              );
+            }
           }
         }
       } catch (_) {}

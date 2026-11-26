@@ -2570,6 +2570,38 @@ class ApiService {
   // BLOCCO & SBLOCCO UTENTI (Apple UGC 1.2)
   // ==========================================
 
+  Future<String?> verificaEventoAttivoInComune(String targetNick) async {
+    final curUser = _currentUser;
+    if (curUser == null) return null;
+    final curNick = curUser.nickname.isNotEmpty ? curUser.nickname : curUser.nome;
+    final cleanTarget = targetNick.trim();
+    if (cleanTarget.isEmpty) return null;
+
+    List<Evento> listaEventi = _eventi;
+    if (listaEventi.isEmpty) {
+      try {
+        listaEventi = await getEventi(forceRefresh: true);
+      } catch (_) {}
+    }
+
+    final now = DateTime.now();
+    for (final ev in listaEventi) {
+      if (ev.isConcluso || ev.isAnnullato) continue;
+
+      bool isUserInEv(String candidate) {
+        if (isSamePerson(ev.creatore, candidate)) return true;
+        if (ev.partecipanti.any((p) => isSamePerson(p, candidate))) return true;
+        if (!now.isAfter(ev.data) && ev.invitati.any((i) => isSamePerson(i, candidate))) return true;
+        return false;
+      }
+
+      if (isUserInEv(curNick) && isUserInEv(cleanTarget)) {
+        return ev.titolo.isNotEmpty ? ev.titolo : 'Evento';
+      }
+    }
+    return null;
+  }
+
   Future<bool> bloccaUtente(String targetNick) async {
     final curUser = _currentUser;
     if (curUser == null) return false;
@@ -2587,7 +2619,7 @@ class ApiService {
                 'target': cleanTarget,
               }),
             )
-            .timeout(const Duration(seconds: 8));
+            .timeout(const Duration(seconds: 10));
         if (res.statusCode == 200) {
           final currentBloccati = List<String>.from(curUser.utentiBloccati);
           if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
@@ -2608,8 +2640,17 @@ class ApiService {
             ),
           );
           return true;
+        } else if (res.statusCode == 409 || (res.statusCode >= 400 && res.statusCode < 500)) {
+          final data = jsonDecode(res.body);
+          if (data is Map && data['error'] != null) {
+            throw Exception(data['error'].toString());
+          }
         }
-      } catch (_) {}
+      } catch (e) {
+        if (e is Exception && e.toString().contains('nello stesso evento')) {
+          rethrow;
+        }
+      }
     }
 
     return false;
@@ -2678,31 +2719,43 @@ class ApiService {
     final curNick = (curUser?.nickname.isNotEmpty == true ? curUser!.nickname : curUser?.nome) ?? 'Cloud';
 
     for (String url in baseUrls) {
-      try {
-        final res = await http
-            .post(
-              Uri.parse('$url/segnalazioni/crea'),
-              headers: defaultHeaders,
-              body: jsonEncode({
-                'segnalatore': curNick,
-                'segnalato': segnalato,
-                'motivo': motivo,
-                'dettagli': dettagli,
-              }),
-            )
-            .timeout(const Duration(seconds: 8));
-        if (res.statusCode == 200) {
-          unawaited(
-            PushNotificationService.instance.inviaPushAUtenti(
-              ['Cloud'],
-              titolo: '🛡️ Nuova Segnalazione Community',
-              messaggio: '@$curNick ha segnalato @$segnalato per "$motivo". Apri il Centro Moderazione nel tuo Profilo.',
-              data: {'tipo': 'segnalazione_utente'},
-            ),
-          );
-          return true;
+      for (int attempt = 0; attempt < 2; attempt++) {
+        try {
+          final res = await http
+              .post(
+                Uri.parse('$url/segnalazioni/crea'),
+                headers: defaultHeaders,
+                body: jsonEncode({
+                  'segnalatore': curNick,
+                  'segnalato': segnalato,
+                  'motivo': motivo,
+                  'dettagli': dettagli,
+                }),
+              )
+              .timeout(const Duration(seconds: 12));
+          if (res.statusCode == 200) {
+            unawaited(
+              PushNotificationService.instance.inviaPushAUtenti(
+                ['Cloud'],
+                titolo: '🛡️ Nuova Segnalazione Community',
+                messaggio: '@$curNick ha segnalato @$segnalato per "$motivo". Apri il Centro Moderazione nel tuo Profilo.',
+                data: {'tipo': 'segnalazione_utente'},
+              ),
+            );
+            return true;
+          }
+          if (res.statusCode >= 500 && attempt == 0) {
+            await Future.delayed(const Duration(milliseconds: 700));
+            continue;
+          }
+          break;
+        } catch (_) {
+          if (attempt == 0) {
+            await Future.delayed(const Duration(milliseconds: 700));
+            continue;
+          }
         }
-      } catch (_) {}
+      }
     }
 
     return false;

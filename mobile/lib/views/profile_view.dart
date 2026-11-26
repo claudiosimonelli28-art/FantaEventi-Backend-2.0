@@ -3212,9 +3212,62 @@ class _ProfileViewState extends State<ProfileView> {
     );
   }
 
-  void _confermaBloccoUtente(String targetNick, {VoidCallback? onBlocked}) {
+  void _mostraAvvisoStessoEventoBlocco(String eventoTitolo) {
+    if (!mounted) return;
     showDialog(
       context: context,
+      builder: (dCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Color(0xFFFACC15), width: 1.4),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Color(0xFFFACC15), size: 24),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Blocco non disponibile',
+                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Al momento siete entrambi nello stesso evento ("$eventoTitolo"), quindi non puoi bloccarlo.\n\nUna volta concluso l\'evento potrai bloccarlo.',
+          style: GoogleFonts.inter(color: const Color(0xFFCBD5E1), fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFACC15),
+                foregroundColor: const Color(0xFF0F172A),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: () => Navigator.of(dCtx).pop(),
+              child: Text('HO CAPITO', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confermaBloccoUtente(String targetNick, {VoidCallback? onBlocked}) async {
+    final sharedEvTitle = await _viewModel.verificaEventoAttivoInComune(targetNick);
+    if (!mounted) return;
+    if (sharedEvTitle != null) {
+      _mostraAvvisoStessoEventoBlocco(sharedEvTitle);
+      return;
+    }
+
+    final rootCtx = context;
+    showDialog(
+      context: rootCtx,
       builder: (ctx) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1E293B),
@@ -3279,16 +3332,23 @@ class _ProfileViewState extends State<ProfileView> {
                 backgroundColor: const Color(0xFFEF4444),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(ctx).pop();
-                if (onBlocked != null) onBlocked();
-                setState(() {});
-                AppToast.showSuccess(context, 'Utente Bloccato', '@$targetNick è stato bloccato e rimosso dagli amici.');
-                _viewModel.bloccaUtente(targetNick).then((ok) {
-                  if (!ok && mounted) {
-                    AppToast.showError(context, 'Errore', 'Impossibile completare il blocco sul server.');
+                try {
+                  final ok = await _viewModel.bloccaUtente(targetNick);
+                  if (!rootCtx.mounted) return;
+                  if (ok) {
+                    if (onBlocked != null) onBlocked();
+                    setState(() {});
+                    AppToast.showSuccess(rootCtx, 'Utente Bloccato 🚫', '@$targetNick è stato bloccato e rimosso dagli amici.');
+                  } else {
+                    AppToast.showError(rootCtx, 'Errore', 'Impossibile completare il blocco sul server.');
                   }
-                });
+                } catch (e) {
+                  if (!rootCtx.mounted) return;
+                  final msg = e.toString().replaceAll('Exception: ', '');
+                  AppToast.showWarning(rootCtx, 'Blocco non disponibile', msg, const Duration(seconds: 5));
+                }
               },
               child: Text('SÌ, BLOCCA', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
@@ -3299,13 +3359,14 @@ class _ProfileViewState extends State<ProfileView> {
   }
 
   void _mostraDialogSegnalaUtente(String targetNick) {
+    final rootCtx = context;
     String motivoSelezionato = 'Profilo o foto offensiva';
     final dettagliCtrl = TextEditingController();
 
     showDialog(
-      context: context,
+      context: rootCtx,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
+        builder: (dlgCtx, setDlgState) => AlertDialog(
           backgroundColor: const Color(0xFF1E293B),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
@@ -3386,17 +3447,22 @@ class _ProfileViewState extends State<ProfileView> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () async {
+                final dettagliText = dettagliCtrl.text.trim();
                 Navigator.of(ctx).pop();
                 final ok = await _viewModel.inviaSegnalazione(
                   segnalato: targetNick,
                   motivo: motivoSelezionato,
-                  dettagli: dettagliCtrl.text.trim(),
+                  dettagli: dettagliText,
                 );
-                if (mounted) {
+                if (rootCtx.mounted) {
                   if (ok) {
-                    AppToast.showSuccess(context, 'Segnalazione Inviata', 'Grazie per il tuo contributo a mantenere FantaEventi sicura.');
+                    AppToast.showSuccess(
+                      rootCtx,
+                      'Segnalazione Inviata 🛡️',
+                      'Grazie! La segnalazione su @$targetNick è stata ricevuta dall\'Amministrazione.',
+                    );
                   } else {
-                    AppToast.showError(context, 'Errore', 'Impossibile inviare la segnalazione. Riprova.');
+                    AppToast.showError(rootCtx, 'Errore', 'Impossibile inviare la segnalazione. Riprova.');
                   }
                 }
               },

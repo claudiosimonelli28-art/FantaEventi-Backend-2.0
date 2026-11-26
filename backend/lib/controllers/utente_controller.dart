@@ -1155,6 +1155,71 @@ class UtenteController {
       final cleanUtente = NicknameHelper.resolve(utente, uDocs);
       final cleanTarget = NicknameHelper.resolve(target, uDocs);
 
+      // 0. Verifica anti-conflitto: non è possibile bloccare un giocatore mentre si è entrambi nello stesso evento attivo (in_programma o in_corso)
+      final now = ItalianTime.now();
+      final evDocs = await DbService.instance.eventiCollection.find().toList();
+      for (final ev in evDocs) {
+        final rawStato = (ev['stato'] ?? 'in_programma').toString().trim().toLowerCase();
+        if (rawStato == 'concluso' || rawStato == 'annullato') continue;
+
+        final dtStart = ev['data'] is DateTime
+            ? ev['data'] as DateTime
+            : (ev['data'] != null ? DateTime.tryParse(ev['data'].toString()) ?? now : now);
+        final dtEnd = ev['dataFine'] is DateTime
+            ? ev['dataFine'] as DateTime
+            : (ev['dataFine'] != null
+                ? DateTime.tryParse(ev['dataFine'].toString()) ?? dtStart.add(const Duration(hours: 4))
+                : dtStart.add(const Duration(hours: 4)));
+
+        if (now.isAfter(dtEnd)) continue;
+
+        final rawCreator = (ev['propostoDa'] ?? ev['creatore'] ?? '').toString().trim();
+        final creatorNick = rawCreator.isNotEmpty ? NicknameHelper.resolve(rawCreator, uDocs) : '';
+        final rawPart = (ev['partecipanti'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final rawInv = (ev['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final rawRifiutati = (ev['rifiutati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+
+        final bool haAltriPartecipanti = rawPart.any((p) =>
+            p.isNotEmpty &&
+            (creatorNick.isEmpty || !NicknameHelper.isSame(p, creatorNick, uDocs)) &&
+            !rawRifiutati.any((r) => NicknameHelper.isSame(r, p, uDocs)));
+        if (now.isAfter(dtStart) && !haAltriPartecipanti) {
+          // Evento auto-annullato per mancanza partecipanti all'avvio
+          continue;
+        }
+
+        bool isUserInEvent(String candidateNick) {
+          if (rawRifiutati.any((r) => NicknameHelper.isSame(r, candidateNick, uDocs))) {
+            return false;
+          }
+          if (creatorNick.isNotEmpty && NicknameHelper.isSame(creatorNick, candidateNick, uDocs)) {
+            return true;
+          }
+          if (rawPart.any((p) => NicknameHelper.isSame(p, candidateNick, uDocs))) {
+            return true;
+          }
+          if (!now.isAfter(dtStart) && rawInv.any((i) => NicknameHelper.isSame(i, candidateNick, uDocs))) {
+            return true;
+          }
+          return false;
+        }
+
+        if (isUserInEvent(cleanUtente) && isUserInEvent(cleanTarget)) {
+          final evTitolo = (ev['titolo'] ?? ev['nome'] ?? 'Evento').toString().trim();
+          return Response(
+            409,
+            body: jsonEncode({
+              'success': false,
+              'sameEventConflict': true,
+              'eventoTitolo': evTitolo,
+              'error':
+                  'Al momento siete entrambi nello stesso evento ("$evTitolo"), quindi non puoi bloccarlo. Una volta concluso l\'evento potrai bloccarlo.',
+            }),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+      }
+
       // 1. Aggiorna l'utente bloccante: aggiungi a utentiBloccati e rimuovi dagli amici
       for (var uDoc in uDocs) {
         final uNick = (uDoc['nickname'] ?? uDoc['username'] ?? uDoc['nome'] ?? '').toString().trim();

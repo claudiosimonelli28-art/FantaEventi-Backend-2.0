@@ -276,27 +276,25 @@ class ProfileViewModel extends BaseViewModel {
       _utente.nickname.trim().toLowerCase() == 'cloud' ||
       _utente.nome.trim().toLowerCase() == 'cloud';
 
+  Future<String?> verificaEventoAttivoInComune(String targetNick) async {
+    return await _apiService.verificaEventoAttivoInComune(targetNick);
+  }
+
   Future<bool> bloccaUtente(String targetNick) async {
     final cleanTarget = targetNick.trim();
-    // Aggiornamento ISTANTANEO in-memory (zero latenza UI)
-    final currentBloccati = List<String>.from(_utente.utentiBloccati);
-    if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
-      currentBloccati.add(cleanTarget);
-    }
-    final currentAmici = List<String>.from(_utente.amici);
-    currentAmici.removeWhere((a) => a.toLowerCase() == cleanTarget.toLowerCase());
-    _utente = _utente.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
-    notifyListeners();
-
-    try {
-      final ok = await _apiService.bloccaUtente(targetNick);
-      if (ok) {
-        await caricaProfiloAggiornato();
+    final ok = await _apiService.bloccaUtente(targetNick);
+    if (ok) {
+      final currentBloccati = List<String>.from(_utente.utentiBloccati);
+      if (!currentBloccati.any((b) => b.toLowerCase() == cleanTarget.toLowerCase())) {
+        currentBloccati.add(cleanTarget);
       }
-      return ok;
-    } catch (_) {
-      return false;
+      final currentAmici = List<String>.from(_utente.amici);
+      currentAmici.removeWhere((a) => a.toLowerCase() == cleanTarget.toLowerCase());
+      _utente = _utente.copyWith(utentiBloccati: currentBloccati, amici: currentAmici);
+      notifyListeners();
+      await caricaProfiloAggiornato();
     }
+    return ok;
   }
 
   Future<bool> sbloccaUtente(String targetNick) async {

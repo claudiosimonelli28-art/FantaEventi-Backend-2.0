@@ -50,6 +50,13 @@ Middleware _mongoDbMiddleware() {
       } catch (_) {}
 
       try {
+        String? cachedBody;
+        Request effectiveReq = request;
+        if (request.method != 'GET' && request.method != 'HEAD' && request.method != 'OPTIONS') {
+          cachedBody = await request.readAsString();
+          effectiveReq = request.change(body: cachedBody);
+        }
+
         try {
           await DbService.instance.ensureConnected();
         } catch (e) {
@@ -59,35 +66,39 @@ Middleware _mongoDbMiddleware() {
           } catch (_) {}
         }
 
-        var response = await innerHandler(request);
+        var response = await innerHandler(effectiveReq);
         if (response.statusCode == 500) {
-          if (request.method == 'GET') {
-            final errBody = await response.readAsString();
-            if (errBody.contains('ConnectionException') ||
-                errBody.contains('connection closed') ||
-                errBody.contains('Database non connesso') ||
-                errBody.contains('SocketException')) {
-              print('🔄 [MongoDB] Socket chiusa rilevata su GET /${request.url.path}, riconnessione e retry immediato...');
-              try {
-                await DbService.instance.reconnect();
-                return await innerHandler(request);
-              } catch (_) {
-                return Response.internalServerError(
-                  body: errBody,
-                  headers: {'content-type': 'application/json'},
-                );
-              }
-            }
-            return Response.internalServerError(
-              body: errBody,
-              headers: {'content-type': 'application/json'},
-            );
-          } else {
+          final errBody = await response.readAsString();
+          final isSocketDrop = errBody.contains('ConnectionException') ||
+              errBody.contains('connection closed') ||
+              errBody.contains('Database non connesso') ||
+              errBody.contains('SocketException') ||
+              errBody.contains('No master connection');
+
+          if (isSocketDrop) {
+            print('🔄 [MongoDB] Socket chiusa rilevata su ${request.method} /${request.url.path}, riconnessione e retry immediato...');
             try {
               await DbService.instance.reconnect();
-            } catch (_) {}
+              final retryReq = cachedBody != null ? request.change(body: cachedBody) : request;
+              final retryRes = await innerHandler(retryReq);
+              if (retryRes.statusCode < 500) {
+                DbService.instance.markActive();
+              }
+              return retryRes;
+            } catch (_) {
+              return Response.internalServerError(
+                body: errBody,
+                headers: {'content-type': 'application/json'},
+              );
+            }
           }
+          return Response.internalServerError(
+            body: errBody,
+            headers: {'content-type': 'application/json'},
+          );
         }
+
+        DbService.instance.markActive();
         return response;
       } finally {
         completer.complete();

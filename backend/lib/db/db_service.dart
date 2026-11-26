@@ -52,12 +52,34 @@ class DbService {
   }
 
   Future<void>? _connectingFuture;
+  DateTime? _lastVerifiedAt;
+
+  void markActive() {
+    _lastVerifiedAt = DateTime.now();
+  }
 
   Future<void> ensureConnected() async {
-    if (_db != null && _db!.isConnected && _db!.state == State.open) {
+    if (_db == null || !_db!.isConnected || _db!.state != State.open) {
+      await connect();
       return;
     }
-    await connect();
+
+    // Se la socket MongoDB è rimasta inattiva per oltre 90 secondi (es. pausa notturna),
+    // eseguiamo una verifica lampo prima di processare la richiesta (GET o POST)
+    // così una socket chiusa lato Atlas viene rigenerata PRIMA del controller.
+    final lastOk = _lastVerifiedAt;
+    if (lastOk != null && DateTime.now().difference(lastOk).inSeconds > 90) {
+      try {
+        await _db!
+            .collection('Utenti')
+            .findOne(where.exists('_id').fields(['_id']))
+            .timeout(const Duration(seconds: 4));
+        _lastVerifiedAt = DateTime.now();
+      } catch (e) {
+        print('🔄 [DbService] Connessione inattiva scaduta ($e), riconnessione preventiva immediata...');
+        await reconnect();
+      }
+    }
   }
 
   Future<void> reconnect() async {
@@ -129,6 +151,7 @@ class DbService {
     print('🔌 Connessione al tuo database MongoDB Atlas in corso...');
     _db = await Db.create(mongoUri);
     await _db!.open();
+    _lastVerifiedAt = DateTime.now();
     print('✅ Connessione a MongoDB Atlas effettuata con successo! (Database: FantaEventi)');
   }
 
