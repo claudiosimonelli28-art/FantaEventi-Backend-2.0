@@ -27,10 +27,14 @@ class SegnalazioneController {
         );
       }
 
+      final uDocs = await UtenteController.getCachedUtentiDocs();
+      final cleanSegnalatore = NicknameHelper.resolve(segnalatore, uDocs);
+      final cleanSegnalato = NicknameHelper.resolve(segnalato, uDocs);
+
       final nowIso = ItalianTime.now().toIso8601String();
-      final doc = {
-        'segnalatore': segnalatore,
-        'segnalato': segnalato,
+      final Map<String, dynamic> doc = <String, dynamic>{
+        'segnalatore': cleanSegnalatore,
+        'segnalato': cleanSegnalato,
         'motivo': motivo,
         'dettagli': dettagli,
         'timestamp': nowIso,
@@ -40,12 +44,12 @@ class SegnalazioneController {
       await DbService.instance.segnalazioniCollection.insertOne(doc);
 
       // Notifica in-app per Cloud (Amministratore)
-      await DbService.instance.notificheCollection.insertOne({
-        'mittente': segnalatore,
+      await DbService.instance.notificheCollection.insertOne(<String, dynamic>{
+        'mittente': cleanSegnalatore,
         'destinatario': 'Cloud',
         'tipo': 'segnalazione_utente',
         'titolo': '🛡️ Nuova Segnalazione Community',
-        'messaggio': '@$segnalatore ha segnalato @$segnalato per "$motivo"${dettagli.isNotEmpty ? ' ("$dettagli")' : ''}. Apri il Centro Moderazione nel tuo Profilo per gestirla.',
+        'messaggio': '@$cleanSegnalatore ha segnalato @$cleanSegnalato per "$motivo"${dettagli.isNotEmpty ? ' ("$dettagli")' : ''}. Apri il Centro Moderazione nel tuo Profilo per gestirla.',
         'stato': 'in_attesa',
         'letto': false,
         'data': nowIso,
@@ -56,7 +60,7 @@ class SegnalazioneController {
         FcmService.instance.inviaPushAUtenti(
           ['Cloud'],
           titolo: '🛡️ Nuova Segnalazione Community',
-          messaggio: '@$segnalatore ha segnalato @$segnalato per "$motivo". Apri il Centro Moderazione nel tuo Profilo.',
+          messaggio: '@$cleanSegnalatore ha segnalato @$cleanSegnalato per "$motivo". Apri il Centro Moderazione nel tuo Profilo.',
           data: {'tipo': 'segnalazione_utente'},
         ),
       );
@@ -202,7 +206,7 @@ class SegnalazioneController {
         UtenteController.invalidateCache();
 
         // Notifica ufficiale di ammonimento al segnalato
-        await DbService.instance.notificheCollection.insertOne({
+        await DbService.instance.notificheCollection.insertOne(<String, dynamic>{
           'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
           'tipo': 'ammonizione_utente',
@@ -258,7 +262,7 @@ class SegnalazioneController {
             ? 'Hai ricevuto una seconda ammonizione ufficiale dall\'Amministrazione. Per somma di ammonizioni il tuo account su FantaEventi è stato sospeso.'
             : 'Il tuo account è stato sospeso dall\'Amministrazione per violazione del regolamento della community di FantaEventi.';
 
-        await DbService.instance.notificheCollection.insertOne({
+        await DbService.instance.notificheCollection.insertOne(<String, dynamic>{
           'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
           'tipo': 'ban_utente',
@@ -308,7 +312,7 @@ class SegnalazioneController {
         }
         UtenteController.invalidateCache();
 
-        await DbService.instance.notificheCollection.insertOne({
+        await DbService.instance.notificheCollection.insertOne(<String, dynamic>{
           'mittente': 'Amministrazione',
           'destinatario': cleanSegnalato,
           'tipo': 'riabilita_utente',

@@ -209,9 +209,10 @@ class FcmService {
       final evKey = (data['eventoId'] ?? '').toString().toLowerCase();
       final bmKey = (data['bonusId'] ?? '').toString().toLowerCase();
       final varKey = (data['varId'] ?? '').toString().toLowerCase();
-      final fingerprint = (tipoKey.isNotEmpty && (evKey.isNotEmpty || bmKey.isNotEmpty || varKey.isNotEmpty))
-          ? '$token|$tipoKey|$evKey|$bmKey|$varKey'
-          : '$token|$titolo|$messaggio';
+      final fingerprint = ((tipoKey.isNotEmpty && (evKey.isNotEmpty || bmKey.isNotEmpty || varKey.isNotEmpty))
+              ? '$token|$tipoKey|$evKey|$bmKey|$varKey'
+              : '$token|${titolo.toLowerCase()}|${messaggio.toLowerCase()}')
+          .trim();
       if (_recentPushFingerprints.containsKey(fingerprint)) {
         return true;
       }
