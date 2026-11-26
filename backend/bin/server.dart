@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:mongo_dart/mongo_dart.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_router/shelf_router.dart';
@@ -12,6 +14,8 @@ import 'package:backend/controllers/notifica_controller.dart';
 import 'package:backend/controllers/var_controller.dart';
 import 'package:backend/controllers/privacy_controller.dart';
 import 'package:backend/controllers/segnalazione_controller.dart';
+import 'package:backend/utils/auth_token_helper.dart';
+import 'package:backend/utils/nickname_helper.dart';
 
 Middleware _corsMiddleware() {
   return (Handler innerHandler) {
@@ -34,6 +38,115 @@ Middleware _corsMiddleware() {
 }
 
 Future<void> _dbRequestQueue = Future.value();
+
+const Set<String> _sessionExemptPaths = {
+  'api/health',
+  'api/login',
+  'api/registrazione',
+  'api/utenti/check-nickname',
+  'api/utenti/imposta-password',
+  'api/utenti/richiedi-reset-password',
+  'api/utenti/conferma-reset-password',
+  'api/utenti/fcm-token/rimuovi',
+};
+
+/// Verifica che il dispositivo richiedente sia ancora l'unica sessione attiva del profilo ("1 Profilo = 1 Dispositivo").
+/// Se l'utente ha effettuato un nuovo login su un altro dispositivo (activeSessionId diverso da sid),
+/// restituisce 401 sessionDisplaced: true così il vecchio dispositivo effettua subito il logout pulito.
+Future<Response?> _checkSingleDeviceSession(Request request) async {
+  final cleanPath = request.url.path.replaceAll(RegExp(r'^/+|/+$'), '').toLowerCase();
+  if (_sessionExemptPaths.contains(cleanPath) || cleanPath.startsWith('privacy') || cleanPath == 'termini') {
+    return null;
+  }
+
+  final authHeader = (request.headers['authorization'] ?? request.headers['Authorization'] ?? '').trim();
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    final rawToken = authHeader.substring(7).trim();
+    if (rawToken.isNotEmpty) {
+      final payload = AuthTokenHelper.verifyToken(rawToken);
+      if (payload == null) {
+        return Response(
+          401,
+          body: jsonEncode({
+            'sessionDisplaced': true,
+            'error': 'La tua sessione è scaduta. Effettua nuovamente l\'accesso.',
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final tokenSub = (payload['sub'] ?? '').toString().trim();
+      final tokenNick = (payload['nickname'] ?? '').toString().trim();
+      final tokenSid = (payload['sid'] ?? '').toString().trim();
+
+      final uDocs = await UtenteController.getCachedUtentiDocs();
+      Map<String, dynamic>? matchedUser;
+      for (final u in uDocs) {
+        final uId = u['_id'] is ObjectId ? (u['_id'] as ObjectId).oid : (u['_id']?.toString() ?? '');
+        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
+        if ((tokenSub.isNotEmpty && uId == tokenSub) ||
+            (tokenNick.isNotEmpty && NicknameHelper.isSame(uNick, tokenNick, uDocs))) {
+          matchedUser = u;
+          break;
+        }
+      }
+
+      if (matchedUser != null) {
+        if (matchedUser['isBanned'] == true) {
+          return Response.forbidden(
+            jsonEncode({
+              'isBanned': true,
+              'error': 'Account sospeso dall\'Amministrazione.',
+            }),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+
+        final dbActiveSid = (matchedUser['activeSessionId'] ?? '').toString().trim();
+        if (dbActiveSid.isNotEmpty && tokenSid != dbActiveSid) {
+          return Response(
+            401,
+            body: jsonEncode({
+              'sessionDisplaced': true,
+              'error':
+                  'Hai effettuato l\'accesso a questo profilo su un altro dispositivo. Per sicurezza puoi restare collegato su un solo dispositivo alla volta.',
+            }),
+            headers: {'content-type': 'application/json'},
+          );
+        }
+      }
+      return null;
+    }
+  }
+
+  // Fallback per vecchie sessioni salvate prive di header Bearer sulle rotte strettamente personali
+  if (cleanPath == 'api/eventi' || cleanPath == 'api/notifiche' || cleanPath == 'api/utenti') {
+    final queryUser = (request.url.queryParameters['utente'] ?? '').trim();
+    if (queryUser.isNotEmpty) {
+      final uDocs = await UtenteController.getCachedUtentiDocs();
+      for (final u in uDocs) {
+        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, queryUser, uDocs)) {
+          final dbActiveSid = (u['activeSessionId'] ?? '').toString().trim();
+          if (dbActiveSid.isNotEmpty) {
+            return Response(
+              401,
+              body: jsonEncode({
+                'sessionDisplaced': true,
+                'error':
+                    'Hai effettuato l\'accesso a questo profilo su un altro dispositivo. Per sicurezza puoi restare collegato su un solo dispositivo alla volta.',
+              }),
+              headers: {'content-type': 'application/json'},
+            );
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 Middleware _mongoDbMiddleware() {
   return (Handler innerHandler) {
@@ -64,6 +177,12 @@ Middleware _mongoDbMiddleware() {
           try {
             await DbService.instance.reconnect();
           } catch (_) {}
+        }
+
+        final sessionErrorRes = await _checkSingleDeviceSession(effectiveReq);
+        if (sessionErrorRes != null) {
+          DbService.instance.markActive();
+          return sessionErrorRes;
         }
 
         var response = await innerHandler(effectiveReq);

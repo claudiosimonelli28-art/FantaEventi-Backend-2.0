@@ -433,6 +433,12 @@ class _GuidaRegolamentoModalState extends State<GuidaRegolamentoModal> {
           description:
               'Nel tuo profilo trovi il tuo Codice Amico esclusivo da condividere ai tuoi compagni di avventure per creare la tua cerchia e sfidarli nei prossimi eventi!',
         ),
+        _buildInfoItem(
+          icon: '📱',
+          title: 'Un Profilo, Un Dispositivo',
+          description:
+              'Per proteggere il tuo account, i tuoi punti e le tue notifiche personali, ogni profilo può restare collegato su un solo smartphone alla volta. Se accedi da un nuovo dispositivo, la sessione sul telefono precedente verrà scollegata automaticamente.',
+        ),
       ],
     );
   }

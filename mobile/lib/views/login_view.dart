@@ -8,7 +8,8 @@ import 'home_view.dart';
 import '../widgets/app_toast.dart';
 
 class LoginView extends StatefulWidget {
-  const LoginView({super.key});
+  final String? initialNoticeMessage;
+  const LoginView({super.key, this.initialNoticeMessage});
 
   @override
   State<LoginView> createState() => _LoginViewState();
@@ -30,6 +31,23 @@ class _LoginViewState extends State<LoginView> {
   final _regConfirmPasswordController = TextEditingController();
 
   final LoginViewModel _viewModel = LoginViewModel();
+
+  @override
+  void initState() {
+    super.initState();
+    final notice = widget.initialNoticeMessage?.trim();
+    if (notice != null && notice.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        AppToast.showWarning(
+          context,
+          'Accesso su un altro dispositivo 📱',
+          notice,
+          const Duration(seconds: 6),
+        );
+      });
+    }
+  }
 
   void _showError(String message) {
     if (!mounted) return;

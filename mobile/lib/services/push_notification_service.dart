@@ -37,6 +37,36 @@ class PushNotificationService {
   VoidCallback? onNotificationReceived;
 
   static bool _isShowingBanModal = false;
+  static bool _isHandlingSessionDisplaced = false;
+
+  /// Scollega automaticamente il dispositivo quando il profilo viene aperto su un altro smartphone ("1 Profilo = 1 Dispositivo")
+  static Future<void> enforceSessionDisplaced([String? customMessage]) async {
+    if (_isHandlingSessionDisplaced || _isShowingBanModal) return;
+    if (ApiService().currentUser == null) return;
+    _isHandlingSessionDisplaced = true;
+
+    final String msg = (customMessage != null && customMessage.trim().isNotEmpty)
+        ? customMessage.trim()
+        : 'Hai effettuato l\'accesso a questo profilo su un altro dispositivo. Per sicurezza puoi usare un solo dispositivo alla volta.';
+
+    try {
+      await ApiService().logout(unregisterRemoteToken: false);
+    } catch (_) {}
+
+    final navState = navigatorKey.currentState;
+    if (navState != null) {
+      navState.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => LoginView(initialNoticeMessage: msg),
+        ),
+        (route) => false,
+      );
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isHandlingSessionDisplaced = false;
+    });
+  }
 
   /// Espelle immediatamente l'utente bannato dalla sessione attiva e mostra un avviso bloccante
   static Future<void> enforceAccountSuspension() async {
@@ -290,15 +320,33 @@ class PushNotificationService {
       // Richiede i permessi di sistema (Android 13+ e iOS)
       await requestPermissions();
 
-      // 1. Notifiche in PRIMO PIANO (App aperta e attiva)
+      // 1. Notifiche in PRIMO PIANO (App aperta e attiva) e guardie di sessione
       ApiService.onCurrentUserBanned = () {
         enforceAccountSuspension();
+      };
+      ApiService.onSessionDisplaced = (msg) {
+        enforceSessionDisplaced(msg);
       };
 
       try {
         FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          _showForegroundNotification(message);
           final tipoMsg = (message.data['tipo'] ?? '').toString().toLowerCase().trim();
+          if (tipoMsg == 'session_displaced') {
+            final newSid = (message.data['newSessionId'] ?? '').toString().trim();
+            final targetUser = (message.data['utente'] ?? '').toString().trim();
+            final curUser = ApiService().currentUser;
+            final curSid = ApiService().currentSessionId;
+            final isSameUser = curUser != null &&
+                (targetUser.isEmpty ||
+                    ApiService().isSamePerson(curUser.nickname, targetUser) ||
+                    ApiService().isSamePerson(curUser.nome, targetUser));
+            final isAlreadyNewSession = newSid.isNotEmpty && curSid.isNotEmpty && newSid == curSid;
+            if (isSameUser && !isAlreadyNewSession) {
+              enforceSessionDisplaced();
+            }
+            return;
+          }
+          _showForegroundNotification(message);
           if (tipoMsg == 'ban_utente') {
             enforceAccountSuspension();
             return;
@@ -535,6 +583,25 @@ class PushNotificationService {
     } catch (e) {
       debugPrint('Errore sync FCM token: $e');
     }
+  }
+
+  /// Legge rapidamente il token FCM locale (se disponibile) senza bloccare il login
+  Future<String?> peekCurrentToken() async {
+    try {
+      _messaging ??= FirebaseMessaging.instance;
+      return await _messaging?.getToken().timeout(const Duration(milliseconds: 1200));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Pulisce solo lo stato locale del token FCM (usato quando la sessione è stata sostituita da un altro dispositivo)
+  Future<void> clearLocalTokenState() async {
+    _lastVerifiedUserTokenKey = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cached_fcm_token');
+    } catch (_) {}
   }
 
   /// Rimuove il token FCM corrente dal profilo MongoDB Atlas (chiamato al Logout)

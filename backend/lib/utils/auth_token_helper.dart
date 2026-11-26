@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:shelf/shelf.dart';
 import '../db/db_service.dart';
@@ -11,6 +12,13 @@ class AuthTokenHelper {
       return envSecret.trim();
     }
     return 'FantaEventi_Secure_JWT_2026_#Key_${DbService.brevoApiKey}';
+  }
+
+  /// Genera un identificativo univoco crittografico per la singola sessione dispositivo
+  static String generateSessionId() {
+    final rnd = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   }
 
   static String _base64UrlNoPad(List<int> bytes) {
@@ -25,10 +33,11 @@ class AuthTokenHelper {
     return base64Url.decode(normalized);
   }
 
-  /// Genera un token JWT firmato HMAC-SHA256 valido 90 giorni
+  /// Genera un token JWT firmato HMAC-SHA256 valido 90 giorni, vincolato alla sessione dispositivo (sid)
   static String generateToken({
     required String id,
     required String nickname,
+    String? sessionId,
   }) {
     final isAdmin = nickname.trim().toLowerCase() == 'cloud' ||
         nickname.trim().toLowerCase() == 'claudio';
@@ -40,13 +49,16 @@ class AuthTokenHelper {
       'typ': 'JWT',
     })));
 
-    final payload = _base64UrlNoPad(utf8.encode(jsonEncode({
+    final payloadMap = <String, dynamic>{
       'sub': id,
       'nickname': nickname,
       'isAdmin': isAdmin,
       'iat': nowSec,
       'exp': expSec,
-    })));
+      if (sessionId != null && sessionId.isNotEmpty) 'sid': sessionId,
+    };
+
+    final payload = _base64UrlNoPad(utf8.encode(jsonEncode(payloadMap)));
 
     final signingInput = '$header.$payload';
     final hmac = Hmac(sha256, utf8.encode(_secret));
@@ -98,5 +110,12 @@ class AuthTokenHelper {
     final auth = getAuthFromRequest(request);
     final nick = auth?['nickname']?.toString().trim();
     return (nick != null && nick.isNotEmpty) ? nick : null;
+  }
+
+  /// Restituisce il sessionId (sid) contenuto nel token Bearer verificato, se presente
+  static String? getVerifiedSessionId(Request request) {
+    final auth = getAuthFromRequest(request);
+    final sid = auth?['sid']?.toString().trim();
+    return (sid != null && sid.isNotEmpty) ? sid : null;
   }
 }

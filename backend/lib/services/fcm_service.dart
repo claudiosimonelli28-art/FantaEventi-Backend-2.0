@@ -140,6 +140,59 @@ class FcmService {
     return sentCount;
   }
 
+  /// Invia un segnale data-only silenzioso (senza suoni né banner nella tendina) ai token specificati,
+  /// usato ad esempio per scollegare in tempo reale il vecchio dispositivo quando si accede su uno nuovo.
+  Future<void> inviaDataSilenziosaATokens(
+    List<String> tokens,
+    Map<String, String> data,
+  ) async {
+    final cleanTokens = tokens.map((t) => t.trim()).where((t) => t.isNotEmpty).toSet().toList();
+    if (cleanTokens.isEmpty) return;
+
+    try {
+      final accessToken = await _getAccessToken();
+      if (accessToken == null || accessToken.isEmpty) return;
+
+      final sa = await _loadServiceAccount();
+      final projectId = sa?['project_id'] ?? 'fantaeventi-dd26a';
+      final url = 'https://fcm.googleapis.com/v1/projects/$projectId/messages:send';
+
+      for (final token in cleanTokens) {
+        try {
+          await http
+              .post(
+                Uri.parse(url),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer $accessToken',
+                },
+                body: jsonEncode({
+                  'message': {
+                    'token': token,
+                    'data': data,
+                    'android': {
+                      'priority': 'high',
+                    },
+                    'apns': {
+                      'headers': {
+                        'apns-push-type': 'background',
+                        'apns-priority': '5',
+                      },
+                      'payload': {
+                        'aps': {
+                          'content-available': 1,
+                        },
+                      },
+                    },
+                  },
+                }),
+              )
+              .timeout(const Duration(seconds: 6));
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
   /// Verifica con dry-run (validate_only: true) su Google FCM se un token dispositivo è realmente valido
   /// e non è rimasto bloccato in stato UNREGISTERED nella cache locale di Google Play Services.
   Future<bool> isTokenValidOnFcm(String token) async {

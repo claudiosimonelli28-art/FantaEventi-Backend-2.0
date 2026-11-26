@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:http/http.dart' as http;
+import 'package:http/http.dart' as raw_http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/utente.dart';
 import '../models/evento.dart';
@@ -10,6 +10,29 @@ import '../models/bonus_malus.dart';
 import '../models/votazione.dart';
 import '../models/richiesta_var.dart';
 import 'push_notification_service.dart';
+
+class SessionAwareHttp {
+  const SessionAwareHttp._();
+
+  Future<raw_http.Response> get(Uri url, {Map<String, String>? headers}) async {
+    final res = await raw_http.get(url, headers: headers);
+    ApiService._inspectHttpAuthResponse(url, res);
+    return res;
+  }
+
+  Future<raw_http.Response> post(
+    Uri url, {
+    Map<String, String>? headers,
+    Object? body,
+    Encoding? encoding,
+  }) async {
+    final res = await raw_http.post(url, headers: headers, body: body, encoding: encoding);
+    ApiService._inspectHttpAuthResponse(url, res);
+    return res;
+  }
+}
+
+const SessionAwareHttp http = SessionAwareHttp._();
 
 class NeedsPasswordSetupException implements Exception {
   final String username;
@@ -89,8 +112,63 @@ class ApiService {
   static const String _kCachedUtentiKey = 'cached_utenti_json_v1';
   static const String _kCachedAvatarsKey = 'cached_avatars_map_v1';
   static const String _kSavedAuthTokenKey = 'saved_auth_token_jwt_v1';
+  static const String _kSavedSessionIdKey = 'saved_session_id_v1';
   final Map<String, String> _avatarCache = {};
   String _authToken = '';
+  String _currentSessionId = '';
+
+  String get currentSessionId {
+    if (_currentSessionId.isNotEmpty) return _currentSessionId;
+    return _extractSidFromJwt(_authToken);
+  }
+
+  static String _extractSidFromJwt(String token) {
+    try {
+      final parts = token.trim().split('.');
+      if (parts.length != 3) return '';
+      var payloadPart = parts[1];
+      while (payloadPart.length % 4 != 0) {
+        payloadPart += '=';
+      }
+      final decoded = utf8.decode(base64Url.decode(payloadPart));
+      final map = jsonDecode(decoded);
+      if (map is Map && map['sid'] != null) {
+        return map['sid'].toString().trim();
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  static void _inspectHttpAuthResponse(Uri url, raw_http.Response res) {
+    if (res.statusCode != 401 && res.statusCode != 403) return;
+    final path = url.path.toLowerCase();
+    if (path.endsWith('/login') ||
+        path.endsWith('/registrazione') ||
+        path.endsWith('/imposta-password') ||
+        path.endsWith('/richiedi-reset-password') ||
+        path.endsWith('/conferma-reset-password') ||
+        path.endsWith('/check-nickname')) {
+      return;
+    }
+    if (_instance._currentUser == null) return;
+
+    try {
+      final data = jsonDecode(res.body);
+      if (data is Map) {
+        if (data['sessionDisplaced'] == true) {
+          onSessionDisplaced?.call(
+            data['error']?.toString() ??
+                'Hai effettuato l\'accesso a questo profilo su un altro dispositivo. Per sicurezza puoi usare un solo dispositivo alla volta.',
+          );
+          return;
+        }
+        if (data['isBanned'] == true) {
+          onCurrentUserBanned?.call();
+          return;
+        }
+      }
+    } catch (_) {}
+  }
 
   ApiService._internal() {
     _loadCachedUsersAndAvatars();
@@ -119,6 +197,12 @@ class ApiService {
       final savedTok = prefs.getString(_kSavedAuthTokenKey);
       if (savedTok != null && savedTok.isNotEmpty) {
         _authToken = savedTok;
+      }
+      final savedSid = prefs.getString(_kSavedSessionIdKey);
+      if (savedSid != null && savedSid.isNotEmpty) {
+        _currentSessionId = savedSid;
+      } else if (_authToken.isNotEmpty) {
+        _currentSessionId = _extractSidFromJwt(_authToken);
       }
 
       final avStr = prefs.getString(_kCachedAvatarsKey);
@@ -241,15 +325,30 @@ class ApiService {
 
   bool _rememberMeSession = false;
 
-  Future<void> _saveSession(Utente utente, {bool? rememberMe, String? token}) async {
+  Future<void> _saveSession(
+    Utente utente, {
+    bool? rememberMe,
+    String? token,
+    String? sessionId,
+  }) async {
     final shouldRemember = rememberMe ?? _rememberMeSession;
     if (token != null && token.isNotEmpty) {
       _authToken = token;
+      final extracted = _extractSidFromJwt(token);
+      if (extracted.isNotEmpty) {
+        _currentSessionId = extracted;
+      }
+    }
+    if (sessionId != null && sessionId.isNotEmpty) {
+      _currentSessionId = sessionId;
     }
     try {
       final prefs = await SharedPreferences.getInstance();
       if (_authToken.isNotEmpty) {
         await prefs.setString(_kSavedAuthTokenKey, _authToken);
+      }
+      if (_currentSessionId.isNotEmpty) {
+        await prefs.setString(_kSavedSessionIdKey, _currentSessionId);
       }
       if (shouldRemember) {
         await prefs.setString('saved_user_json', jsonEncode(utente.toJson()));
@@ -293,6 +392,10 @@ class ApiService {
               }),
             )
             .timeout(const Duration(seconds: 8));
+        if (res.statusCode == 401) {
+          // Sessione sostituita da un altro dispositivo: gestita automaticamente da _inspectHttpAuthResponse
+          return true;
+        }
         if (res.statusCode == 409) {
           // Il server ha verificato con Google FCM che questo token è UNREGISTERED!
           if (_currentUser != null && _currentUser!.fcmTokens.contains(cleanToken)) {
@@ -303,9 +406,9 @@ class ApiService {
           return false;
         }
         if (res.statusCode == 200) {
-          if (_currentUser != null && !_currentUser!.fcmTokens.contains(cleanToken)) {
+          if (_currentUser != null) {
             _currentUser = _currentUser!.copyWith(
-              fcmTokens: [..._currentUser!.fcmTokens, cleanToken],
+              fcmTokens: [cleanToken],
             );
             await _saveSession(_currentUser!);
           }
@@ -402,12 +505,17 @@ class ApiService {
     return [];
   }
 
-  Future<void> logout() async {
+  Future<void> logout({bool unregisterRemoteToken = true}) async {
     try {
-      unawaited(PushNotificationService.instance.unregisterCurrentDeviceToken());
+      if (unregisterRemoteToken) {
+        unawaited(PushNotificationService.instance.unregisterCurrentDeviceToken());
+      } else {
+        unawaited(PushNotificationService.instance.clearLocalTokenState());
+      }
     } catch (_) {}
     _currentUser = null;
     _authToken = '';
+    _currentSessionId = '';
     _rememberMeSession = false;
     _cachedTutorialPremioRiscattato = null;
     clearUserSessionCache();
@@ -418,6 +526,7 @@ class ApiService {
       await prefs.remove('has_password_auth_v2');
       await prefs.remove('remember_me_enabled');
       await prefs.remove(_kSavedAuthTokenKey);
+      await prefs.remove(_kSavedSessionIdKey);
     } catch (_) {}
   }
 
@@ -447,6 +556,7 @@ class ApiService {
   }
 
   static void Function()? onCurrentUserBanned;
+  static void Function(String message)? onSessionDisplaced;
 
   Future<Utente?> tryAutoLogin() async {
     try {
@@ -457,11 +567,21 @@ class ApiService {
       if (savedTok != null && savedTok.isNotEmpty) {
         _authToken = savedTok;
       }
+      final savedSid = prefs.getString(_kSavedSessionIdKey);
+      if (savedSid != null && savedSid.isNotEmpty) {
+        _currentSessionId = savedSid;
+      } else if (_authToken.isNotEmpty) {
+        _currentSessionId = _extractSidFromJwt(_authToken);
+      }
 
       if (!hasPasswordAuth || !rememberMe) {
         await prefs.remove('saved_user_json');
         await prefs.remove('saved_user_nickname');
         await prefs.remove('has_password_auth_v2');
+        await prefs.remove(_kSavedAuthTokenKey);
+        await prefs.remove(_kSavedSessionIdKey);
+        _authToken = '';
+        _currentSessionId = '';
         _rememberMeSession = false;
         return null;
       }
@@ -663,6 +783,8 @@ class ApiService {
       throw Exception('Inserisci il tuo Nickname o la tua Email');
     }
 
+    final String? deviceFcmToken = await PushNotificationService.instance.peekCurrentToken();
+
     for (String url in baseUrls) {
       try {
         final response = await http
@@ -674,6 +796,7 @@ class ApiService {
                 'email': cleanIdentifier,
                 'nickname': cleanIdentifier,
                 'password': cleanPassword,
+                if (deviceFcmToken != null && deviceFcmToken.isNotEmpty) 'fcmToken': deviceFcmToken,
               }),
             )
             .timeout(const Duration(seconds: 12));
@@ -693,6 +816,7 @@ class ApiService {
 
         if (response.statusCode == 200 && data.containsKey('utente')) {
           final tok = data['token']?.toString() ?? '';
+          final sid = data['sessionId']?.toString() ?? '';
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
           if (_currentUser!.isBanned) {
             clearUserSessionCache();
@@ -701,7 +825,7 @@ class ApiService {
             );
           }
           clearUserSessionCache();
-          await _saveSession(_currentUser!, rememberMe: rememberMe, token: tok);
+          await _saveSession(_currentUser!, rememberMe: rememberMe, token: tok, sessionId: sid);
           return _currentUser!;
         } else if (response.statusCode == 403 || response.statusCode == 401) {
           throw Exception(data['error']?.toString() ?? 'Password non corretta. Riprova!');
@@ -756,9 +880,10 @@ class ApiService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         if (response.statusCode == 200 && data.containsKey('utente')) {
           final tok = data['token']?.toString() ?? '';
+          final sid = data['sessionId']?.toString() ?? '';
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
           clearUserSessionCache();
-          await _saveSession(_currentUser!, rememberMe: rememberMe, token: tok);
+          await _saveSession(_currentUser!, rememberMe: rememberMe, token: tok, sessionId: sid);
           return _currentUser!;
         } else if (data.containsKey('error')) {
           throw Exception(data['error'].toString());
@@ -888,9 +1013,10 @@ class ApiService {
 
         if (response.statusCode == 200 && data.containsKey('utente')) {
           final tok = data['token']?.toString() ?? '';
+          final sid = data['sessionId']?.toString() ?? '';
           _currentUser = Utente.fromJson(data['utente'] as Map<String, dynamic>);
           clearUserSessionCache();
-          await _saveSession(_currentUser!, rememberMe: rememberMe, token: tok);
+          await _saveSession(_currentUser!, rememberMe: rememberMe, token: tok, sessionId: sid);
           return _currentUser!;
         } else if (data['suggerimenti'] != null) {
           final sugg = (data['suggerimenti'] as List<dynamic>).map((e) => e.toString()).toList();

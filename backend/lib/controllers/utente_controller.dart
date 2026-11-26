@@ -166,6 +166,7 @@ class UtenteController {
       final data = jsonDecode(body) as Map<String, dynamic>;
       final identifier = (data['username'] ?? data['email'] ?? data['nickname'])?.toString().trim();
       final password = data['password']?.toString().trim() ?? '';
+      final loginFcmToken = (data['fcmToken'] ?? '').toString().trim();
 
       print('📥 [HTTP POST /api/login] Login per "$identifier"');
 
@@ -282,15 +283,60 @@ class UtenteController {
         );
       }
       print('✅ Login riuscito con password per utente: ${utente.username}');
+      final sessionId = AuthTokenHelper.generateSessionId();
+      final oldTokens = List<String>.from(doc['fcmTokens'] ?? [])
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty && t != loginFcmToken)
+          .toList();
+
+      // Regola "1 Profilo = 1 Dispositivo":
+      // 1) Se il dispositivo corrente ha già un fcmToken, staccalo da qualunque altro profilo su cui fosse rimasto
+      if (loginFcmToken.isNotEmpty) {
+        await DbService.instance.utentiCollection.update(
+          where.eq('fcmTokens', loginFcmToken),
+          modify.pull('fcmTokens', loginFcmToken),
+          multiUpdate: true,
+        );
+      }
+
+      // 2) Salva il nuovo activeSessionId esclusivo e sostituisci i vecchi fcmTokens (il vecchio telefono non riceve più push)
+      final newTokensList = loginFcmToken.isNotEmpty ? <String>[loginFcmToken] : <String>[];
+      if (doc['_id'] is ObjectId) {
+        await DbService.instance.utentiCollection.update(
+          where.id(doc['_id'] as ObjectId),
+          modify.set('activeSessionId', sessionId).set('fcmTokens', newTokensList),
+        );
+      }
+      invalidateCache();
+
+      // 3) Avvisa silenziosamente in tempo reale eventuali vecchi dispositivi rimasti con l'app aperta
+      if (oldTokens.isNotEmpty) {
+        unawaited(
+          FcmService.instance.inviaDataSilenziosaATokens(
+            oldTokens,
+            {
+              'tipo': 'session_displaced',
+              'utente': utente.nickname,
+              'newSessionId': sessionId,
+            },
+          ),
+        );
+      }
+
       final token = AuthTokenHelper.generateToken(
         id: utente.id,
         nickname: utente.nickname,
+        sessionId: sessionId,
       );
+      final userJson = utente.toJson();
+      userJson['fcmTokens'] = newTokensList;
+
       return Response.ok(
         jsonEncode({
           'message': 'Login effettuato con successo',
           'token': token,
-          'utente': utente.toJson(),
+          'sessionId': sessionId,
+          'utente': userJson,
         }),
         headers: {'content-type': 'application/json'},
       );
@@ -416,8 +462,9 @@ class UtenteController {
       final codePrefix = nickClean.length >= 3 ? nickClean.substring(0, 3) : 'FE';
       final friendCode = 'FE-$codePrefix${1000 + Random().nextInt(9000)}';
       final avatar = (data['avatarUrl'] ?? '').toString().trim();
+      final sessionId = AuthTokenHelper.generateSessionId();
 
-      final utenteMap = {
+      final utenteMap = <String, dynamic>{
         'nome': (data['nome'] ?? '').toString().trim().isNotEmpty ? data['nome'].toString().trim() : username,
         'cognome': (data['cognome'] ?? '').toString().trim(),
         'nickname': username,
@@ -446,6 +493,7 @@ class UtenteController {
         'countGiustiziere': 0,
         'haVistoGuida': false,
         'fcmTokens': <String>[],
+        'activeSessionId': sessionId,
         'dataRegistrazione': dateFormatted,
         'createdAt': now.toIso8601String(),
       };
@@ -463,11 +511,13 @@ class UtenteController {
       final token = AuthTokenHelper.generateToken(
         id: nuovoUtente.id,
         nickname: nuovoUtente.nickname,
+        sessionId: sessionId,
       );
       return Response.ok(
         jsonEncode({
           'message': 'Nuovo utente salvato automaticamente nel database MongoDB!',
           'token': token,
+          'sessionId': sessionId,
           'utente': nuovoUtente.toJson(),
         }),
         headers: {'content-type': 'application/json'},
@@ -520,17 +570,42 @@ class UtenteController {
         );
       }
 
+      final sessionId = AuthTokenHelper.generateSessionId();
+      final oldTokens = List<String>.from(doc['fcmTokens'] ?? [])
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+
       await DbService.instance.utentiCollection.update(
-        selector,
-        modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
+        where.id(doc['_id'] as ObjectId),
+        modify
+            .set('password', hashedPassword)
+            .set('passwordHash', hashedPassword)
+            .set('activeSessionId', sessionId)
+            .set('fcmTokens', <String>[]),
       );
       invalidateCache();
 
-      final updatedDoc = await DbService.instance.utentiCollection.findOne(selector);
+      final updatedDoc = await DbService.instance.utentiCollection.findOne(where.id(doc['_id'] as ObjectId));
       final utente = Utente.fromMap(updatedDoc!);
+
+      if (oldTokens.isNotEmpty) {
+        unawaited(
+          FcmService.instance.inviaDataSilenziosaATokens(
+            oldTokens,
+            {
+              'tipo': 'session_displaced',
+              'utente': utente.nickname,
+              'newSessionId': sessionId,
+            },
+          ),
+        );
+      }
+
       final token = AuthTokenHelper.generateToken(
         id: utente.id,
         nickname: utente.nickname,
+        sessionId: sessionId,
       );
 
       print('✅ Password impostata con successo per utente "$username"');
@@ -538,6 +613,7 @@ class UtenteController {
         jsonEncode({
           'message': 'Password impostata con successo!',
           'token': token,
+          'sessionId': sessionId,
           'utente': utente.toJson(),
         }),
         headers: {'content-type': 'application/json'},
@@ -701,6 +777,37 @@ class UtenteController {
         );
       }
 
+      final uDocs = await getCachedUtentiDocs();
+      final cleanName = NicknameHelper.resolve(utenteName, uDocs);
+      Map<String, dynamic>? targetUserDoc;
+      for (var u in uDocs) {
+        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanName, uDocs)) {
+          targetUserDoc = u;
+          break;
+        }
+      }
+
+      // Guardia "1 Profilo = 1 Dispositivo": impedisce a un vecchio dispositivo scollegato di ri-registrare il proprio token push
+      if (targetUserDoc != null) {
+        final dbActiveSid = (targetUserDoc['activeSessionId'] ?? '').toString().trim();
+        if (dbActiveSid.isNotEmpty) {
+          final reqSid = AuthTokenHelper.getVerifiedSessionId(request) ?? '';
+          if (reqSid != dbActiveSid) {
+            return Response(
+              401,
+              body: jsonEncode({
+                'success': false,
+                'sessionDisplaced': true,
+                'error':
+                    'Hai effettuato l\'accesso a questo profilo su un altro dispositivo. Per sicurezza un profilo può restare collegato su un solo dispositivo alla volta.',
+              }),
+              headers: {'content-type': 'application/json'},
+            );
+          }
+        }
+      }
+
       // Verifica dry-run con Google FCM: se il token è UNREGISTERED (es. rimasto nella cache locale del telefono),
       // lo rimuoviamo dal DB e rispondiamo 409 così l'app forza la rigenerazione di un nuovo token valido!
       final isValid = await FcmService.instance.isTokenValidOnFcm(token);
@@ -722,17 +829,19 @@ class UtenteController {
         );
       }
 
-      final uDocs = await getCachedUtentiDocs();
-      final cleanName = NicknameHelper.resolve(utenteName, uDocs);
-      for (var u in uDocs) {
-        final uNick = (u['nickname'] ?? u['username'] ?? u['nome'] ?? '').toString().trim();
-        if (NicknameHelper.isSame(uNick, cleanName, uDocs)) {
-          await DbService.instance.utentiCollection.update(
-            where.id(u['_id'] as ObjectId),
-            modify.addToSet('fcmTokens', token),
-          );
-          break;
-        }
+      // 1) Stacca questo token fisico da qualsiasi altro utente (cambio account sullo stesso telefono)
+      await DbService.instance.utentiCollection.update(
+        where.eq('fcmTokens', token),
+        modify.pull('fcmTokens', token),
+        multiUpdate: true,
+      );
+
+      // 2) Imposta esclusivamente questo singolo token per il profilo corrente ("1 Profilo = 1 Dispositivo")
+      if (targetUserDoc != null && targetUserDoc['_id'] is ObjectId) {
+        await DbService.instance.utentiCollection.update(
+          where.id(targetUserDoc['_id'] as ObjectId),
+          modify.set('fcmTokens', <String>[token]),
+        );
       }
       invalidateCache();
       return Response.ok(
@@ -977,11 +1086,35 @@ class UtenteController {
         );
       }
 
+      final newSessionId = AuthTokenHelper.generateSessionId();
+      final oldTokens = List<String>.from(userDoc['fcmTokens'] ?? [])
+          .map((t) => t.trim())
+          .where((t) => t.isNotEmpty)
+          .toList();
+
       await DbService.instance.utentiCollection.update(
         where.id(userDoc['_id'] as ObjectId),
-        modify.set('password', hashedPassword).set('passwordHash', hashedPassword),
+        modify
+            .set('password', hashedPassword)
+            .set('passwordHash', hashedPassword)
+            .set('activeSessionId', newSessionId)
+            .set('fcmTokens', <String>[]),
       );
       invalidateCache();
+
+      if (oldTokens.isNotEmpty) {
+        final targetNick = (userDoc['nickname'] ?? userDoc['username'] ?? userDoc['nome'] ?? '').toString().trim();
+        unawaited(
+          FcmService.instance.inviaDataSilenziosaATokens(
+            oldTokens,
+            {
+              'tipo': 'session_displaced',
+              'utente': targetNick,
+              'newSessionId': newSessionId,
+            },
+          ),
+        );
+      }
 
       // Elimina il token monouso
       await DbService.instance.passwordResetCollection.remove(where.id(resetToken['_id'] as ObjectId));
