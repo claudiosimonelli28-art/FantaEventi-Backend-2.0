@@ -20,6 +20,8 @@ import '../services/tutorial_controller.dart';
 import '../services/push_notification_service.dart';
 import '../viewmodels/home_view_model.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/ad_banner_card.dart';
+import '../widgets/no_ads_vip_modal.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -1451,7 +1453,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
                   )
                 : ListView.builder(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
                     itemCount: filteredEventi.length,
                     itemBuilder: (ctx, idx) {
                       final ev = filteredEventi[idx];
@@ -1461,47 +1463,59 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
                       );
                       final bool isTutorialTarget = TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
                           (tutorialEv != null ? ev.id == tutorialEv.id : idx == 0);
-                      return Container(
-                        key: isTutorialTarget ? TutorialController.instance.keyFirstEventCard : null,
-                        child: EventCard(
-                          evento: ev,
-                          currentUserNickname: userNick,
-                          onTap: () async {
-                            final cleanUser = userNick.trim().toLowerCase();
-                            final cleanCreator = ev.creatore.trim().toLowerCase();
-                            final bool isCreatore = cleanCreator.isNotEmpty &&
-                                (cleanCreator == cleanUser ||
-                                 (cleanUser == 'cloud' && (cleanCreator == 'claudio' || cleanCreator.contains('claudio'))) ||
-                                 (cleanUser == 'claudio' && cleanCreator == 'cloud'));
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            key: isTutorialTarget ? TutorialController.instance.keyFirstEventCard : null,
+                            child: EventCard(
+                              evento: ev,
+                              currentUserNickname: userNick,
+                              onTap: () async {
+                                final cleanUser = userNick.trim().toLowerCase();
+                                final cleanCreator = ev.creatore.trim().toLowerCase();
+                                final bool isCreatore = cleanCreator.isNotEmpty &&
+                                    (cleanCreator == cleanUser ||
+                                     (cleanUser == 'cloud' && (cleanCreator == 'claudio' || cleanCreator.contains('claudio'))) ||
+                                     (cleanUser == 'claudio' && cleanCreator == 'cloud'));
 
-                            final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
-                              final pClean = p.trim().toLowerCase();
-                              return pClean == cleanUser ||
-                                  (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
-                                  (cleanUser == 'claudio' && pClean == 'cloud');
-                            });
+                                final bool isPartecipante = isCreatore || ev.partecipanti.any((p) {
+                                  final pClean = p.trim().toLowerCase();
+                                  return pClean == cleanUser ||
+                                      (cleanUser == 'cloud' && (pClean == 'claudio' || pClean.contains('claudio'))) ||
+                                      (cleanUser == 'claudio' && pClean == 'cloud');
+                                });
 
-                            if (!isPartecipante && (ev.isInCorso || ev.isConcluso)) {
-                              AppToast.showWarning(
-                                context,
-                                'Iscrizioni Chiuse',
-                                'Non puoi accedere a questo evento: le iscrizioni si sono chiuse con l\'inizio dell\'evento.',
-                              );
-                              return;
-                            }
+                                if (!isPartecipante && (ev.isInCorso || ev.isConcluso)) {
+                                  AppToast.showWarning(
+                                    context,
+                                    'Iscrizioni Chiuse',
+                                    'Non puoi accedere a questo evento: le iscrizioni si sono chiuse con l\'inizio dell\'evento.',
+                                  );
+                                  return;
+                                }
 
-                            if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
-                                TutorialController.instance.isTutorialEvent(ev)) {
-                              TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
-                            }
-                            await Navigator.of(context).push(
-                              MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
-                            );
-                            _loadData(forceRefresh: true);
-                          },
-                          onPartecipa: () => _partecipaEvento(ev),
-                          onElimina: () => _confermaEliminazioneEvento(ev),
-                        ),
+                                if (TutorialController.instance.stage == TutorialStage.step4_tap_event_card &&
+                                    TutorialController.instance.isTutorialEvent(ev)) {
+                                  TutorialController.instance.setStage(TutorialStage.step5_in_event_detail);
+                                }
+                                await Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => EventDetailView(evento: ev, onRefresh: () => _loadData(forceRefresh: true))),
+                                );
+                                _loadData(forceRefresh: true);
+                              },
+                              onPartecipa: () => _partecipaEvento(ev),
+                              onElimina: () => _confermaEliminazioneEvento(ev),
+                            ),
+                          ),
+                          if (idx == 0 && !TutorialController.instance.isActive)
+                            AdBannerCard(
+                              onTapNoAds: () async {
+                                await NoAdsVipModal.mostra(context);
+                                if (mounted) setState(() {});
+                              },
+                            ),
+                        ],
                       );
                     },
                   ),

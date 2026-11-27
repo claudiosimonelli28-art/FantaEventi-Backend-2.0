@@ -24,6 +24,17 @@
 	<string>FantaEventi richiede l'accesso al microfono per le registrazioni video se necessarie.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>FantaEventi usa la tua posizione per mostrarti dove ti trovi sulla mappa e impostare il luogo dell'evento.</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>FantaEventi utilizza questo identificatore per mostrarti annunci più pertinenti e mantenere gratuita l'applicazione.</string>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-6019738318234363~3987369433</string>
+	<key>SKAdNetworkItems</key>
+	<array>
+		<dict>
+			<key>SKAdNetworkIdentifier</key>
+			<string>cstr6suwn9.skadnetwork</string>
+		</dict>
+	</array>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

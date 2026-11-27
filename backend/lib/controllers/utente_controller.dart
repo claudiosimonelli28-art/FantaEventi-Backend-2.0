@@ -1699,6 +1699,205 @@ class UtenteController {
     }
   }
 
+  /// Accredita +100 XP per la visione volontaria di uno spot video con premio (massimo 3 volte al giorno)
+  Future<Response> riscattaPremioSpot(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = body.isNotEmpty ? (jsonDecode(body) as Map<String, dynamic>) : <String, dynamic>{};
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawNick = (verifiedCaller != null && verifiedCaller.isNotEmpty)
+          ? verifiedCaller
+          : (data['utente'] ?? data['nickname'] ?? '').toString().trim();
+
+      if (rawNick.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Utente non identificato'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uDocs = await getCachedUtentiDocs(forceRefresh: true);
+      final cleanNick = NicknameHelper.resolve(rawNick, uDocs);
+      Map<String, dynamic>? targetDoc;
+      for (final d in uDocs) {
+        final uNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanNick, uDocs)) {
+          targetDoc = d;
+          break;
+        }
+      }
+
+      if (targetDoc == null || targetDoc['_id'] is! ObjectId) {
+        return Response.notFound(
+          jsonEncode({'error': 'Utente non trovato'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final now = ItalianTime.now();
+      final todayStr = now.toIso8601String().substring(0, 10);
+      final savedDate = (targetDoc['dailyAdXpDate'] ?? '').toString().trim();
+      final int currentCount = (savedDate == todayStr)
+          ? ((targetDoc['dailyAdXpCount'] as num?)?.toInt() ?? 0)
+          : 0;
+
+      if (currentCount >= 3) {
+        return Response(
+          429,
+          body: jsonEncode({
+            'success': false,
+            'limitReached': true,
+            'rewardedAdsToday': currentCount,
+            'error': 'Hai già riscattato tutti i 3 bonus video di oggi (+300 XP). Torna domani per altri XP!',
+          }),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uId = targetDoc['_id'] as ObjectId;
+      final curLiv = (targetDoc['livello'] as num?)?.toInt() ?? 1;
+      final curXp = (targetDoc['xp'] as num?)?.toInt() ?? 100;
+      final curTot = (targetDoc['xpTotali'] as num?)?.toInt() ??
+          XpProgression.calcolaXpTotaliDaLivello(curLiv, curXp);
+
+      final prog = XpProgression.aggiungiXp(
+        livelloAttuale: curLiv,
+        xpLivelloAttuale: curXp,
+        deltaXp: 100,
+        xpTotaliAttuali: curTot,
+      );
+
+      final timeStr = '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+      final logVoce = '[$todayStr $timeStr] Bonus Spot Video completato (+100 XP)';
+      final currentStorico = (targetDoc['storicoVoti'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          <String>[];
+      final updatedStorico = <String>[logVoce, ...currentStorico];
+      if (updatedStorico.length > 80) {
+        updatedStorico.removeRange(80, updatedStorico.length);
+      }
+
+      final newCount = currentCount + 1;
+      await DbService.instance.utentiCollection.update(
+        where.id(uId),
+        modify
+            .set('livello', prog.livello)
+            .set('xp', prog.xp)
+            .set('xpProssimoLivello', prog.xpProssimoLivello)
+            .set('xpTotali', prog.xpTotali)
+            .set('puntiEsperienza', prog.xpTotali)
+            .set('dailyAdXpDate', todayStr)
+            .set('dailyAdXpCount', newCount)
+            .set('storicoVoti', updatedStorico),
+      );
+
+      invalidateCache();
+      final updatedDoc = await DbService.instance.utentiCollection.findOne(where.id(uId));
+      if (updatedDoc != null && _cachedAvatars.containsKey(uId.oid)) {
+        updatedDoc['avatarUrl'] = _cachedAvatars[uId.oid];
+      }
+
+      return Response.ok(
+        jsonEncode({
+          'success': true,
+          'deltaXp': 100,
+          'rewardedAdsToday': newCount,
+          'remainingToday': 3 - newCount,
+          if (updatedDoc != null) 'utente': Utente.fromMap(updatedDoc).toJson(),
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
+  /// Sincronizza lo stato dell'abbonamento mensile "VIP No-Ads" verificato tramite Google Play / Apple Store
+  Future<Response> aggiornaAbbonamentoNoAds(Request request) async {
+    try {
+      final body = await request.readAsString();
+      final data = body.isNotEmpty ? (jsonDecode(body) as Map<String, dynamic>) : <String, dynamic>{};
+      final verifiedCaller = AuthTokenHelper.getVerifiedNickname(request);
+      final rawNick = (verifiedCaller != null && verifiedCaller.isNotEmpty)
+          ? verifiedCaller
+          : (data['utente'] ?? data['nickname'] ?? '').toString().trim();
+
+      if (rawNick.isEmpty) {
+        return Response.badRequest(
+          body: jsonEncode({'error': 'Utente non identificato'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final bool attivo = data['attivo'] == true;
+      final String productId = (data['productId'] ?? 'no_ads_monthly').toString().trim();
+      final String platform = (data['platform'] ?? '').toString().trim();
+      final String purchaseId = (data['purchaseId'] ?? '').toString().trim();
+
+      final uDocs = await getCachedUtentiDocs(forceRefresh: true);
+      final cleanNick = NicknameHelper.resolve(rawNick, uDocs);
+      Map<String, dynamic>? targetDoc;
+      for (final d in uDocs) {
+        final uNick = (d['nickname'] ?? d['username'] ?? d['nome'] ?? '').toString().trim();
+        if (NicknameHelper.isSame(uNick, cleanNick, uDocs)) {
+          targetDoc = d;
+          break;
+        }
+      }
+
+      if (targetDoc == null || targetDoc['_id'] is! ObjectId) {
+        return Response.notFound(
+          jsonEncode({'error': 'Utente non trovato'}),
+          headers: {'content-type': 'application/json'},
+        );
+      }
+
+      final uId = targetDoc['_id'] as ObjectId;
+      final nowIso = ItalianTime.now().toIso8601String();
+      const vipBadge = '👑 VIP No-Ads';
+
+      var mod = modify
+          .set('isNoAds', attivo)
+          .set('noAdsProductId', productId)
+          .set('noAdsPlatform', platform)
+          .set('noAdsUpdatedAt', nowIso);
+      if (purchaseId.isNotEmpty) {
+        mod = mod.set('noAdsPurchaseId', purchaseId);
+      }
+      if (attivo) {
+        mod = mod.addToSet('badgeList', vipBadge);
+      } else {
+        mod = mod.pull('badgeList', vipBadge);
+      }
+
+      await DbService.instance.utentiCollection.update(where.id(uId), mod);
+      invalidateCache();
+
+      final updatedDoc = await DbService.instance.utentiCollection.findOne(where.id(uId));
+      if (updatedDoc != null && _cachedAvatars.containsKey(uId.oid)) {
+        updatedDoc['avatarUrl'] = _cachedAvatars[uId.oid];
+      }
+
+      return Response.ok(
+        jsonEncode({
+          'success': true,
+          'isNoAds': attivo,
+          if (updatedDoc != null) 'utente': Utente.fromMap(updatedDoc).toJson(),
+        }),
+        headers: {'content-type': 'application/json'},
+      );
+    } catch (e) {
+      return Response.internalServerError(
+        body: jsonEncode({'error': e.toString()}),
+        headers: {'content-type': 'application/json'},
+      );
+    }
+  }
+
   /// Invia una richiesta di amicizia tramite codiceAmico o nickname (POST /api/utenti/amicizia/richiedi)
   Future<Response> inviaRichiestaAmicizia(Request request) async {
     try {

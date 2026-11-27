@@ -1,4 +1,5 @@
 import 'package:mongo_dart/mongo_dart.dart';
+import '../utils/italian_time.dart';
 
 class XpProgression {
   /// XP necessari per completare un livello e passare a quello successivo: (livello + 1) * 1000.
@@ -111,6 +112,8 @@ class Utente {
   final String dataRegistrazione;
   final List<String> utentiBloccati;
   final bool isBanned;
+  final bool isNoAds;
+  final int rewardedAdsToday;
 
   Utente({
     this.mongoId,
@@ -143,6 +146,8 @@ class Utente {
     this.dataRegistrazione = '',
     this.utentiBloccati = const [],
     this.isBanned = false,
+    this.isNoAds = false,
+    this.rewardedAdsToday = 0,
   }) : nickname = (nickname != null && nickname.isNotEmpty) ? nickname : (nome.isNotEmpty ? nome : 'Utente');
 
   String get username => nickname;
@@ -229,6 +234,12 @@ class Utente {
       mergedBadges.add('🎉 Partecipante FantaEventi');
     }
 
+    final String todayStr = ItalianTime.now().toIso8601String().substring(0, 10);
+    final String savedAdDate = (map['dailyAdXpDate'] ?? '').toString().trim();
+    final int parsedRewardedToday = (savedAdDate == todayStr)
+        ? ((map['dailyAdXpCount'] as num?)?.toInt() ?? 0)
+        : 0;
+
     return Utente(
       mongoId: mId,
       id: parsedId,
@@ -269,6 +280,8 @@ class Utente {
       dataRegistrazione: parsedDataReg,
       utentiBloccati: (map['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       isBanned: map['isBanned'] == true,
+      isNoAds: map['isNoAds'] == true,
+      rewardedAdsToday: parsedRewardedToday,
     );
   }
 
@@ -307,6 +320,8 @@ class Utente {
       'dataRegistrazione': dataRegistrazione,
       'utentiBloccati': utentiBloccati,
       'isBanned': isBanned,
+      'isNoAds': isNoAds,
+      'rewardedAdsToday': rewardedAdsToday,
     };
     if (mongoId != null) {
       map['_id'] = mongoId;
@@ -337,6 +352,8 @@ class Utente {
       'badgeVincitore': badgeVincitore,
       'utentiBloccati': utentiBloccati,
       'isBanned': isBanned,
+      'isNoAds': isNoAds,
+      'rewardedAdsToday': rewardedAdsToday,
       'countGiudice': countGiudice,
       'countAvvocato': countGiudice,
       'countReMalus': countReMalus,

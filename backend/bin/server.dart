@@ -266,6 +266,8 @@ void main() async {
   app.post('/api/utenti/sblocca', utenteCtrl.sbloccaUtente);
   app.get('/api/utenti/bloccati', utenteCtrl.getUtentiBloccati);
   app.post('/api/utenti/completa-guida', utenteCtrl.completaGuida);
+  app.post('/api/utenti/premio-spot', utenteCtrl.riscattaPremioSpot);
+  app.post('/api/utenti/abbonamento-noads', utenteCtrl.aggiornaAbbonamentoNoAds);
   app.post('/api/utenti/amicizia/richiedi', utenteCtrl.inviaRichiestaAmicizia);
   app.post('/api/utenti/amicizia/rispondi', utenteCtrl.rispondiRichiestaAmicizia);
 

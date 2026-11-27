@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as raw_http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/utente.dart';
@@ -266,6 +267,7 @@ class ApiService {
       };
 
   Utente? _currentUser;
+  final ValueNotifier<bool> noAdsNotifier = ValueNotifier<bool>(false);
   final List<Utente> _utenti = [];
   final List<Evento> _eventi = [];
   final List<BonusMalus> _bonusMalusList = [];
@@ -332,6 +334,7 @@ class ApiService {
     String? sessionId,
   }) async {
     final shouldRemember = rememberMe ?? _rememberMeSession;
+    noAdsNotifier.value = utente.isNoAds;
     if (token != null && token.isNotEmpty) {
       _authToken = token;
       final extracted = _extractSidFromJwt(token);
@@ -514,6 +517,7 @@ class ApiService {
       }
     } catch (_) {}
     _currentUser = null;
+    noAdsNotifier.value = false;
     _authToken = '';
     _currentSessionId = '';
     _rememberMeSession = false;
@@ -603,6 +607,7 @@ class ApiService {
           _currentUser = _currentUser!.copyWith(avatarUrl: '');
         }
         _rememberMeSession = true;
+        noAdsNotifier.value = _currentUser?.isNoAds ?? false;
         await _loadCachedUsersAndAvatars();
         clearUserSessionCache();
         return _currentUser;
@@ -755,6 +760,96 @@ class ApiService {
       await prefs.remove('tutorial_spotlight_v2_completato');
       await prefs.remove('guida_regole_completata_v1');
     } catch (_) {}
+  }
+
+  /// Accredita +100 XP sul server dopo la visione completa di uno spot video con premio (max 3/giorno)
+  Future<({bool success, String? error, int remainingToday})> riscattaPremioSpot() async {
+    final cur = _currentUser;
+    if (cur == null) {
+      return (success: false, error: 'Utente non autenticato', remainingToday: 0);
+    }
+
+    for (final url in baseUrls) {
+      try {
+        final res = await http
+            .post(
+              Uri.parse('$url/utenti/premio-spot'),
+              headers: defaultHeaders,
+              body: jsonEncode({
+                'utente': cur.nickname.isNotEmpty ? cur.nickname : cur.nome,
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        if (res.statusCode == 200 && data['success'] == true) {
+          if (data['utente'] is Map) {
+            final serverUser = Utente.fromJson(Map<String, dynamic>.from(data['utente'] as Map));
+            final safeAv = serverUser.avatarUrl.isNotEmpty ? serverUser.avatarUrl : cur.avatarUrl;
+            _currentUser = serverUser.copyWith(avatarUrl: safeAv);
+            await _saveSession(_currentUser!);
+          }
+          final rem = (data['remainingToday'] as num?)?.toInt() ?? 0;
+          return (success: true, error: null, remainingToday: rem);
+        } else {
+          return (
+            success: false,
+            error: data['error']?.toString() ?? 'Impossibile accreditare il bonus XP.',
+            remainingToday: 0,
+          );
+        }
+      } catch (_) {}
+    }
+
+    return (
+      success: false,
+      error: 'Errore di rete durante l\'accredito dei +100 XP. Riprova.',
+      remainingToday: 0,
+    );
+  }
+
+  /// Aggiorna lo stato dell'abbonamento mensile "VIP No-Ads" sul profilo server
+  Future<bool> aggiornaAbbonamentoNoAds({
+    required bool attivo,
+    String productId = 'no_ads_monthly',
+    String platform = '',
+    String purchaseId = '',
+  }) async {
+    final cur = _currentUser;
+    if (cur == null) return false;
+
+    for (final url in baseUrls) {
+      try {
+        final res = await http
+            .post(
+              Uri.parse('$url/utenti/abbonamento-noads'),
+              headers: defaultHeaders,
+              body: jsonEncode({
+                'utente': cur.nickname.isNotEmpty ? cur.nickname : cur.nome,
+                'attivo': attivo,
+                'productId': productId,
+                'platform': platform,
+                'purchaseId': purchaseId,
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          if (data['utente'] is Map) {
+            final serverUser = Utente.fromJson(Map<String, dynamic>.from(data['utente'] as Map));
+            final safeAv = serverUser.avatarUrl.isNotEmpty ? serverUser.avatarUrl : cur.avatarUrl;
+            _currentUser = serverUser.copyWith(avatarUrl: safeAv);
+          } else {
+            _currentUser = cur.copyWith(isNoAds: attivo);
+          }
+          noAdsNotifier.value = _currentUser!.isNoAds;
+          await _saveSession(_currentUser!);
+          return true;
+        }
+      } catch (_) {}
+    }
+    return false;
   }
 
   Future<void> assicuraNotificaBenvenuto(String nickname) async {

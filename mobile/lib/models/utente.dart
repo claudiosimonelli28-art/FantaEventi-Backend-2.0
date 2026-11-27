@@ -106,6 +106,8 @@ class Utente {
   final String dataRegistrazione;
   final List<String> utentiBloccati;
   final bool isBanned;
+  final bool isNoAds;
+  final int rewardedAdsToday;
 
   Utente({
     required this.id,
@@ -135,6 +137,8 @@ class Utente {
     this.dataRegistrazione = '',
     this.utentiBloccati = const [],
     this.isBanned = false,
+    this.isNoAds = false,
+    this.rewardedAdsToday = 0,
   }) : nickname = (nickname != null && nickname.isNotEmpty) ? nickname : (nome.isNotEmpty ? nome : 'Utente');
 
   String get username => nickname;
@@ -243,6 +247,8 @@ class Utente {
       dataRegistrazione: parsedDataReg,
       utentiBloccati: (json['utentiBloccati'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
       isBanned: json['isBanned'] == true,
+      isNoAds: json['isNoAds'] == true,
+      rewardedAdsToday: (json['rewardedAdsToday'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -276,6 +282,8 @@ class Utente {
       'dataRegistrazione': dataRegistrazione,
       'utentiBloccati': utentiBloccati,
       'isBanned': isBanned,
+      'isNoAds': isNoAds,
+      'rewardedAdsToday': rewardedAdsToday,
     };
   }
 
@@ -307,6 +315,8 @@ class Utente {
     String? dataRegistrazione,
     List<String>? utentiBloccati,
     bool? isBanned,
+    bool? isNoAds,
+    int? rewardedAdsToday,
   }) {
     return Utente(
       id: id ?? this.id,
@@ -336,6 +346,8 @@ class Utente {
       dataRegistrazione: dataRegistrazione ?? this.dataRegistrazione,
       utentiBloccati: utentiBloccati ?? this.utentiBloccati,
       isBanned: isBanned ?? this.isBanned,
+      isNoAds: isNoAds ?? this.isNoAds,
+      rewardedAdsToday: rewardedAdsToday ?? this.rewardedAdsToday,
     );
   }
 }

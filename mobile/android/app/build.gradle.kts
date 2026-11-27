@@ -23,7 +23,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fantaeventi.mobile"
-        minSdk = flutter.minSdkVersion
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

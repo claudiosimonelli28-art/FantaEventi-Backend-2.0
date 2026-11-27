@@ -412,11 +412,12 @@ class PrivacyController {
                 </tbody>
             </table>
 
-            <h3>Articolo 3 — Pubblicità e Circuiti Terzi (Google AdMob)</h3>
+            <h3>Articolo 3 — Pubblicità (Google AdMob) &amp; Abbonamento Facoltativo "VIP No-Ads"</h3>
             <p>Al fine di garantire la sostenibilità economica dei server cloud, la manutenzione continua e lo sviluppo gratuito di nuove funzionalità, <strong>FantaEventi</strong> integra spazi pubblicitari erogati dal partner certificato <strong>Google AdMob (Google LLC)</strong>.</p>
             <ul>
-                <li>Google AdMob può raccogliere ed elaborare identificatori pubblicitari univoci del dispositivo (ad esempio l'Advertising ID di Android o l'IDFA di iOS) e dati tecnici di diagnostica per l'erogazione di annunci.</li>
-                <li><strong>Consenso Utente (CMP / GDPR):</strong> In conformità alla direttiva europea e alle linee guida di Google, all'avvio dell'applicazione per gli utenti residenti nello Spazio Economico Europeo (SEE) viene presentata una finestra di consenso certificata. L'utente ha la facoltà di scegliere liberamente se acconsentire alla ricezione di annunci personalizzati oppure optare per annunci generici non profilati, con possibilità di modificare le proprie preferenze in qualsiasi momento.</li>
+                <li>Google AdMob può raccogliere ed elaborare identificatori pubblicitari univoci del dispositivo (Advertising ID su Android o IDFA su iOS, previo permesso <em>App Tracking Transparency</em>) e dati tecnici di diagnostica per l'erogazione e la misurazione degli annunci (banner, interstitial e video con ricompensa XP facoltativi).</li>
+                <li><strong>Consenso Utente e Revoca in qualsiasi momento (CMP / GDPR):</strong> In conformità al Regolamento UE e alle norme Google UMP, al primo avvio per gli utenti residenti nello Spazio Economico Europeo (SEE) viene mostrata una finestra di consenso certificata. L'utente può modificare o revocare le proprie preferenze pubblicitarie in qualsiasi momento direttamente dall'app seguendo il percorso <strong><code>Profilo</code> ➔ <code>Area Riservata</code> ➔ <code>Preferenze Privacy Annunci (GDPR)</code></strong>.</li>
+                <li><strong>Abbonamento Facoltativo "VIP No-Ads":</strong> L'utente può sottoscrivere facoltativamente l'abbonamento mensile per la rimozione degli annunci pubblicitari (banner e interstitial) esclusivamente tramite i circuiti di pagamento ufficiali <strong>Google Play Billing</strong> (Android) ed <strong>Apple In-App Purchase</strong> (iOS). FantaEventi non raccoglie né memorizza mai numeri di carte di credito o dati bancari dell'utente. Il rinnovo automatico può essere gestito o annullato in qualsiasi momento dalle impostazioni abbonamenti del proprio account Google Play o Apple ID, ed è sempre disponibile la funzione <em>"Ripristina acquisti"</em> nell'app.</li>
             </ul>
 
             <h3>Articolo 4 — Basi Giuridiche del Trattamento</h3>

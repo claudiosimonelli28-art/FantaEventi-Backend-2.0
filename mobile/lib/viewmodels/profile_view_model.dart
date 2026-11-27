@@ -101,6 +101,16 @@ class ProfileViewModel extends BaseViewModel {
     _countGiustiziere = u.countGiustiziere;
   }
 
+  /// Sincronizza immediatamente lo stato del ViewModel con `ApiService().currentUser` (es. dopo premio XP spot o attivazione VIP No-Ads)
+  void sincronizzaUtenteDaMemoria() {
+    final cur = _apiService.currentUser;
+    if (cur != null) {
+      _utente = cur;
+      _aggiornaConteggiTitoli(_utente);
+      notifyListeners();
+    }
+  }
+
   Future<void> caricaProfiloAggiornato() async {
     try {
       // 1. Sincronizzazione prioritaria istantanea dell'utente corrente (<350ms)

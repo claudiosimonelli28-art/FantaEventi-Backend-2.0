@@ -12,6 +12,8 @@ import '../services/tutorial_controller.dart';
 import '../widgets/tutorial_spotlight_overlay.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/context_info_modal.dart';
+import '../widgets/no_ads_vip_modal.dart';
+import '../services/admob_service.dart';
 
 class ProfileView extends StatefulWidget {
   final bool openModerationOnStart;
@@ -26,6 +28,52 @@ class _ProfileViewState extends State<ProfileView> {
   final ProfileViewModel _viewModel = ProfileViewModel();
   final _codiceAmicoInputController = TextEditingController();
   bool _isLoggingOut = false;
+  bool _isLoadingRewardedSpot = false;
+
+  Future<void> _guardaSpotPerXp() async {
+    if (_isLoadingRewardedSpot) return;
+    if (_viewModel.utente.rewardedAdsToday >= 3) {
+      AppToast.showInfo(
+        context,
+        'Limite giornaliero raggiunto 🎬',
+        'Hai già ottenuto i +300 XP gratuiti di oggi (3/3). Torna domani!',
+      );
+      return;
+    }
+
+    setState(() => _isLoadingRewardedSpot = true);
+    final earned = await AdMobService.instance.showRewardedVideoForXp(
+      onError: (msg) {
+        if (mounted) {
+          AppToast.showWarning(context, 'Spot non disponibile', msg);
+        }
+      },
+    );
+
+    if (!mounted) return;
+    if (!earned) {
+      setState(() => _isLoadingRewardedSpot = false);
+      return;
+    }
+
+    final res = await ApiService().riscattaPremioSpot();
+    if (!mounted) return;
+    setState(() => _isLoadingRewardedSpot = false);
+    _viewModel.sincronizzaUtenteDaMemoria();
+
+    if (res.success) {
+      AppToast.showSuccess(
+        context,
+        '🎉 +100 XP Accreditati!',
+        res.remainingToday > 0
+            ? 'Ottimo! Ti restano altri ${res.remainingToday} bonus video disponibili oggi.'
+            : 'Hai completato tutti i 3 bonus video di oggi (+300 XP)!',
+        const Duration(seconds: 4),
+      );
+    } else if (res.error != null) {
+      AppToast.showWarning(context, 'Attenzione', res.error!);
+    }
+  }
 
   Future<void> _eseguiLogout([BuildContext? modalContext]) async {
     if (_isLoggingOut) return;
@@ -1515,6 +1563,50 @@ class _ProfileViewState extends State<ProfileView> {
                               valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF9333EA)),
                             ),
                           ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: (_isLoadingRewardedSpot || utente.rewardedAdsToday >= 3)
+                                  ? null
+                                  : _guardaSpotPerXp,
+                              icon: _isLoadingRewardedSpot
+                                  ? const SizedBox(
+                                      width: 15,
+                                      height: 15,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFFFACC15),
+                                      ),
+                                    )
+                                  : Text(
+                                      utente.rewardedAdsToday >= 3 ? '✅' : '🎬',
+                                      style: const TextStyle(fontSize: 15),
+                                    ),
+                              label: Text(
+                                utente.rewardedAdsToday >= 3
+                                    ? 'Bonus Spot XP completati oggi (3/3)'
+                                    : 'Guarda 1 Spot per +100 XP (${utente.rewardedAdsToday}/3 oggi)',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: utente.rewardedAdsToday >= 3
+                                      ? const Color(0xFF64748B)
+                                      : const Color(0xFFFACC15),
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                  color: utente.rewardedAdsToday >= 3
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFFACC15).withValues(alpha: 0.55),
+                                ),
+                                backgroundColor: const Color(0xFF1E293B).withValues(alpha: 0.6),
+                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1615,7 +1707,77 @@ class _ProfileViewState extends State<ProfileView> {
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              // CARD ABBONAMENTO VIP NO-ADS
+              InkWell(
+                onTap: () async {
+                  await NoAdsVipModal.mostra(context);
+                  if (mounted) {
+                    _viewModel.sincronizzaUtenteDaMemoria();
+                  }
+                },
+                borderRadius: BorderRadius.circular(18),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: utente.isNoAds
+                          ? [const Color(0xFF064E3B), const Color(0xFF1E293B)]
+                          : [const Color(0xFF1E293B), const Color(0xFF2E1065)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: utente.isNoAds
+                          ? const Color(0xFF10B981).withValues(alpha: 0.7)
+                          : const Color(0xFFFACC15).withValues(alpha: 0.6),
+                      width: 1.3,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (utente.isNoAds ? const Color(0xFF10B981) : const Color(0xFFFACC15))
+                              .withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(utente.isNoAds ? '👑' : '🚫', style: const TextStyle(fontSize: 20)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              utente.isNoAds ? 'VIP No-Ads Attivo' : 'Rimuovi Pubblicità — No Ads',
+                              style: GoogleFonts.poppins(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              utente.isNoAds
+                                  ? 'Zero pubblicità e badge VIP attivi sul tuo profilo'
+                                  : 'Gioca senza banner e spot + Badge VIP (2,49 €/mese)',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                color: const Color(0xFFCBD5E1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFFFACC15), size: 15),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
 
               // BACHECA TITOLI E RICONOSCIMENTI
               _buildBachecaTitoli(),
@@ -2308,6 +2470,30 @@ class _ProfileViewState extends State<ProfileView> {
                           onTap: () {
                             Navigator.of(ctx).pop();
                             _mostraModalUtentiBloccati();
+                          },
+                        ),
+                        const Divider(color: Color(0xFF334155), height: 1),
+                        ListTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFACC15).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.tune_rounded, color: Color(0xFFFACC15), size: 20),
+                          ),
+                          title: Text(
+                            'Preferenze Privacy Annunci (GDPR)',
+                            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            'Gestisci o revoca il consenso per gli annunci personalizzati',
+                            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                          ),
+                          trailing: const Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF64748B), size: 14),
+                          onTap: () {
+                            Navigator.of(ctx).pop();
+                            AdMobService.instance.showPrivacyOptionsForm(context);
                           },
                         ),
                         const Divider(color: Color(0xFF334155), height: 1),

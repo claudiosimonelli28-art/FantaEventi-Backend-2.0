@@ -6,6 +6,8 @@ import 'views/login_view.dart';
 import 'views/home_view.dart';
 import 'services/api_service.dart';
 import 'services/push_notification_service.dart';
+import 'services/admob_service.dart';
+import 'services/subscription_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +43,10 @@ void main() async {
   }
 
   runApp(FantaEventiApp(isLoggedIn: isLoggedIn));
+
+  // Inizializza in background consenso GDPR/AdMob e ascoltatore abbonamento Store senza rallentare l'avvio della UI
+  unawaited(AdMobService.instance.initializeAndGatherConsent());
+  unawaited(SubscriptionService.instance.initialize());
 }
 
 class FantaEventiApp extends StatelessWidget {
