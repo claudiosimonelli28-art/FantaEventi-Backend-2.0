@@ -6,6 +6,7 @@ import '../services/api_service.dart';
 import '../services/push_notification_service.dart';
 import '../widgets/avatar_helper.dart';
 import '../widgets/founder_badge.dart';
+import '../widgets/vip_badge.dart';
 import 'login_view.dart';
 import '../viewmodels/profile_view_model.dart';
 import '../services/tutorial_controller.dart';
@@ -433,6 +434,7 @@ class _ProfileViewState extends State<ProfileView> {
 
   // MODALE CON LA LISTA COMPLETA DEGLI AMICI
   void _mostraModalAmici() {
+    bool didTriggerLiveRefresh = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -443,6 +445,14 @@ class _ProfileViewState extends State<ProfileView> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (modalCtx, setFriendsModalState) {
+            if (!didTriggerLiveRefresh) {
+              didTriggerLiveRefresh = true;
+              ApiService().getUtenti().then((_) {
+                if (modalCtx.mounted) {
+                  setFriendsModalState(() {});
+                }
+              }).catchError((_) {});
+            }
             return DraggableScrollableSheet(
               initialChildSize: 0.7,
               minChildSize: 0.4,
@@ -535,6 +545,8 @@ class _ProfileViewState extends State<ProfileView> {
                               final friendCode = amicoUtente?.codiceAmico ?? '';
                               final points = amicoUtente?.puntiTotali ?? 0;
                               final level = amicoUtente?.livello ?? 1;
+                              final bool isAmicoVip = VipBadge.isVip(amicoUtente);
+                              final bool isAmicoFounder = FounderBadge.isFounder(resolvedNick) || FounderBadge.isFounder(rawAmico);
 
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 10),
@@ -542,47 +554,74 @@ class _ProfileViewState extends State<ProfileView> {
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF0F172A),
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: const Color(0xFF334155)),
+                                  border: Border.all(
+                                    color: isAmicoVip
+                                        ? const Color(0xFFFACC15).withValues(alpha: 0.65)
+                                        : const Color(0xFF334155),
+                                    width: isAmicoVip ? 1.3 : 1.0,
+                                  ),
                                 ),
                                 child: Row(
                                   children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(2),
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: const Color(0xFF10B981).withValues(alpha: 0.6),
-                                          width: 1.5,
+                                    Stack(
+                                      clipBehavior: Clip.none,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: isAmicoVip
+                                                  ? const Color(0xFFFACC15)
+                                                  : const Color(0xFF10B981).withValues(alpha: 0.6),
+                                              width: isAmicoVip ? 2.0 : 1.5,
+                                            ),
+                                          ),
+                                          child: CircleAvatar(
+                                            radius: 22,
+                                            backgroundImage: getAvatarImageProvider(avatarUrl),
+                                            backgroundColor: const Color(0xFF334155),
+                                          ),
                                         ),
-                                      ),
-                                      child: CircleAvatar(
-                                        radius: 22,
-                                        backgroundImage: getAvatarImageProvider(avatarUrl),
-                                        backgroundColor: const Color(0xFF334155),
-                                      ),
+                                        if (isAmicoVip)
+                                          Positioned(
+                                            right: -3,
+                                            bottom: -3,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(2.5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF0F172A),
+                                                shape: BoxShape.circle,
+                                                border: Border.all(color: const Color(0xFFFACC15), width: 1),
+                                              ),
+                                              child: const Text('👑', style: TextStyle(fontSize: 10)),
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Row(
+                                          Wrap(
+                                            crossAxisAlignment: WrapCrossAlignment.center,
+                                            spacing: 6,
+                                            runSpacing: 4,
                                             children: [
-                                              Flexible(
-                                                child: Text(
-                                                  displayName,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: GoogleFonts.poppins(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 14,
-                                                    color: Colors.white,
-                                                  ),
+                                              Text(
+                                                displayName,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: GoogleFonts.poppins(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  color: Colors.white,
                                                 ),
                                               ),
-                                              if (FounderBadge.isFounder(resolvedNick) || FounderBadge.isFounder(rawAmico)) ...[
-                                                const SizedBox(width: 8),
+                                              if (isAmicoVip)
+                                                const VipBadge(isLarge: false),
+                                              if (isAmicoFounder)
                                                 FounderBadge(nickname: resolvedNick, isLarge: false),
-                                              ],
                                             ],
                                           ),
                                           const SizedBox(height: 2),
@@ -1448,6 +1487,9 @@ class _ProfileViewState extends State<ProfileView> {
                     ),
                     if (FounderBadge.isFounder(utente.nickname)) ...[
                       FounderBadge(nickname: utente.nickname, isLarge: true),
+                    ],
+                    if (VipBadge.isVip(utente)) ...[
+                      const VipBadge(isLarge: true),
                     ],
                     const SizedBox(height: 4),
                     Text(

@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../widgets/avatar_helper.dart';
+import '../widgets/vip_badge.dart';
 import '../widgets/live_pulse_badge.dart';
 import '../widgets/animated_points_counter.dart';
 import '../models/evento.dart';
@@ -542,11 +543,23 @@ class _EventDetailViewState extends State<EventDetailView> {
                           spacing: 8,
                           runSpacing: 8,
                           children: _partecipantiConfermati.map((p) {
+                            final pUser = _viewModel.getUtenteInMemoria(p);
+                            final isPartVip = VipBadge.isVip(pUser);
                             return Chip(
-                              avatar: const Icon(Icons.check_circle, size: 14, color: Color(0xFF10B981)),
-                              label: Text(p, style: GoogleFonts.poppins(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
-                              backgroundColor: const Color(0xFF10B981).withValues(alpha: 0.15),
-                              side: const BorderSide(color: Color(0xFF10B981)),
+                              avatar: Icon(
+                                isPartVip ? Icons.workspace_premium_rounded : Icons.check_circle,
+                                size: 15,
+                                color: isPartVip ? const Color(0xFFFACC15) : const Color(0xFF10B981),
+                              ),
+                              label: Text(
+                                isPartVip ? '$p ⭐' : p,
+                                style: GoogleFonts.poppins(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                              backgroundColor: (isPartVip ? const Color(0xFFFACC15) : const Color(0xFF10B981))
+                                  .withValues(alpha: 0.15),
+                              side: BorderSide(
+                                color: isPartVip ? const Color(0xFFFACC15) : const Color(0xFF10B981),
+                              ),
                             );
                           }).toList(),
                         ),
@@ -1066,13 +1079,24 @@ class _EventDetailViewState extends State<EventDetailView> {
                       _buildAvatarWidget(_viewModel.getAvatarPerUtente(nick), nick, radius: 16),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          nick,
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: Colors.white,
-                          ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                nick,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            if (VipBadge.isVip(_viewModel.getUtenteInMemoria(nick))) ...[
+                              const SizedBox(width: 6),
+                              const VipBadge(isLarge: false),
+                            ],
+                          ],
                         ),
                       ),
                       Container(
@@ -2126,9 +2150,18 @@ class _EventDetailViewState extends State<EventDetailView> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Storico Bonus: $targetNick',
-                              style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  'Storico Bonus: $targetNick',
+                                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                                ),
+                                if (VipBadge.isVip(memUser))
+                                  const VipBadge(isLarge: false),
+                              ],
                             ),
                             Text(
                               isEventoConcluso
