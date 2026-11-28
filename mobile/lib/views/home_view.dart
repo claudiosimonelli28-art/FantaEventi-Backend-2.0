@@ -2183,7 +2183,7 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Proponi un nuovo bonus o malus in un evento in corso per avviare una votazione democratica in tempo reale!',
+                      'Proponi un nuovo bonus o malus in un evento di cui fai parte per avviare una votazione democratica in tempo reale!',
                       style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
                       textAlign: TextAlign.center,
                     ),
