@@ -88,6 +88,12 @@ class _EventDetailViewState extends State<EventDetailView> {
             backgroundColor: const Color(0xFF1E293B),
             iconTheme: const IconThemeData(color: Colors.white),
             actions: [
+              if (_viewModel.partecipantiSegnalabili.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.flag_rounded, color: Color(0xFFF59E0B), size: 22),
+                  tooltip: 'Segnala un partecipante',
+                  onPressed: () => _mostraModalSegnalaPartecipanteEvento(),
+                ),
               IconButton(
                 icon: const Icon(Icons.info_outline_rounded, color: Color(0xFFFACC15), size: 24),
                 tooltip: 'Guida Dettagli Evento',
@@ -2195,6 +2201,7 @@ class _EventDetailViewState extends State<EventDetailView> {
 
     final memUser = _viewModel.getUtenteInMemoria(targetNick);
     String avatarUrl = memUser?.avatarUrl ?? _viewModel.getAvatarPerUtente(targetNick);
+    bool isSendingFriendReq = false;
 
     showModalBottomSheet(
       context: context,
@@ -2221,6 +2228,10 @@ class _EventDetailViewState extends State<EventDetailView> {
                 }
               }).catchError((_) {});
             }
+
+            final bool isSelf = _viewModel.isMe(targetNick);
+            final bool giaAmico = _viewModel.isGiaAmico(targetNick);
+            final bool richiestaInviata = _viewModel.haRichiestaAmiciziaInviata(targetNick);
 
             final Widget avatarWidget = _buildAvatarWidget(avatarUrl, targetNick);
             return Padding(
@@ -2261,7 +2272,138 @@ class _EventDetailViewState extends State<EventDetailView> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  if (!isSelf) ...[
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: giaAmico
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.14),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.5)),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.people_alt_rounded, size: 15, color: Color(0xFF10B981)),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'Già tuo amico',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFF10B981),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : richiestaInviata
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFACC15).withValues(alpha: 0.14),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.5)),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.schedule_send_rounded, size: 15, color: Color(0xFFFACC15)),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Richiesta inviata',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: const Color(0xFFFACC15),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : ElevatedButton.icon(
+                                      onPressed: isSendingFriendReq
+                                          ? null
+                                          : () async {
+                                              setModalState(() => isSendingFriendReq = true);
+                                              try {
+                                                await _viewModel.inviaRichiestaAmiciziaRapida(targetNick);
+                                                if (modalCtx.mounted) {
+                                                  setModalState(() => isSendingFriendReq = false);
+                                                }
+                                                if (mounted) {
+                                                  AppToast.showSuccess(
+                                                    context,
+                                                    'Richiesta Inviata! 👥',
+                                                    'Richiesta di amicizia inviata a @$targetNick!',
+                                                  );
+                                                }
+                                              } catch (e) {
+                                                if (modalCtx.mounted) {
+                                                  setModalState(() => isSendingFriendReq = false);
+                                                }
+                                                if (mounted) {
+                                                  AppToast.showError(
+                                                    context,
+                                                    'Attenzione',
+                                                    e.toString().replaceAll('Exception: ', ''),
+                                                  );
+                                                }
+                                              }
+                                            },
+                                      icon: isSendingFriendReq
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                            )
+                                          : const Icon(Icons.person_add_alt_1_rounded, size: 16, color: Colors.white),
+                                      label: Text(
+                                        'Aggiungi Amico',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF9333EA),
+                                        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                    ),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _mostraModalSegnalaPartecipanteEvento(preselectedTarget: targetNick);
+                          },
+                          icon: const Icon(Icons.flag_rounded, size: 15, color: Color(0xFFF59E0B)),
+                          label: Text(
+                            'Segnala',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFFF59E0B),
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: const Color(0xFFF59E0B).withValues(alpha: 0.6)),
+                            padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 16),
 
                   if (istanzeAssegnazioni.isEmpty)
                     Container(
@@ -2421,6 +2563,283 @@ class _EventDetailViewState extends State<EventDetailView> {
                       ),
                     ),
                 ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _mostraModalSegnalaPartecipanteEvento({String? preselectedTarget}) {
+    final rootCtx = context;
+    final partecipanti = _viewModel.partecipantiSegnalabili;
+    if (partecipanti.isEmpty) {
+      AppToast.showInfo(
+        rootCtx,
+        'Nessun altro partecipante',
+        'Non ci sono altri giocatori da segnalare in questo evento.',
+      );
+      return;
+    }
+
+    String targetSelezionato = (preselectedTarget != null &&
+            partecipanti.any((p) => p.trim().toLowerCase() == preselectedTarget.trim().toLowerCase()))
+        ? partecipanti.firstWhere((p) => p.trim().toLowerCase() == preselectedTarget.trim().toLowerCase())
+        : partecipanti.first;
+    String motivoSelezionato = 'Profilo o foto offensiva';
+    final dettagliCtrl = TextEditingController();
+    bool isSending = false;
+
+    const motivi = [
+      'Profilo o foto offensiva',
+      'Regola o foto VAR inappropriata',
+      'Comportamento scorretto nel gioco',
+      'Spam o messaggi indesiderati',
+      'Altro',
+    ];
+
+    showModalBottomSheet(
+      context: rootCtx,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                top: 20,
+                left: 20,
+                right: 20,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF64748B),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFF59E0B)),
+                          ),
+                          child: const Icon(Icons.flag_rounded, color: Color(0xFFF59E0B), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Segnala un Giocatore',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              Text(
+                                'Seleziona il partecipante dell\'evento e il motivo',
+                                style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 11.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      '1. Seleziona il giocatore da segnalare:',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: partecipanti.map((p) {
+                        final isSel = p.trim().toLowerCase() == targetSelezionato.trim().toLowerCase();
+                        final avatar = _viewModel.getAvatarPerUtente(p);
+                        return ChoiceChip(
+                          selected: isSel,
+                          onSelected: (_) => setSheetState(() => targetSelezionato = p),
+                          avatar: CircleAvatar(
+                            radius: 11,
+                            backgroundColor: const Color(0xFF334155),
+                            backgroundImage: getAvatarImageProvider(avatar),
+                          ),
+                          label: Text(
+                            '@$p',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isSel ? const Color(0xFF0F172A) : Colors.white,
+                            ),
+                          ),
+                          selectedColor: const Color(0xFFF59E0B),
+                          backgroundColor: const Color(0xFF0F172A),
+                          side: BorderSide(
+                            color: isSel ? const Color(0xFFF59E0B) : const Color(0xFF334155),
+                          ),
+                          showCheckmark: false,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      '2. Motivo della segnalazione:',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    ...motivi.map((m) {
+                      final isSelected = motivoSelezionato == m;
+                      return InkWell(
+                        onTap: () => setSheetState(() => motivoSelezionato = m),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFF64748B),
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  m,
+                                  style: GoogleFonts.inter(
+                                    color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                                    fontSize: 13,
+                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: dettagliCtrl,
+                      maxLines: 3,
+                      style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'Dettagli aggiuntivi (facoltativo)...',
+                        hintStyle: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 12),
+                        filled: true,
+                        fillColor: const Color(0xFF0F172A),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF334155)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF334155)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: isSending ? null : () => Navigator.of(sheetCtx).pop(),
+                            child: Text(
+                              'ANNULLA',
+                              style: GoogleFonts.poppins(
+                                color: const Color(0xFF94A3B8),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton.icon(
+                            onPressed: isSending
+                                ? null
+                                : () async {
+                                    setSheetState(() => isSending = true);
+                                    final dettagliText = dettagliCtrl.text.trim();
+                                    final ok = await _viewModel.inviaSegnalazionePartecipante(
+                                      segnalato: targetSelezionato,
+                                      motivo: motivoSelezionato,
+                                      dettagli: dettagliText,
+                                    );
+                                    if (sheetCtx.mounted) {
+                                      Navigator.of(sheetCtx).pop();
+                                    }
+                                    if (rootCtx.mounted) {
+                                      if (ok) {
+                                        AppToast.showSuccess(
+                                          rootCtx,
+                                          'Segnalazione Inviata 🛡️',
+                                          'Grazie! La segnalazione su @$targetSelezionato è stata inviata al Centro Moderazione.',
+                                        );
+                                      } else {
+                                        AppToast.showError(
+                                          rootCtx,
+                                          'Errore',
+                                          'Impossibile inviare la segnalazione. Riprova.',
+                                        );
+                                      }
+                                    }
+                                  },
+                            icon: isSending
+                                ? const SizedBox(
+                                    width: 15,
+                                    height: 15,
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0F172A)),
+                                  )
+                                : const Icon(Icons.send_rounded, size: 16, color: Color(0xFF0F172A)),
+                            label: Text(
+                              'INVIA SEGNALAZIONE',
+                              style: GoogleFonts.poppins(
+                                color: const Color(0xFF0F172A),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFF59E0B),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             );
           },

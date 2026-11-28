@@ -351,12 +351,14 @@ class ContextInfoModal extends StatelessWidget {
             ),
             InfoSectionData(
               icon: '🔍',
-              title: 'Scheda Giocatore & Storno Regole (Solo Organizzatore)',
+              title: 'Scheda Giocatore, Amicizia Rapida & Moderazione',
               description:
-                  'Toccando il nome o la card di qualsiasi giocatore nella classifica, puoi visualizzare lo storico dettagliato di tutti i suoi singoli bonus e malus accumulati:',
+                  'Toccando il nome o la card di qualsiasi giocatore nella classifica, puoi aprire la sua scheda nell\'evento:',
               bulletPoints: [
-                'Dettaglio Bonus/Malus: Vedi l\'orario, il motivo e i punti di ogni assegnazione del giocatore.',
-                'Storno Disciplinare (Esclusivo per l\'Organizzatore): Se una regola è stata assegnata per errore o scambio di persona, esclusivamente l\'organizzatore dell\'evento ha a disposizione il tasto per stornarla ed eliminarla dalla scheda del giocatore, ripristinando all\'istante il punteggio corretto!',
+                'Dettaglio Bonus/Malus: Vedi tutti i punti, bonus e malus accumulati dal giocatore.',
+                'Aggiungi Amico al Volo: Se un partecipante non è ancora nella tua lista amici, puoi inviargli la richiesta di amicizia direttamente con un tocco!',
+                'Segnala Partecipante (🚩): Puoi segnalare qualsiasi comportamento o contenuto inappropriato di un partecipante (anche dalla bandierina in alto nella schermata evento) direttamente al Centro Moderazione.',
+                'Storno Disciplinare (Esclusivo per l\'Organizzatore): Se una regola è stata assegnata per errore o scambio di persona, esclusivamente l\'organizzatore dell\'evento può stornarla dalla scheda del giocatore, ripristinando il punteggio corretto!',
               ],
             ),
             InfoSectionData(

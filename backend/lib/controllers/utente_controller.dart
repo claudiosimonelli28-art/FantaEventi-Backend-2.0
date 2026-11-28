@@ -1927,7 +1927,8 @@ class UtenteController {
           mittenteUser = u;
         }
         if (u.codiceAmico.toUpperCase() == cleanCode ||
-            u.nickname.toLowerCase() == cleanCode.toLowerCase()) {
+            u.nickname.toLowerCase() == cleanCode.toLowerCase() ||
+            NicknameHelper.isSame(u.nickname, cleanCode, uDocs)) {
           targetUser = u;
         }
       }

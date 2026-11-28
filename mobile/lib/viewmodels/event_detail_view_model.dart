@@ -49,6 +49,7 @@ class EventDetailViewModel extends BaseViewModel {
   List<RichiestaVar> _richiesteVarEvento = [];
   Set<String> _invitatiInSospeso = {};
   Set<String> _invitatiRifiutati = {};
+  final Set<String> _richiesteAmiciziaInviateSessione = {};
   List<String> _partecipantiConfermati = [];
   Timer? _liveLeaderboardTimer;
   bool _isSyncing = false;
@@ -552,6 +553,92 @@ class EventDetailViewModel extends BaseViewModel {
 
   Future<List<Utente>> fetchUtenti() async {
     return await _apiService.getUtenti();
+  }
+
+  bool isMe(String nick) {
+    final clean = nick.trim();
+    if (clean.isEmpty) return false;
+    return _apiService.isSamePerson(clean, currentUserNick) ||
+        _apiService.isSamePerson(clean, _apiService.currentUser?.nome);
+  }
+
+  bool isGiaAmico(String nick) {
+    final cur = _apiService.currentUser;
+    if (cur != null && cur.amici.any((a) => _apiService.isSamePerson(a, nick))) {
+      return true;
+    }
+    final freshMe = getUtenteInMemoria(currentUserNick);
+    if (freshMe != null && freshMe.amici.any((a) => _apiService.isSamePerson(a, nick))) {
+      return true;
+    }
+    final targetMem = getUtenteInMemoria(nick);
+    if (targetMem != null && targetMem.amici.any((a) => _apiService.isSamePerson(a, currentUserNick))) {
+      return true;
+    }
+    return false;
+  }
+
+  bool haRichiestaAmiciziaInviata(String nick) {
+    if (_richiesteAmiciziaInviateSessione.any((r) => _apiService.isSamePerson(r, nick))) {
+      return true;
+    }
+    final targetMem = getUtenteInMemoria(nick);
+    if (targetMem != null &&
+        targetMem.richiesteAmicizia.any(
+          (r) => _apiService.isSamePerson((r['mittente'] ?? r['nome'] ?? '').toString(), currentUserNick),
+        )) {
+      return true;
+    }
+    return false;
+  }
+
+  List<String> get partecipantiSegnalabili {
+    final List<String> lista = [];
+    for (final p in _partecipantiConfermati) {
+      final clean = p.trim();
+      if (clean.isEmpty || isMe(clean)) continue;
+      if (!lista.any((e) => _apiService.isSamePerson(e, clean))) {
+        lista.add(clean);
+      }
+    }
+    for (final inv in _invitatiInSospeso) {
+      final clean = inv.trim();
+      if (clean.isEmpty || isMe(clean)) continue;
+      if (!lista.any((e) => _apiService.isSamePerson(e, clean))) {
+        lista.add(clean);
+      }
+    }
+    return lista;
+  }
+
+  Future<void> inviaRichiestaAmiciziaRapida(String targetNick) async {
+    Utente? memUser = getUtenteInMemoria(targetNick);
+    if (memUser == null || memUser.codiceAmico.trim().isEmpty) {
+      try {
+        await _apiService.getUtenti();
+        memUser = getUtenteInMemoria(targetNick);
+      } catch (_) {}
+    }
+    final identifier = (memUser != null && memUser.codiceAmico.trim().isNotEmpty)
+        ? memUser.codiceAmico.trim()
+        : targetNick.trim();
+    await _apiService.inviaRichiestaAmicizia(identifier);
+    _richiesteAmiciziaInviateSessione.add(targetNick.trim());
+    notifyListeners();
+  }
+
+  Future<bool> inviaSegnalazionePartecipante({
+    required String segnalato,
+    required String motivo,
+    String dettagli = '',
+  }) async {
+    final evTag = '[Evento: "${_evento.titolo}"]';
+    final cleanDettagli = dettagli.trim().isEmpty ? evTag : '$evTag ${dettagli.trim()}';
+    return await _apiService.inviaSegnalazione(
+      segnalato: segnalato.trim(),
+      motivo: motivo,
+      dettagli: cleanDettagli,
+    );
   }
 
   @override
