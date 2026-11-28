@@ -170,6 +170,36 @@ class ProfileViewModel extends BaseViewModel {
 
   String getAvatarPerUtente(String nickname) => _apiService.getAvatarPerUtente(nickname);
 
+  static String calcolaRankTitle(int livello) {
+    if (livello >= 10) return '👑 Leggenda Suprema degli Eventi';
+    if (livello >= 7) return '🔥 Master Gamifier';
+    if (livello >= 5) return '⚡ Anima della Festa';
+    if (livello >= 3) return '🎲 Giocatore Esperto';
+    return '🌱 Recluta Fanta Eventi';
+  }
+
+  Future<Utente?> fetchDettagliAmicoAggiornati(String nickname) async {
+    try {
+      await _apiService.getUtenti();
+      Utente? u = _apiService.getUtenteInMemoria(nickname);
+      if (u != null) {
+        final curAv = u.avatarUrl;
+        final isValidAv = curAv.isNotEmpty &&
+            !curAv.contains('pravatar') &&
+            !curAv.contains('unsplash.com/photo-1535713875002');
+        if (!isValidAv) {
+          final realAv = await _apiService.fetchAvatarPerUtente(u.nickname);
+          if (realAv.isNotEmpty) {
+            u = u.copyWith(avatarUrl: realAv);
+          }
+        }
+      }
+      return u;
+    } catch (_) {
+      return _apiService.getUtenteInMemoria(nickname);
+    }
+  }
+
   // --- GESTIONE FOTO AVATAR ---
   Future<bool> scattaFotoConFotocamera() async {
     clearError();

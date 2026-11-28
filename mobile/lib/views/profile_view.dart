@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../models/utente.dart';
 import '../services/api_service.dart';
 import '../services/push_notification_service.dart';
 import '../widgets/avatar_helper.dart';
@@ -563,107 +564,124 @@ class _ProfileViewState extends State<ProfileView> {
                                 ),
                                 child: Row(
                                   children: [
-                                    Stack(
-                                      clipBehavior: Clip.none,
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            border: Border.all(
-                                              color: isAmicoVip
-                                                  ? const Color(0xFFFACC15)
-                                                  : const Color(0xFF10B981).withValues(alpha: 0.6),
-                                              width: isAmicoVip ? 2.0 : 1.5,
-                                            ),
-                                          ),
-                                          child: CircleAvatar(
-                                            radius: 22,
-                                            backgroundImage: getAvatarImageProvider(avatarUrl),
-                                            backgroundColor: const Color(0xFF334155),
-                                          ),
-                                        ),
-                                        if (isAmicoVip)
-                                          Positioned(
-                                            right: -3,
-                                            bottom: -3,
-                                            child: Container(
-                                              padding: const EdgeInsets.all(2.5),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFF0F172A),
-                                                shape: BoxShape.circle,
-                                                border: Border.all(color: const Color(0xFFFACC15), width: 1),
-                                              ),
-                                              child: const Text('👑', style: TextStyle(fontSize: 10)),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(width: 12),
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Wrap(
-                                            crossAxisAlignment: WrapCrossAlignment.center,
-                                            spacing: 6,
-                                            runSpacing: 4,
-                                            children: [
-                                              Text(
-                                                displayName,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: GoogleFonts.poppins(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 14,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                              if (isAmicoVip)
-                                                const VipBadge(isLarge: false),
-                                              if (isAmicoFounder)
-                                                FounderBadge(nickname: resolvedNick, isLarge: false),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 2),
-                                          Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFF1E293B),
-                                                  borderRadius: BorderRadius.circular(6),
-                                                ),
-                                                child: Text(
-                                                  'Liv. $level',
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: const Color(0xFFFACC15),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () => _mostraSchedaRiepilogoAmico(
+                                          resolvedNick: resolvedNick,
+                                          initialUtente: amicoUtente,
+                                          initialAvatarUrl: avatarUrl,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Stack(
+                                              clipBehavior: Clip.none,
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(2),
+                                                  decoration: BoxDecoration(
+                                                    shape: BoxShape.circle,
+                                                    border: Border.all(
+                                                      color: isAmicoVip
+                                                          ? const Color(0xFFFACC15)
+                                                          : const Color(0xFF10B981).withValues(alpha: 0.6),
+                                                      width: isAmicoVip ? 2.0 : 1.5,
+                                                    ),
+                                                  ),
+                                                  child: CircleAvatar(
+                                                    radius: 22,
+                                                    backgroundImage: getAvatarImageProvider(avatarUrl),
+                                                    backgroundColor: const Color(0xFF334155),
                                                   ),
                                                 ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Text(
-                                                '$points PT',
-                                                style: GoogleFonts.inter(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: const Color(0xFF10B981),
-                                                ),
-                                              ),
-                                              if (friendCode.isNotEmpty) ...[
-                                                const SizedBox(width: 6),
-                                                Text(
-                                                  '• $friendCode',
-                                                  style: GoogleFonts.inter(
-                                                    fontSize: 11,
-                                                    color: const Color(0xFF94A3B8),
+                                                if (isAmicoVip)
+                                                  Positioned(
+                                                    right: -3,
+                                                    bottom: -3,
+                                                    child: Container(
+                                                      padding: const EdgeInsets.all(2.5),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(0xFF0F172A),
+                                                        shape: BoxShape.circle,
+                                                        border: Border.all(color: const Color(0xFFFACC15), width: 1),
+                                                      ),
+                                                      child: const Text('👑', style: TextStyle(fontSize: 10)),
+                                                    ),
                                                   ),
-                                                ),
                                               ],
-                                            ],
-                                          ),
-                                        ],
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Wrap(
+                                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                                    spacing: 6,
+                                                    runSpacing: 4,
+                                                    children: [
+                                                      Text(
+                                                        displayName,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: GoogleFonts.poppins(
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 14,
+                                                          color: Colors.white,
+                                                        ),
+                                                      ),
+                                                      if (isAmicoVip)
+                                                        const VipBadge(isLarge: false),
+                                                      if (isAmicoFounder)
+                                                        FounderBadge(nickname: resolvedNick, isLarge: false),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Row(
+                                                    children: [
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(0xFF1E293B),
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: Text(
+                                                          'Liv. $level',
+                                                          style: GoogleFonts.inter(
+                                                            fontSize: 10,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: const Color(0xFFFACC15),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Text(
+                                                        '$points PT',
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: const Color(0xFF10B981),
+                                                        ),
+                                                      ),
+                                                      if (friendCode.isNotEmpty) ...[
+                                                        const SizedBox(width: 6),
+                                                        Flexible(
+                                                          child: Text(
+                                                            '• $friendCode',
+                                                            overflow: TextOverflow.ellipsis,
+                                                            style: GoogleFonts.inter(
+                                                              fontSize: 11,
+                                                              color: const Color(0xFF94A3B8),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ],
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                     PopupMenuButton<String>(
@@ -726,6 +744,521 @@ class _ProfileViewState extends State<ProfileView> {
     );
   },
 );
+  }
+
+  // BANNER RIEPILOGATIVO AMICO (Foto ingrandita, Livello/XP, Statistiche e Bacheca Titoli — senza email o dati privati)
+  void _mostraSchedaRiepilogoAmico({
+    required String resolvedNick,
+    required Utente? initialUtente,
+    required String initialAvatarUrl,
+  }) {
+    Utente? amico = initialUtente;
+    String effectiveAvatar = initialAvatarUrl;
+    bool hasRequestedFresh = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetCtx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            if (!hasRequestedFresh) {
+              hasRequestedFresh = true;
+              _viewModel.fetchDettagliAmicoAggiornati(resolvedNick).then((fresh) {
+                if (fresh != null && sheetCtx.mounted) {
+                  setSheetState(() {
+                    amico = fresh;
+                    if (fresh.avatarUrl.isNotEmpty) {
+                      effectiveAvatar = fresh.avatarUrl;
+                    }
+                  });
+                }
+              });
+            }
+
+            final int livello = amico?.livello ?? 1;
+            final int xp = amico?.xp ?? 0;
+            final int xpMax = (amico?.xpProssimoLivello ?? 2000) <= 0 ? 2000 : (amico?.xpProssimoLivello ?? 2000);
+            final double xpPct = (xp / xpMax).clamp(0.0, 1.0);
+            final int puntiFanta = amico?.puntiTotali ?? 0;
+            final List<Map<String, dynamic>> vittorie = amico?.badgeVincitore ?? const [];
+            final int numBadge = amico?.badgeList.length ?? 0;
+            final bool isVip = VipBadge.isVip(amico);
+            final bool isFounder = FounderBadge.isFounder(resolvedNick);
+            final String rankLabel = ProfileViewModel.calcolaRankTitle(livello);
+
+            final int cCampione = amico?.countCampione ?? vittorie.length;
+            final int cReMalus = amico?.countReMalus ?? 0;
+            final int cAvvocato = amico?.countAvvocato ?? 0;
+            final int cFantasma = amico?.countFantasma ?? 0;
+            final int cSbirro = amico?.countSbirro ?? 0;
+            final int cGiustiziere = amico?.countGiustiziere ?? 0;
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.78,
+              minChildSize: 0.5,
+              maxChildSize: 0.92,
+              expand: false,
+              builder: (context, scrollCtrl) {
+                return SingleChildScrollView(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF64748B),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Header superiore con pulsante chiudi
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Scheda Giocatore',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => Navigator.of(sheetCtx).pop(),
+                            icon: const Icon(Icons.close_rounded, color: Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ),
+
+                      // FOTO PROFILO INGRANDITA (cliccabile per zoom a tutto schermo)
+                      GestureDetector(
+                        onTap: () {
+                          showDialog(
+                            context: sheetCtx,
+                            builder: (dCtx) => Dialog(
+                              backgroundColor: Colors.transparent,
+                              insetPadding: const EdgeInsets.all(24),
+                              child: Stack(
+                                alignment: Alignment.topRight,
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: Container(
+                                      color: const Color(0xFF0F172A),
+                                      child: InteractiveViewer(
+                                        minScale: 1.0,
+                                        maxScale: 3.5,
+                                        child: Image(
+                                          image: getAvatarImageProvider(effectiveAvatar),
+                                          fit: BoxFit.contain,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: CircleAvatar(
+                                      backgroundColor: Colors.black54,
+                                      child: IconButton(
+                                        icon: const Icon(Icons.close_rounded, color: Colors.white),
+                                        onPressed: () => Navigator.of(dCtx).pop(),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  colors: isVip
+                                      ? const [Color(0xFFFACC15), Color(0xFFD97706)]
+                                      : const [Color(0xFFFACC15), Color(0xFF9333EA)],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (isVip ? const Color(0xFFFACC15) : const Color(0xFF9333EA))
+                                        .withValues(alpha: 0.28),
+                                    blurRadius: 16,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: CircleAvatar(
+                                radius: 52,
+                                backgroundImage: getAvatarImageProvider(effectiveAvatar),
+                                backgroundColor: const Color(0xFF334155),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFFACC15).withValues(alpha: 0.8),
+                                  width: 1.2,
+                                ),
+                              ),
+                              child: Text(
+                                isVip ? '👑' : '🔍',
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      Text(
+                        '@$resolvedNick',
+                        style: GoogleFonts.poppins(
+                          fontSize: 21,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      if (isFounder)
+                        FounderBadge(nickname: resolvedNick, isLarge: true),
+                      if (isVip)
+                        const VipBadge(isLarge: true),
+                      const SizedBox(height: 4),
+                      Text(
+                        rankLabel,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFFFACC15),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      // PROGRESSO LIVELLO & XP
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF334155)),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF9333EA).withValues(alpha: 0.22),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFF9333EA).withValues(alpha: 0.6)),
+                                      ),
+                                      child: Text(
+                                        'LIVELLO $livello',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: const Color(0xFFC084FC),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Progresso XP',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF94A3B8),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  '$xp / $xpMax XP',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFFACC15),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: LinearProgressIndicator(
+                                value: xpPct,
+                                minHeight: 10,
+                                backgroundColor: const Color(0xFF1E293B),
+                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF9333EA)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // STATISTICHE RIEPILOGATIVE (Punti Fanta, Vittorie, Badge)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '$puntiFanta',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFFFACC15),
+                                    ),
+                                  ),
+                                  Text(
+                                    'Punti Fanta',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '${vittorie.length}',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF10B981),
+                                    ),
+                                  ),
+                                  Text(
+                                    'Vittorie 🏆',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F172A),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF9333EA).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    '$numBadge',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 19,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFFC084FC),
+                                    ),
+                                  ),
+                                  Text(
+                                    'Badge 🎖️',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+
+                      // BACHECA DEI TITOLI RIEPILOGATIVA
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '🏅 Bacheca dei Titoli',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildBachecaBadge(
+                              icon: '👑',
+                              label: 'Campione',
+                              count: cCampione,
+                              color: const Color(0xFFFACC15),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildBachecaBadge(
+                              icon: '🤡',
+                              label: 'Re Malus',
+                              count: cReMalus,
+                              color: const Color(0xFFEF4444),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildBachecaBadge(
+                              icon: '⚖️',
+                              label: 'Avvocato',
+                              count: cAvvocato,
+                              color: const Color(0xFF38BDF8),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildBachecaBadge(
+                              icon: '👻',
+                              label: 'Fantasma',
+                              count: cFantasma,
+                              color: const Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildBachecaBadge(
+                              icon: '🕵️',
+                              label: 'Lo Sbirro',
+                              count: cSbirro,
+                              color: const Color(0xFFF97316),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildBachecaBadge(
+                              icon: '⚡',
+                              label: 'Giustiziere',
+                              count: cGiustiziere,
+                              color: const Color(0xFF10B981),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // EVENTUALI TROFEI VINTI (Riepilogo compatto fino alle ultime 3 vittorie)
+                      if (vittorie.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '🏆 Ultime Vittorie (${vittorie.length})',
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ...vittorie.reversed.take(3).map((v) {
+                          final evName = (v['evento'] ?? 'Evento').toString();
+                          final pts = v['punti'] ?? 0;
+                          return Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFACC15).withValues(alpha: 0.45)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.emoji_events_rounded, color: Color(0xFFFACC15), size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    evName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '$pts PT',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: const Color(0xFFFACC15),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        if (vittorie.length > 3)
+                          Text(
+                            '+ altre ${vittorie.length - 3} vittorie in bacheca',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: const Color(0xFF94A3B8),
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 
   // MODALE CON LA BACHECA VITTORIE / SALA TROFEI
