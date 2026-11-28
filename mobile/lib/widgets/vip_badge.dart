@@ -35,9 +35,10 @@ class _VipBadgeState extends State<VipBadge> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
         final pulse = (math.sin(_controller.value * 2 * math.pi) + 1) / 2;
         final shimmerPos = _controller.value;
 
@@ -186,6 +187,7 @@ class _VipBadgeState extends State<VipBadge> with SingleTickerProviderStateMixin
           ),
         );
       },
+      ),
     );
   }
 }

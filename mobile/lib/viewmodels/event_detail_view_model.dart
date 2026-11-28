@@ -48,6 +48,7 @@ class EventDetailViewModel extends BaseViewModel {
   List<BonusMalus> _allBonusMalus = [];
   List<RichiestaVar> _richiesteVarEvento = [];
   Set<String> _invitatiInSospeso = {};
+  Set<String> _invitatiRifiutati = {};
   List<String> _partecipantiConfermati = [];
   Timer? _liveLeaderboardTimer;
   bool _isSyncing = false;
@@ -66,10 +67,23 @@ class EventDetailViewModel extends BaseViewModel {
     }
     _partecipantiConfermati = confermati;
 
+    final Set<String> rifiutatiSet = {};
+    for (var rif in _evento.rifiutati) {
+      final cleanRif = rif.trim();
+      if (cleanRif.isNotEmpty &&
+          !confermati.any((c) => c.trim().toLowerCase() == cleanRif.toLowerCase())) {
+        rifiutatiSet.add(cleanRif);
+      }
+    }
+    _invitatiRifiutati = rifiutatiSet;
+
     final Set<String> inSospeso = {};
     for (var inv in _evento.invitati) {
-      if (!confermati.any((c) => c.trim().toLowerCase() == inv.trim().toLowerCase())) {
-        inSospeso.add(inv);
+      final cleanInv = inv.trim();
+      if (cleanInv.isNotEmpty &&
+          !confermati.any((c) => c.trim().toLowerCase() == cleanInv.toLowerCase()) &&
+          !rifiutatiSet.any((r) => r.trim().toLowerCase() == cleanInv.toLowerCase())) {
+        inSospeso.add(cleanInv);
       }
     }
     _invitatiInSospeso = inSospeso;
@@ -88,6 +102,7 @@ class EventDetailViewModel extends BaseViewModel {
   List<BonusMalus> get allBonusMalus => List.unmodifiable(_allBonusMalus);
   List<RichiestaVar> get richiesteVarEvento => List.unmodifiable(_richiesteVarEvento);
   Set<String> get invitatiInSospeso => Set.unmodifiable(_invitatiInSospeso);
+  Set<String> get invitatiRifiutati => Set.unmodifiable(_invitatiRifiutati);
   List<String> get partecipantiConfermati => List.unmodifiable(_partecipantiConfermati);
 
   Utente? get currentUser => _apiService.currentUser;
@@ -130,9 +145,21 @@ class EventDetailViewModel extends BaseViewModel {
     _isSyncing = true;
     notifyListeners();
     try {
+      // Sincronizza anche lo stato aggiornato dell'evento (partecipanti, invitati, rifiutati, stato in_corso)
+      try {
+        final updatedEvents = await _apiService.getEventi().catchError((_) => <Evento>[]);
+        for (final ev in updatedEvents) {
+          if (ev.id.trim().isNotEmpty && ev.id.trim().toLowerCase() == _evento.id.trim().toLowerCase()) {
+            _evento = ev;
+            break;
+          }
+        }
+      } catch (_) {}
+
       final creatoreNick = creatore;
       final List<String> confermati = [creatoreNick];
       final Set<String> inSospeso = {};
+      final Set<String> rifiutatiSet = {};
 
       for (var p in _evento.partecipanti) {
         if (!confermati.any((c) => c.trim().toLowerCase() == p.trim().toLowerCase())) {
@@ -140,9 +167,20 @@ class EventDetailViewModel extends BaseViewModel {
         }
       }
 
+      for (var rif in _evento.rifiutati) {
+        final cleanRif = rif.trim();
+        if (cleanRif.isNotEmpty &&
+            !confermati.any((c) => c.trim().toLowerCase() == cleanRif.toLowerCase())) {
+          rifiutatiSet.add(cleanRif);
+        }
+      }
+
       for (var inv in _evento.invitati) {
-        if (!confermati.any((c) => c.trim().toLowerCase() == inv.trim().toLowerCase())) {
-          inSospeso.add(inv);
+        final cleanInv = inv.trim();
+        if (cleanInv.isNotEmpty &&
+            !confermati.any((c) => c.trim().toLowerCase() == cleanInv.toLowerCase()) &&
+            !rifiutatiSet.any((r) => r.trim().toLowerCase() == cleanInv.toLowerCase())) {
+          inSospeso.add(cleanInv);
         }
       }
 
@@ -159,6 +197,8 @@ class EventDetailViewModel extends BaseViewModel {
             for (var u in bm.assegnatoA) {
               if (u.trim().isNotEmpty && !confermati.any((c) => c.trim().toLowerCase() == u.trim().toLowerCase())) {
                 confermati.add(u.trim());
+                inSospeso.removeWhere((i) => i.trim().toLowerCase() == u.trim().toLowerCase());
+                rifiutatiSet.removeWhere((r) => r.trim().toLowerCase() == u.trim().toLowerCase());
               }
             }
           }
@@ -169,6 +209,7 @@ class EventDetailViewModel extends BaseViewModel {
 
       _partecipantiConfermati = confermati;
       _invitatiInSospeso = inSospeso;
+      _invitatiRifiutati = rifiutatiSet;
       if (bmList.isNotEmpty) {
         _allBonusMalus = bmList;
       }

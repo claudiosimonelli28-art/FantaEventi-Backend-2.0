@@ -17,6 +17,7 @@ class Evento {
   final String propostoDa;
   final List<String> partecipanti;
   final List<String> invitati;
+  final List<String> rifiutati;
   final List<BonusMalus> bonusMalusApplicati;
   final List<Votazione> votazioniAttive;
   final String? copertinaUrl;
@@ -48,13 +49,15 @@ class Evento {
     this.propostoDa = '',
     required this.partecipanti,
     List<String>? invitati,
+    List<String>? rifiutati,
     this.bonusMalusApplicati = const [],
     this.votazioniAttive = const [],
     this.copertinaUrl,
     this.penalitaFalsaTestimonianza = -10,
     this.titoliVincitori,
   })  : dataFine = dataFine ?? data.add(const Duration(hours: 4)),
-        invitati = invitati ?? [];
+        invitati = invitati ?? [],
+        rifiutati = rifiutati ?? [];
 
   factory Evento.fromMap(Map<String, dynamic> map) {
     final dtInizio = map['data'] != null
@@ -113,6 +116,10 @@ class Evento {
               ?.map((e) => e.toString().trim())
               .toList() ??
           [],
+      rifiutati: (map['rifiutati'] as List<dynamic>?)
+              ?.map((e) => e.toString().trim())
+              .toList() ??
+          [],
       bonusMalusApplicati: (map['bonusMalusApplicati'] as List<dynamic>?)
               ?.map((e) => BonusMalus.fromMap(e as Map<String, dynamic>))
               .toList() ??
@@ -146,6 +153,7 @@ class Evento {
       'creatore': propostoDa,
       'partecipanti': partecipanti,
       'invitati': invitati,
+      'rifiutati': rifiutati,
       'bonusMalusApplicati': bonusMalusApplicati.map((b) => b.toMap()).toList(),
       'votazioniAttive': votazioniAttive.map((v) => v.toMap()).toList(),
       'copertinaUrl': copertinaUrl,
@@ -174,6 +182,7 @@ class Evento {
       'creatore': propostoDa,
       'partecipanti': partecipanti,
       'invitati': invitati,
+      'rifiutati': rifiutati,
       'bonusMalusApplicati': bonusMalusApplicati.map((b) => b.toJson()).toList(),
       'votazioniAttive': votazioniAttive.map((v) => v.toJson()).toList(),
       'copertinaUrl': copertinaUrl,

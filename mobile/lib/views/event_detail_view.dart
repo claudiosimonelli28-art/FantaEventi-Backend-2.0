@@ -61,6 +61,7 @@ class _EventDetailViewState extends State<EventDetailView> {
         final _evento = _viewModel.evento;
         final _partecipantiConfermati = _viewModel.partecipantiConfermati;
         final _invitatiInSospeso = _viewModel.invitatiInSospeso;
+        final _invitatiRifiutati = _viewModel.invitatiRifiutati;
         final isCreatore = _viewModel.isCreatore;
         final isConcluso = _viewModel.isConcluso;
         final giaPartecipa = _viewModel.giaPartecipa;
@@ -536,7 +537,7 @@ class _EventDetailViewState extends State<EventDetailView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('🟢 Partecipanti Confermato (${_partecipantiConfermati.length}):',
+                        Text('🟢 Partecipanti Confermati (${_partecipantiConfermati.length}):',
                             style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF10B981))),
                         const SizedBox(height: 8),
                         Wrap(
@@ -565,24 +566,110 @@ class _EventDetailViewState extends State<EventDetailView> {
                         ),
                         const SizedBox(height: 16),
 
-                        Text('⏳ Inviti in Sospeso (${_invitatiInSospeso.length}):',
-                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15))),
+                        Builder(
+                          builder: (context) {
+                            final bool invitiBloccati = !_evento.isInProgramma;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  invitiBloccati
+                                      ? '🔒 Inviti in Sospeso Bloccati (${_invitatiInSospeso.length}):'
+                                      : '⏳ Inviti in Sospeso (${_invitatiInSospeso.length}):',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: invitiBloccati ? const Color(0xFF94A3B8) : const Color(0xFFFACC15),
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                if (_invitatiInSospeso.isEmpty)
+                                  Text(
+                                    invitiBloccati
+                                        ? 'Nessun invito rimasto in sospeso.'
+                                        : 'Nessun invito in sospeso al momento.',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12,
+                                      color: const Color(0xFF94A3B8),
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  )
+                                else ...[
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: _invitatiInSospeso.map((p) {
+                                      return Chip(
+                                        avatar: Icon(
+                                          invitiBloccati ? Icons.lock_clock_rounded : Icons.hourglass_top_rounded,
+                                          size: 14,
+                                          color: invitiBloccati ? const Color(0xFF94A3B8) : const Color(0xFFFACC15),
+                                        ),
+                                        label: Text(
+                                          invitiBloccati ? '$p (bloccato)' : p,
+                                          style: GoogleFonts.poppins(
+                                            color: invitiBloccati ? const Color(0xFF94A3B8) : Colors.white,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                        backgroundColor: invitiBloccati
+                                            ? const Color(0xFF334155).withValues(alpha: 0.45)
+                                            : const Color(0xFFFACC15).withValues(alpha: 0.15),
+                                        side: BorderSide(
+                                          color: invitiBloccati ? const Color(0xFF475569) : const Color(0xFFFACC15),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                  if (invitiBloccati) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Iscrizioni chiuse: l\'evento è iniziato e chi non aveva confermato prima dell\'avvio non può più entrare.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: const Color(0xFF94A3B8),
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        Text(
+                          '🔴 Inviti Rifiutati (${_invitatiRifiutati.length}):',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFFEF4444),
+                          ),
+                        ),
                         const SizedBox(height: 8),
-                        if (_invitatiInSospeso.isEmpty)
+                        if (_invitatiRifiutati.isEmpty)
                           Text(
-                            'Nessun invito in sospeso al momento.',
-                            style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                            'Nessun invito rifiutato.',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: const Color(0xFF94A3B8),
+                              fontStyle: FontStyle.italic,
+                            ),
                           )
                         else
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children: _invitatiInSospeso.map((p) {
+                            children: _invitatiRifiutati.map((p) {
                               return Chip(
-                                avatar: const Icon(Icons.hourglass_top_rounded, size: 14, color: Color(0xFFFACC15)),
-                                label: Text(p, style: GoogleFonts.poppins(color: Colors.white, fontSize: 11)),
-                                backgroundColor: const Color(0xFFFACC15).withValues(alpha: 0.15),
-                                side: const BorderSide(color: Color(0xFFFACC15)),
+                                avatar: const Icon(Icons.cancel_rounded, size: 14, color: Color(0xFFEF4444)),
+                                label: Text(
+                                  p,
+                                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 11),
+                                ),
+                                backgroundColor: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                                side: const BorderSide(color: Color(0xFFEF4444)),
                               );
                             }).toList(),
                           ),
@@ -2354,6 +2441,7 @@ class _EventDetailViewState extends State<EventDetailView> {
     final _evento = _viewModel.evento;
     final _partecipantiConfermati = _viewModel.partecipantiConfermati;
     final _invitatiInSospeso = _viewModel.invitatiInSospeso;
+    final _invitatiRifiutati = _viewModel.invitatiRifiutati;
     List<Utente> amici;
     try {
       amici = await _viewModel.getGiocatoriInvitabili();
@@ -2404,7 +2492,11 @@ class _EventDetailViewState extends State<EventDetailView> {
                 final iLow = i.trim().toLowerCase();
                 return iLow == aNick || iLow == aNome;
               }) || _evento.invitati.any((i) => i.trim().toLowerCase() == aNick || i.trim().toLowerCase() == aNome);
-              return !isGiaPart && !isGiaInv;
+              final isGiaRif = _invitatiRifiutati.any((r) {
+                final rLow = r.trim().toLowerCase();
+                return rLow == aNick || rLow == aNome;
+              }) || _evento.rifiutati.any((r) => r.trim().toLowerCase() == aNick || r.trim().toLowerCase() == aNome);
+              return !isGiaPart && !isGiaInv && !isGiaRif;
             }).length;
 
             return Container(
@@ -2528,7 +2620,11 @@ class _EventDetailViewState extends State<EventDetailView> {
                                 final iLow = i.trim().toLowerCase();
                                 return iLow == aNorm || iLow == aNomeNorm;
                               }) || _evento.invitati.any((i) => i.trim().toLowerCase() == aNorm || i.trim().toLowerCase() == aNomeNorm);
-                              final bool isInvitabile = !isGiaPartecipante && !isGiaInvitato;
+                              final bool isGiaRifiutato = _invitatiRifiutati.any((r) {
+                                final rLow = r.trim().toLowerCase();
+                                return rLow == aNorm || rLow == aNomeNorm;
+                              }) || _evento.rifiutati.any((r) => r.trim().toLowerCase() == aNorm || r.trim().toLowerCase() == aNomeNorm);
+                              final bool isInvitabile = !isGiaPartecipante && !isGiaInvitato && !isGiaRifiutato;
                               final bool isSelected = amiciSelezionati.contains(aEffectiveNick);
 
                               return InkWell(
@@ -2558,7 +2654,9 @@ class _EventDetailViewState extends State<EventDetailView> {
                                               ? const Color(0xFF10B981).withValues(alpha: 0.3)
                                               : isGiaInvitato
                                                   ? const Color(0xFFEAB308).withValues(alpha: 0.3)
-                                                  : const Color(0xFF334155),
+                                                  : isGiaRifiutato
+                                                      ? const Color(0xFFEF4444).withValues(alpha: 0.3)
+                                                      : const Color(0xFF334155),
                                       width: isSelected ? 1.5 : 1,
                                     ),
                                   ),
@@ -2606,6 +2704,17 @@ class _EventDetailViewState extends State<EventDetailView> {
                                                   ),
                                                 ],
                                               )
+                                            else if (isGiaRifiutato)
+                                              Row(
+                                                children: [
+                                                  const Icon(Icons.cancel_rounded, size: 13, color: Color(0xFFEF4444)),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Ha rifiutato l\'invito',
+                                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFEF4444), fontWeight: FontWeight.w600),
+                                                  ),
+                                                ],
+                                              )
                                             else
                                               Text(
                                                 amico.email.isNotEmpty ? amico.email : 'Amico disponibile per l\'invito',
@@ -2639,6 +2748,19 @@ class _EventDetailViewState extends State<EventDetailView> {
                                           child: Text(
                                             'IN SOSPESO',
                                             style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFFFACC15)),
+                                          ),
+                                        )
+                                      else if (isGiaRifiutato)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFFEF4444)),
+                                          ),
+                                          child: Text(
+                                            'RIFIUTATO',
+                                            style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFFEF4444)),
                                           ),
                                         )
                                       else

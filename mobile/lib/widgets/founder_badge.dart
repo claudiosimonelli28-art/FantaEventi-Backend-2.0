@@ -109,108 +109,115 @@ class _FounderBadgeState extends State<FounderBadge>
     final info = FounderBadge.getFounderInfo(widget.nickname);
     if (info == null) return const SizedBox.shrink();
 
-    return AnimatedBuilder(
-      animation: _animController,
-      builder: (context, child) {
-        // Valore sinusoidale continuo per l'effetto respiro (0.0 -> 1.0)
-        final pulse = (math.sin(_animController.value * 2 * math.pi) + 1) / 2;
-        final shimmerPos = _animController.value;
+    return RepaintBoundary(
+      child: AnimatedBuilder(
+        animation: _animController,
+        builder: (context, child) {
+          // Valore sinusoidale continuo per l'effetto respiro (0.0 -> 1.0)
+          final pulse = (math.sin(_animController.value * 2 * math.pi) + 1) / 2;
+          final shimmerPos = _animController.value;
 
-        if (widget.isLarge) {
-          return Container(
-            margin: const EdgeInsets.only(top: 8, bottom: 4),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: info.shadowColor.withValues(alpha: 0.25 + (pulse * 0.35)),
-                  blurRadius: 10 + (pulse * 8),
-                  spreadRadius: 1 + (pulse * 1.5),
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Stack(
-                children: [
-                  // Sfondo con gradiente e bordo lucido
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: info.gradientColors,
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Color.lerp(info.borderColor, Colors.white, pulse * 0.4) ?? info.borderColor,
-                        width: 1.4 + (pulse * 0.4),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Transform.scale(
-                          scale: 1.0 + (pulse * 0.12),
-                          child: Text(info.emoji, style: const TextStyle(fontSize: 19)),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              info.title,
-                              style: GoogleFonts.poppins(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.8,
-                                color: info.textColor,
-                              ),
-                            ),
-                            Text(
-                              info.subtitle,
-                              style: GoogleFonts.inter(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+          if (widget.isLarge) {
+            return Container(
+              margin: const EdgeInsets.only(top: 8, bottom: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: info.shadowColor.withValues(alpha: 0.25 + (pulse * 0.35)),
+                    blurRadius: 10 + (pulse * 8),
+                    spreadRadius: 1 + (pulse * 1.5),
+                    offset: const Offset(0, 3),
                   ),
-
-                  // Riflesso Shimmer metallico che scorre da sinistra a destra
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          gradient: LinearGradient(
-                            begin: Alignment(-2.5 + (shimmerPos * 4.5), -1.0),
-                            end: Alignment(-1.5 + (shimmerPos * 4.5), 1.0),
-                            colors: [
-                              Colors.transparent,
-                              Colors.white.withValues(alpha: 0.0),
-                              Colors.white.withValues(alpha: 0.28),
-                              Colors.white.withValues(alpha: 0.0),
-                              Colors.transparent,
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  children: [
+                    // Sfondo con gradiente e bordo lucido a spessore fisso (zero spostamento layout)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: info.gradientColors,
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Color.lerp(info.borderColor, Colors.white, pulse * 0.4) ?? info.borderColor,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Center(
+                              child: Transform.scale(
+                                scale: 1.0 + (pulse * 0.12),
+                                child: Text(info.emoji, style: const TextStyle(fontSize: 19)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                info.title,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
+                                  color: info.textColor,
+                                ),
+                              ),
+                              Text(
+                                info.subtitle,
+                                style: GoogleFonts.inter(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              ),
                             ],
-                            stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Riflesso Shimmer metallico che scorre da sinistra a destra
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: LinearGradient(
+                              begin: Alignment(-2.5 + (shimmerPos * 4.5), -1.0),
+                              end: Alignment(-1.5 + (shimmerPos * 4.5), 1.0),
+                              colors: [
+                                Colors.transparent,
+                                Colors.white.withValues(alpha: 0.0),
+                                Colors.white.withValues(alpha: 0.28),
+                                Colors.white.withValues(alpha: 0.0),
+                                Colors.transparent,
+                              ],
+                              stops: const [0.0, 0.35, 0.5, 0.65, 1.0],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          );
-        }
+            );
+          }
 
         // Versione Pill Compatta (per liste amici e schede)
         return Container(
@@ -291,6 +298,7 @@ class _FounderBadgeState extends State<FounderBadge>
           ),
         );
       },
+      ),
     );
   }
 }

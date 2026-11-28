@@ -14,6 +14,7 @@ class Evento {
   final String propostoDa;
   final List<String> partecipanti;
   final List<String> invitati;
+  final List<String> rifiutati;
   final List<BonusMalus> bonusMalusApplicati;
   final List<Votazione> votazioniAttive;
   final String? copertinaUrl;
@@ -44,13 +45,15 @@ class Evento {
     this.propostoDa = '',
     required this.partecipanti,
     List<String>? invitati,
+    List<String>? rifiutati,
     required this.bonusMalusApplicati,
     required this.votazioniAttive,
     this.copertinaUrl,
     this.penalitaFalsaTestimonianza = -10,
     this.titoliVincitori,
   })  : dataFine = dataFine ?? data.add(const Duration(hours: 4)),
-        invitati = invitati ?? [];
+        invitati = invitati ?? [],
+        rifiutati = rifiutati ?? [];
 
   factory Evento.fromJson(Map<String, dynamic> json) {
     final dtInizio = json['data'] != null
@@ -105,6 +108,10 @@ class Evento {
               ?.map((e) => e.toString())
               .toList() ??
           [],
+      rifiutati: (json['rifiutati'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
       bonusMalusApplicati: (json['bonusMalusApplicati'] as List<dynamic>?)
               ?.map((e) => BonusMalus.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -137,6 +144,7 @@ class Evento {
       'creatore': propostoDa,
       'partecipanti': partecipanti,
       'invitati': invitati,
+      'rifiutati': rifiutati,
       'bonusMalusApplicati':
           bonusMalusApplicati.map((b) => b.toJson()).toList(),
       'votazioniAttive': votazioniAttive.map((v) => v.toJson()).toList(),
@@ -159,6 +167,7 @@ class Evento {
     String? propostoDa,
     List<String>? partecipanti,
     List<String>? invitati,
+    List<String>? rifiutati,
     List<BonusMalus>? bonusMalusApplicati,
     List<Votazione>? votazioniAttive,
     String? copertinaUrl,
@@ -178,6 +187,7 @@ class Evento {
       propostoDa: propostoDa ?? this.propostoDa,
       partecipanti: partecipanti ?? this.partecipanti,
       invitati: invitati ?? this.invitati,
+      rifiutati: rifiutati ?? this.rifiutati,
       bonusMalusApplicati: bonusMalusApplicati ?? this.bonusMalusApplicati,
       votazioniAttive: votazioniAttive ?? this.votazioniAttive,
       copertinaUrl: copertinaUrl ?? this.copertinaUrl,

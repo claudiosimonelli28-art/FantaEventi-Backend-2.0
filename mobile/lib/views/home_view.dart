@@ -2158,9 +2158,38 @@ class _HomeViewState extends State<HomeView> with TickerProviderStateMixin, Widg
         child: SizedBox(
           height: MediaQuery.of(context).size.height * 0.7,
           child: Center(
-            child: Text(
-              'Nessuna votazione attiva al momento per eventi in corso.',
-              style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFF334155)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.how_to_vote_rounded, size: 64, color: Color(0xFF64748B)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Nessuna votazione live attiva',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Proponi un nuovo bonus o malus in un evento in corso per avviare una votazione democratica in tempo reale!',
+                      style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

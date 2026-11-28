@@ -2077,7 +2077,7 @@ class _ProfileViewState extends State<ProfileView> {
                   children: [
                     FilterChip(
                       selected: _viewModel.filtroGiorniStorico == 1,
-                      label: const Text('Ultimi 24h'),
+                      label: const Text('Ultime 24 ore'),
                       selectedColor: const Color(0xFF9333EA),
                       backgroundColor: const Color(0xFF1E293B),
                       labelStyle: TextStyle(
@@ -2090,7 +2090,7 @@ class _ProfileViewState extends State<ProfileView> {
                     const SizedBox(width: 8),
                     FilterChip(
                       selected: _viewModel.filtroGiorniStorico == 3,
-                      label: const Text('Ultimi 3 Giorni'),
+                      label: const Text('Ultimi 3 giorni'),
                       selectedColor: const Color(0xFF9333EA),
                       backgroundColor: const Color(0xFF1E293B),
                       labelStyle: TextStyle(
@@ -2103,7 +2103,7 @@ class _ProfileViewState extends State<ProfileView> {
                     const SizedBox(width: 8),
                     FilterChip(
                       selected: _viewModel.filtroGiorniStorico == 7,
-                      label: const Text('Ultimi 7 Giorni'),
+                      label: const Text('Ultimi 7 giorni'),
                       selectedColor: const Color(0xFF9333EA),
                       backgroundColor: const Color(0xFF1E293B),
                       labelStyle: TextStyle(

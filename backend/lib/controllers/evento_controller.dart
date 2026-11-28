@@ -43,6 +43,11 @@ class EventoController {
 
         final rawInv = (d['invitati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
         final rawRifiutati = (d['rifiutati'] as List<dynamic>?)?.map((e) => e.toString().trim()).toList() ?? [];
+        final cleanRifiutati = rawRifiutati
+            .where((r) => r.isNotEmpty)
+            .map((r) => NicknameHelper.resolve(r, utentiDocs))
+            .toSet()
+            .toList();
         final cleanInv = rawInv
             .map((i) => NicknameHelper.resolve(i, utentiDocs))
             .where((i) => !rawRifiutati.any((r) => NicknameHelper.isSame(r, i, utentiDocs)))
@@ -514,6 +519,7 @@ class EventoController {
         json['creatore'] = creatorNick;
         json['partecipanti'] = cleanPart;
         json['invitati'] = cleanInv;
+        json['rifiutati'] = cleanRifiutati;
         json['badgeVincitoreAssegnato'] = d['badgeVincitoreAssegnato'] == true;
         json['titoliAssegnati'] = d['titoliAssegnati'] == true;
         if (d['titoliVincitori'] != null) {

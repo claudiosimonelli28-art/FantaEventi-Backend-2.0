@@ -369,13 +369,13 @@ class ContextInfoModal extends StatelessWidget {
               icon: '👥',
               title: 'Stato Partecipanti ed Inviti',
               description:
-                  'Distingue i partecipanti attivi che hanno accettato l\'invito da quelli ancora in sospeso o che hanno rifiutato. L\'organizzatore può invitare ulteriori amici prima che l\'evento abbia inizio.',
+                  'Distingue i partecipanti confermati che hanno accettato l\'invito, gli inviti ancora in sospeso e gli inviti rifiutati. L\'organizzatore può invitare ulteriori amici prima dell\'inizio; una volta che l\'evento passa In Corso, gli inviti rimasti in sospeso vengono bloccati perché le iscrizioni si chiudono.',
             ),
             InfoSectionData(
               icon: '⚡',
-              title: 'Pulsante Azione: Proponi Bonus / Regola',
+              title: 'Proponi Bonus / Malus',
               description:
-                  'Ti permette di lanciare al volo una nuova proposta di regola goliardica da sottoporre immediatamente al voto democratico di tutti i partecipanti.',
+                  'Ti permette di lanciare al volo una nuova proposta di bonus/malus da sottoporre immediatamente al voto democratico di tutti i partecipanti.',
             ),
             InfoSectionData(
               icon: '🥇',
@@ -453,7 +453,7 @@ class ContextInfoModal extends StatelessWidget {
               icon: '📜',
               title: 'Storico Voti Personale',
               description:
-                  'Un archivio completo che tiene traccia di tutte le decisioni che hai espresso nelle votazioni passate. Puoi filtrare comodamente lo storico per periodo: Ultime 24 ore, Ultimi 7 giorni, Ultimi 30 giorni o Tutto lo storico.',
+                  'Un archivio completo che tiene traccia di tutte le decisioni che hai espresso nelle votazioni passate. Puoi filtrare comodamente lo storico per periodo: Ultime 24 ore, Ultimi 3 giorni o Ultimi 7 giorni.',
             ),
           ],
         );
